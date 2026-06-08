@@ -1,0 +1,97 @@
+# goreleaser v2 config for the Zensu CLI.
+# Release: tag vX.Y.Z, then `goreleaser release --clean` (CI runs this on tag).
+version: 2
+
+project_name: zensu
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: zensu
+    main: ./cmd/zensu
+    binary: zensu
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/MKITConsulting/zensu-cli/internal/version.Version={{ .Version }}
+      - -X github.com/MKITConsulting/zensu-cli/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/MKITConsulting/zensu-cli/internal/version.Date={{ .Date }}
+
+archives:
+  - id: zensu
+    name_template: "zensu_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - LICENSE
+      - NOTICE
+
+checksum:
+  name_template: "zensu_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+dockers:
+  - image_templates:
+      - "ghcr.io/mkitconsulting/zensu-cli:{{ .Version }}-amd64"
+    dockerfile: Dockerfile
+    use: buildx
+    goos: linux
+    goarch: amd64
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.source=https://github.com/MKITConsulting/zensu-cli"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+  - image_templates:
+      - "ghcr.io/mkitconsulting/zensu-cli:{{ .Version }}-arm64"
+    dockerfile: Dockerfile
+    use: buildx
+    goos: linux
+    goarch: arm64
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.source=https://github.com/MKITConsulting/zensu-cli"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+
+docker_manifests:
+  - name_template: "ghcr.io/mkitconsulting/zensu-cli:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/mkitconsulting/zensu-cli:{{ .Version }}-amd64"
+      - "ghcr.io/mkitconsulting/zensu-cli:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/mkitconsulting/zensu-cli:latest"
+    image_templates:
+      - "ghcr.io/mkitconsulting/zensu-cli:{{ .Version }}-amd64"
+      - "ghcr.io/mkitconsulting/zensu-cli:{{ .Version }}-arm64"
+
+release:
+  github:
+    owner: MKITConsulting
+    name: zensu-cli
+  name_template: "{{ .Tag }}"
+
+changelog:
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

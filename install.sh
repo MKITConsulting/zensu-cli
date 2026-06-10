@@ -71,8 +71,9 @@ install_bin() {
 	src="$1"
 	chmod +x "$src"
 	dir="${ZENSU_INSTALL_DIR:-/usr/local/bin}"
+	mkdir -p "$dir" 2>/dev/null || true
 	if [ -w "$dir" ]; then mv "$src" "${dir}/${BIN}"
-	elif command -v sudo >/dev/null 2>&1; then
+	elif command -v sudo >/dev/null 2>&1 && { sudo -n true 2>/dev/null || [ -t 0 ] || [ -t 2 ]; }; then
 		echo "Installing to ${dir} (sudo) ..."; sudo mv "$src" "${dir}/${BIN}"
 	else
 		dir="${HOME}/.local/bin"; mkdir -p "$dir"; mv "$src" "${dir}/${BIN}"

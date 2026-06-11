@@ -20,6 +20,17 @@ curl -fsSL https://zensu.dev/install.sh | sh
 Installs the latest release binary to `/usr/local/bin`. Override with
 `ZENSU_INSTALL_DIR=...`, pin a version with `ZENSU_VERSION=vX.Y.Z`.
 
+### Install script (Windows / PowerShell)
+
+```powershell
+irm https://zensu.dev/install.ps1 | iex
+```
+
+Installs the latest release to `%LOCALAPPDATA%\Programs\zensu` and adds it to your
+user `PATH` (restart the terminal afterwards). Override with `$env:ZENSU_INSTALL_DIR`,
+pin a version with `$env:ZENSU_VERSION`. Only `amd64` is published; on Windows arm64
+it installs the amd64 build, which runs under emulation.
+
 ### Prebuilt binaries
 
 Download the archive for your OS/arch from the

@@ -104,12 +104,54 @@ zensu features status <feature-id> testing
 
 # Escape hatch: call any Zensu API endpoint
 zensu api /api/products
-zensu api POST /api/products -f name=Acme -f productType=public
+zensu api POST /api/products -f name=Acme -f productType=public_product
 zensu api PATCH /api/features/<id>/status -f status=released
 ```
 
 `--slug` is derived from `--title` when omitted. Add `--json` to typed commands
 for raw output.
+
+## Shell completion
+
+`zensu` generates completion scripts via `zensu completion <bash|zsh|fish|powershell>`.
+Each shell needs its completion system enabled *before* the script is installed —
+on macOS the default zsh ships with completion **disabled**, which is the usual
+reason `zensu <TAB>` does nothing.
+
+**zsh** — do all three steps (step 1 is the one most setups are missing):
+
+```zsh
+# 1) enable completion once (skip if ~/.zshrc already calls compinit)
+echo 'autoload -Uz compinit; compinit' >> ~/.zshrc
+
+# 2) install the completion
+zensu completion zsh > "$(brew --prefix)/share/zsh/site-functions/_zensu"
+
+# 3) restart the shell
+exec zsh
+```
+
+Completions still missing? Clear the stale cache: `rm -f ~/.zcompdump*; exec zsh`.
+
+**bash** (needs the `bash-completion` package):
+
+```bash
+echo 'source <(zensu completion bash)' >> ~/.bashrc
+```
+
+**fish**:
+
+```fish
+zensu completion fish > ~/.config/fish/completions/zensu.fish
+```
+
+**PowerShell** (Windows) — append to your profile:
+
+```powershell
+zensu completion powershell >> $PROFILE
+```
+
+Run `zensu completion <shell> --help` for the full per-shell instructions.
 
 ## Configuration precedence
 

@@ -41,6 +41,19 @@ func NewRootCmd() *cobra.Command {
 		NewAPICmd(f),
 		NewProductsCmd(f),
 		NewFeaturesCmd(f),
+		NewSubfeaturesCmd(f),
+		NewRoadmapCmd(f),
+		NewTiersCmd(f),
+		NewSecurityCmd(f),
+		NewJourneysCmd(f),
+		NewLinkCmd(f),
+		NewGhostCmd(f),
+		NewWikiCmd(f),
+		NewDocCmd(f),
+		NewKnowledgeCmd(f),
+		NewPulseCmd(f),
+		NewMetaCmd(f),
+		NewOrgCmd(f),
 	)
 	return root
 }

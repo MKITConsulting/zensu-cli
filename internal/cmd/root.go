@@ -42,5 +42,32 @@ func NewRootCmd() *cobra.Command {
 		NewProductsCmd(f),
 		NewFeaturesCmd(f),
 	)
+	root.InitDefaultCompletionCmd()
+	augmentCompletionHelp(root)
 	return root
+}
+
+func augmentCompletionHelp(root *cobra.Command) {
+	const zshSetup = `
+macOS note: the default zsh ships with the completion system DISABLED, which is
+the most common reason 'zensu <tab>' does nothing after installing the script.
+Enable it once by adding this to ~/.zshrc (before installing), then restart zsh:
+
+    autoload -Uz compinit; compinit
+
+If completions still don't show up, the completion cache is stale — rebuild it:
+
+    rm -f ~/.zcompdump*; exec zsh`
+
+	for _, c := range root.Commands() {
+		if c.Name() != "completion" {
+			continue
+		}
+		for _, sub := range c.Commands() {
+			if sub.Name() == "zsh" {
+				sub.Long = sub.Long + "\n" + zshSetup
+			}
+		}
+		return
+	}
 }

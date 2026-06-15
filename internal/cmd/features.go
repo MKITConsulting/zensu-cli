@@ -52,6 +52,11 @@ func NewFeaturesCmd(f *Factory) *cobra.Command {
 		newFeaturesCreateCmd(f),
 		newFeaturesUpdateCmd(f),
 		newFeaturesStatusCmd(f),
+		newFeaturesHistoryCmd(f),
+		newFeaturesDeprecateCmd(f),
+		newFeaturesSplitCmd(f),
+		newFeaturesMergeCmd(f),
+		newFeaturesRevisionCmd(f),
 	)
 	return cmd
 }
@@ -249,4 +254,221 @@ func newFeaturesStatusCmd(f *Factory) *cobra.Command {
 			return err
 		},
 	}
+}
+
+func newFeaturesHistoryCmd(f *Factory) *cobra.Command {
+	return &cobra.Command{
+		Use:          "history <feature-id>",
+		Short:        "Show a feature's full history timeline",
+		Long:         "Get the complete history of a feature including status changes, revisions, lifecycle events and security changes. Returns a chronological timeline.",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/features/"+args[0]+"/history", nil)
+			if err != nil {
+				return err
+			}
+			return printJSON(f.Out, raw)
+		},
+	}
+}
+
+func newFeaturesDeprecateCmd(f *Factory) *cobra.Command {
+	var reason, replacement, removalPlannedAt string
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:          "deprecate <feature-id>",
+		Short:        "Deprecate a feature",
+		Long:         "Deprecate a feature. Optionally link a replacement feature and set a planned removal date.",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]string{}
+			if reason != "" {
+				payload["reason"] = reason
+			}
+			if replacement != "" {
+				payload["replacementId"] = replacement
+			}
+			if removalPlannedAt != "" {
+				payload["removalPlannedAt"] = removalPlannedAt
+			}
+			body, err := json.Marshal(payload)
+			if err != nil {
+				return err
+			}
+			raw, err := f.request(cmd.Context(), http.MethodPost, "/api/features/"+args[0]+"/lifecycle/deprecate", body)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				return printJSON(f.Out, raw)
+			}
+			_, err = fmt.Fprintf(f.Out, "Deprecated feature %s\n", args[0])
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for deprecation")
+	cmd.Flags().StringVar(&replacement, "replacement", "", "UUID of the replacement feature")
+	cmd.Flags().StringVar(&removalPlannedAt, "removal-planned-at", "", "planned removal date (RFC3339)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	return cmd
+}
+
+func newFeaturesSplitCmd(f *Factory) *cobra.Command {
+	var children, reason string
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:          "split <feature-id>",
+		Short:        "Split a feature into multiple child features",
+		Long:         "Split a feature into multiple child features. The original feature is marked as 'split' and new child features are created. Use when a feature has grown too large.",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if children == "" {
+				return fmt.Errorf("--children is required")
+			}
+			var childList []map[string]any
+			if err := json.Unmarshal([]byte(children), &childList); err != nil {
+				return fmt.Errorf("--children must be a JSON array of {\"title\",\"slug\"} objects: %w", err)
+			}
+			payload := map[string]any{"children": childList}
+			if reason != "" {
+				payload["reason"] = reason
+			}
+			body, err := json.Marshal(payload)
+			if err != nil {
+				return err
+			}
+			raw, err := f.request(cmd.Context(), http.MethodPost, "/api/features/"+args[0]+"/lifecycle/split", body)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				return printJSON(f.Out, raw)
+			}
+			_, err = fmt.Fprintf(f.Out, "Split feature %s into %d child feature(s)\n", args[0], len(childList))
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&children, "children", "", "JSON array of child features, each with 'title' and 'slug' (required)")
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for splitting")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	return cmd
+}
+
+func newFeaturesMergeCmd(f *Factory) *cobra.Command {
+	var sources, title, slug, reason string
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:          "merge <feature-id>",
+		Short:        "Merge source features into a target feature",
+		Long:         "Merge multiple source features into a new target feature. Source features are marked as 'merged'. Use when separate features should be combined.",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if sources == "" || title == "" || slug == "" {
+				return fmt.Errorf("--source, --title and --slug are required")
+			}
+			var sourceIDs []string
+			if err := json.Unmarshal([]byte(sources), &sourceIDs); err != nil {
+				return fmt.Errorf("--source must be a JSON array of feature UUIDs: %w", err)
+			}
+			payload := map[string]any{
+				"sourceIds": sourceIDs,
+				"title":     title,
+				"slug":      slug,
+			}
+			if reason != "" {
+				payload["reason"] = reason
+			}
+			body, err := json.Marshal(payload)
+			if err != nil {
+				return err
+			}
+			raw, err := f.request(cmd.Context(), http.MethodPost, "/api/features/"+args[0]+"/lifecycle/merge", body)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				return printJSON(f.Out, raw)
+			}
+			_, err = fmt.Fprintf(f.Out, "Merged %d feature(s) into %s (%s)\n", len(sourceIDs), slug, args[0])
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&sources, "source", "", "JSON array of source feature UUIDs to merge (required)")
+	cmd.Flags().StringVar(&title, "title", "", "title for the merged feature (required)")
+	cmd.Flags().StringVar(&slug, "slug", "", "slug for the merged feature (required)")
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for merging")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	return cmd
+}
+
+func newFeaturesRevisionCmd(f *Factory) *cobra.Command {
+	var scopeSummary, scopeDetails, targetRelease, estimatedEffort, assignee, createdBy string
+	var coverageTarget float64
+	var docsRequired, asJSON bool
+	cmd := &cobra.Command{
+		Use:          "revision <feature-id>",
+		Short:        "Create a new revision (version) of a feature",
+		Long:         "Create a new revision (version) of a feature. Each revision tracks scope changes, acceptance criteria and breaking changes. Revisions are auto-versioned (v1, v2, ...).",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if scopeSummary == "" {
+				return fmt.Errorf("--scope-summary is required")
+			}
+			payload := map[string]any{"scopeSummary": scopeSummary}
+			if scopeDetails != "" {
+				payload["scopeDetails"] = scopeDetails
+			}
+			if targetRelease != "" {
+				payload["targetRelease"] = targetRelease
+			}
+			if estimatedEffort != "" {
+				payload["estimatedEffort"] = estimatedEffort
+			}
+			if assignee != "" {
+				payload["assignee"] = assignee
+			}
+			if cmd.Flags().Changed("coverage-target") {
+				payload["coverageTarget"] = coverageTarget
+			}
+			if cmd.Flags().Changed("docs-required") {
+				payload["docsRequired"] = docsRequired
+			}
+			if createdBy != "" {
+				payload["createdBy"] = createdBy
+			}
+			body, err := json.Marshal(payload)
+			if err != nil {
+				return err
+			}
+			raw, err := f.request(cmd.Context(), http.MethodPost, "/api/features/"+args[0]+"/revisions", body)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				return printJSON(f.Out, raw)
+			}
+			var rev struct {
+				ID      string `json:"id"`
+				Version string `json:"version"`
+			}
+			_ = json.Unmarshal(raw, &rev)
+			_, err = fmt.Fprintf(f.Out, "Created revision %s for feature %s (%s)\n", rev.Version, args[0], rev.ID)
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&scopeSummary, "scope-summary", "", "brief summary of the revision scope (required)")
+	cmd.Flags().StringVar(&scopeDetails, "scope-details", "", "detailed scope description")
+	cmd.Flags().StringVar(&targetRelease, "target-release", "", "target release version")
+	cmd.Flags().StringVar(&estimatedEffort, "estimated-effort", "", "estimated effort: S|M|L|XL")
+	cmd.Flags().StringVar(&assignee, "assignee", "", "assignee identifier")
+	cmd.Flags().Float64Var(&coverageTarget, "coverage-target", 0, "coverage target percentage (0-100)")
+	cmd.Flags().BoolVar(&docsRequired, "docs-required", false, "whether documentation is required for this revision")
+	cmd.Flags().StringVar(&createdBy, "created-by", "", "creator identifier: api|mcp|web-ui|github-sync")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	return cmd
 }

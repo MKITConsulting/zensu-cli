@@ -241,6 +241,182 @@ func TestFeaturesUpdate_RejectsEmptyTitle(t *testing.T) {
 	}
 }
 
+func TestFeaturesHistory(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/features/f1/history" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"featureId": "f1",
+			"entries":   []map[string]any{{"type": "status_change", "timestamp": "2024-01-01T00:00:00Z"}},
+		})
+	}))
+	defer srv.Close()
+
+	f, out := testFactory(srv)
+	cmd := NewFeaturesCmd(f)
+	if err := runCmd(t, cmd, "history", "f1"); err != nil {
+		t.Fatalf("features history error: %v", err)
+	}
+	if !strings.Contains(out.String(), "status_change") {
+		t.Errorf("history output missing entries: %s", out.String())
+	}
+}
+
+func TestFeaturesDeprecate(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/features/f1/lifecycle/deprecate" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "f1", "status": "deprecated"})
+	}))
+	defer srv.Close()
+
+	f, out := testFactory(srv)
+	cmd := NewFeaturesCmd(f)
+	if err := runCmd(t, cmd, "deprecate", "f1", "--reason", "obsolete", "--replacement", "f2", "--removal-planned-at", "2025-01-01T00:00:00Z"); err != nil {
+		t.Fatalf("features deprecate error: %v", err)
+	}
+	if body["reason"] != "obsolete" || body["replacementId"] != "f2" || body["removalPlannedAt"] != "2025-01-01T00:00:00Z" {
+		t.Errorf("deprecate body must carry reason, replacementId, removalPlannedAt: %v", body)
+	}
+	if !strings.Contains(out.String(), "f1") {
+		t.Errorf("deprecate output missing feature id: %s", out.String())
+	}
+}
+
+func TestFeaturesSplit(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/features/f1/lifecycle/split" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewEncoder(w).Encode(map[string]any{"sourceFeature": map[string]any{"id": "f1"}, "children": []map[string]any{{"id": "c1"}}})
+	}))
+	defer srv.Close()
+
+	f, out := testFactory(srv)
+	cmd := NewFeaturesCmd(f)
+	if err := runCmd(t, cmd, "split", "f1", "--children", `[{"title":"Child A","slug":"child-a"}]`, "--reason", "too big"); err != nil {
+		t.Fatalf("features split error: %v", err)
+	}
+	if body["reason"] != "too big" {
+		t.Errorf("split body must carry reason: %v", body)
+	}
+	kids, ok := body["children"].([]any)
+	if !ok || len(kids) != 1 {
+		t.Fatalf("split body must carry a children array: %v", body["children"])
+	}
+	first, _ := kids[0].(map[string]any)
+	if first["title"] != "Child A" || first["slug"] != "child-a" {
+		t.Errorf("split child must carry title and slug: %v", first)
+	}
+	if !strings.Contains(out.String(), "f1") {
+		t.Errorf("split output missing feature id: %s", out.String())
+	}
+}
+
+func TestFeaturesSplit_RequiresChildren(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("server must not be called when --children is missing")
+	}))
+	defer srv.Close()
+
+	f, _ := testFactory(srv)
+	cmd := NewFeaturesCmd(f)
+	if err := runCmd(t, cmd, "split", "f1"); err == nil {
+		t.Fatal("features split without --children should error")
+	}
+}
+
+func TestFeaturesMerge(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/features/f1/lifecycle/merge" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "f1", "slug": "merged"})
+	}))
+	defer srv.Close()
+
+	f, out := testFactory(srv)
+	cmd := NewFeaturesCmd(f)
+	if err := runCmd(t, cmd, "merge", "f1", "--source", `["f2","f3"]`, "--title", "Merged", "--slug", "merged"); err != nil {
+		t.Fatalf("features merge error: %v", err)
+	}
+	if body["title"] != "Merged" || body["slug"] != "merged" {
+		t.Errorf("merge body must carry title and slug: %v", body)
+	}
+	ids, ok := body["sourceIds"].([]any)
+	if !ok || len(ids) != 2 || ids[0] != "f2" || ids[1] != "f3" {
+		t.Errorf("merge body must carry sourceIds array: %v", body["sourceIds"])
+	}
+	if !strings.Contains(out.String(), "merged") {
+		t.Errorf("merge output missing merged slug: %s", out.String())
+	}
+}
+
+func TestFeaturesMerge_RequiresSourceTitleSlug(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("server must not be called when required merge flags are missing")
+	}))
+	defer srv.Close()
+
+	f, _ := testFactory(srv)
+	cmd := NewFeaturesCmd(f)
+	if err := runCmd(t, cmd, "merge", "f1", "--source", `["f2"]`); err == nil {
+		t.Fatal("features merge without --title and --slug should error")
+	}
+}
+
+func TestFeaturesRevision(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/features/f1/revisions" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "r1", "version": "v2"})
+	}))
+	defer srv.Close()
+
+	f, out := testFactory(srv)
+	cmd := NewFeaturesCmd(f)
+	if err := runCmd(t, cmd, "revision", "f1", "--scope-summary", "expand scope", "--coverage-target", "80", "--docs-required"); err != nil {
+		t.Fatalf("features revision error: %v", err)
+	}
+	if body["scopeSummary"] != "expand scope" {
+		t.Errorf("revision body must carry scopeSummary: %v", body)
+	}
+	if body["coverageTarget"] != float64(80) {
+		t.Errorf("revision body must carry coverageTarget when set: %v", body["coverageTarget"])
+	}
+	if body["docsRequired"] != true {
+		t.Errorf("revision body must carry docsRequired when set: %v", body["docsRequired"])
+	}
+	if !strings.Contains(out.String(), "v2") {
+		t.Errorf("revision output missing version: %s", out.String())
+	}
+}
+
+func TestFeaturesRevision_RequiresScopeSummary(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("server must not be called when --scope-summary is missing")
+	}))
+	defer srv.Close()
+
+	f, _ := testFactory(srv)
+	cmd := NewFeaturesCmd(f)
+	if err := runCmd(t, cmd, "revision", "f1"); err == nil {
+		t.Fatal("features revision without --scope-summary should error")
+	}
+}
+
 func TestSlugifyCapsAtBackendLimit(t *testing.T) {
 	got := slugify(strings.Repeat("ab ", 120))
 	if got == "" {

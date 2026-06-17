@@ -12,7 +12,7 @@ import (
 
 func TestNewRootCmd_RegistersSubcommands(t *testing.T) {
 	root := NewRootCmd()
-	want := map[string]bool{"auth": false, "api": false, "products": false, "features": false}
+	want := map[string]bool{"auth": false, "products": false, "features": false}
 	for _, c := range root.Commands() {
 		if _, ok := want[c.Name()]; ok {
 			want[c.Name()] = true

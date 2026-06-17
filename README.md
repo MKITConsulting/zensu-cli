@@ -11,6 +11,16 @@ subsystem. It works against the hosted service and any self-hosted deployment.
 
 No Go toolchain required for any option except the last two.
 
+### Homebrew (macOS / Linux)
+
+```bash
+brew install --cask mkitconsulting/tap/zensu
+```
+
+Taps `MKITConsulting/homebrew-tap` and installs the latest release. Upgrade with
+`brew upgrade --cask zensu`. The macOS Gatekeeper quarantine is cleared on install,
+so the unsigned binary runs without a security prompt.
+
 ### Install script (Linux / macOS)
 
 ```bash

@@ -48,6 +48,28 @@ checksum:
   name_template: "zensu_{{ .Version }}_checksums.txt"
   algorithm: sha256
 
+homebrew_casks:
+  - name: zensu
+    repository:
+      owner: MKITConsulting
+      name: homebrew-tap
+      branch: main
+      git:
+        url: "git@github.com:MKITConsulting/homebrew-tap.git"
+        private_key: "{{ .Env.HOMEBREW_TAP_DEPLOY_KEY }}"
+    directory: Casks
+    homepage: "https://zensu.dev/"
+    description: "GitHub-CLI-style terminal client for the Zensu Product Lifecycle Manager"
+    license: "Apache-2.0"
+    commit_author:
+      name: zensu-release-bot
+      email: noreply@zensu.dev
+    commit_msg_template: "chore(zensu): cask update for {{ .ProjectName }} {{ .Tag }}"
+    hooks:
+      post:
+        install: |
+          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/zensu"] if OS.mac?
+
 dockers:
   - image_templates:
       - "ghcr.io/mkitconsulting/zensu-cli:{{ .Version }}-amd64"

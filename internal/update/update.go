@@ -28,6 +28,16 @@ const (
 
 var githubAPIBase = "https://api.github.com"
 
+var httpClient = &http.Client{
+	Timeout: fetchTimeout,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) > 0 && req.URL.Host != via[0].URL.Host {
+			return fmt.Errorf("refusing cross-host redirect to %s", req.URL.Host)
+		}
+		return nil
+	},
+}
+
 var graceWait = 300 * time.Millisecond
 
 var osArgs = func() []string { return os.Args[1:] }
@@ -176,7 +186,7 @@ func fetchLatest(ctx context.Context, current string) (string, error) {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "zensu-cli/"+current)
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}

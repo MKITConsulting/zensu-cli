@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -298,6 +300,9 @@ func TestStartRunsCheckWhenInteractive(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Start did not yield in time")
 	}
+	if c, err := loadCache(); err != nil || c.LatestVersion != "v3.0.0" {
+		t.Errorf("Start goroutine should have persisted v3.0.0 before teardown; got %q err=%v", c.LatestVersion, err)
+	}
 }
 
 func TestSaveCacheErrorsWhenDirUnusable(t *testing.T) {
@@ -368,5 +373,64 @@ func TestNoticeRejectsMaliciousFreshCache(t *testing.T) {
 	}
 	if n := atomic.LoadUint32(hits); n != 0 {
 		t.Errorf("fresh cache should not refetch, got %d hits", n)
+	}
+}
+
+func TestNoticeRefetchesAtFreshnessBoundary(t *testing.T) {
+	t.Setenv("ZENSU_CONFIG_DIR", t.TempDir())
+	hits := fakeGitHub(t, "v2.0.0", http.StatusOK)
+	now := time.Now()
+	if err := saveCache(cache{CheckedAt: now.Add(-checkInterval), LatestVersion: "v1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	got := Notice(context.Background(), "1.2.3", now)
+	if !strings.Contains(got, "v2.0.0") {
+		t.Errorf("notice = %q, want refetched v2.0.0 at the exact freshness boundary", got)
+	}
+	if n := atomic.LoadUint32(hits); n != 1 {
+		t.Errorf("cache aged exactly checkInterval must refetch (predicate is strict <), got %d hits", n)
+	}
+}
+
+func TestSaveCacheRenameFails(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ZENSU_CONFIG_DIR", dir)
+	if err := os.Mkdir(filepath.Join(dir, cacheFileName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveCache(cache{CheckedAt: time.Now(), LatestVersion: "v1.0.0"}); err == nil {
+		t.Error("saveCache should error when the rename target is a directory")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Errorf("orphaned temp file left behind after failed rename: %s", e.Name())
+		}
+	}
+}
+
+func TestSaveCacheConcurrent(t *testing.T) {
+	t.Setenv("ZENSU_CONFIG_DIR", t.TempDir())
+	const n = 8
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if err := saveCache(cache{CheckedAt: time.Now(), LatestVersion: fmt.Sprintf("v1.0.%d", i)}); err != nil {
+				t.Errorf("concurrent saveCache: %v", err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	c, err := loadCache()
+	if err != nil {
+		t.Fatalf("loadCache after concurrent writes: %v", err)
+	}
+	if !strings.HasPrefix(c.LatestVersion, "v1.0.") {
+		t.Errorf("cache torn/empty after concurrent writes: %q", c.LatestVersion)
 	}
 }

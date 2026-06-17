@@ -1,0 +1,28 @@
+TDD STARTED — Notify-only update-check | steps: 4 | mode: vanilla
+EXECUTION STARTED — vanilla mode, 4 steps
+S1 IMPL completed — files: internal/update/update.go
+S2 IMPL completed — files: internal/update/update_test.go
+S1+S2 TESTED — go test -race ./internal/update/... ok (1.782s)
+S3 WIRED — cmd/zensu/main.go (update.Start before Execute, update.Finish after); go build ./... ok
+S4 WIRED — README.md Updates section (manual update + auto-check + ZENSU_NO_UPDATE_CHECK)
+PHASE5 CHECKPOINT — cmd="cd \"${CLAUDE_PROJECT_DIR:-.}\" && go test -race ./..." exit=0 result="all packages ok (update incl.)"
+PHASE5 CHECKPOINT — cmd="cd \"${CLAUDE_PROJECT_DIR:-.}\" && go vet ./..." exit=0 result="clean, no diagnostics"
+AUDIT — cmd="cd \"${CLAUDE_PROJECT_DIR:-.}\" && go test ./..." exit=0 result="all packages ok"
+AUDIT — cmd="cd \"${CLAUDE_PROJECT_DIR:-.}\" && make build" exit=0 result="build ok -> bin/zensu"
+COVERAGE BELOW THRESHOLD on 1 file: internal/update/update.go (88.7% total vs 90% default; public API 100%, gap = defensive I/O error branches)
+COVERAGE DECISION — user accepted 88.7% (public API 100%; default threshold, project enforces none)
+WITNESS CROSS-CHECK — go test -race ./... | go test ./... | make build | go vet ./... all VERIFIED in witness log; no FAIL/panic markers in test tails (PASS corroborated)
+DISCIPLINE AUDIT SKIPPED — vanilla mode (mtime + cross-layer audits not applicable)
+PRECONDITION DRIFT AUDIT — no CLI preconditions with install/substitute decision; nothing to drift (go test built-in; GitHub endpoint HTTP-mocked)
+STEP/CODE MATCH — S1 pkg present & used by main.go; S2 tests green; S3 wiring builds; S4 README section added
+VANILLA COMPLETE — 2/2 implemented (S1,S2) | Integration: 2 WIRED (S3,S4) | Build: ✓ passed | Coverage: 0/1 files >= 90% (88.7%, accepted)
+REVIEW ROUND 1 — fixed 9 findings (sec: tag-sanitize + LimitReader; tests: UA-value, hit-counts, stale-persist, osArgs seam, graceWait var, malicious-tag + validVersion tests; arch: ctx-cancel; conv: inline 30s). Declined 3 w/ rationale (#9 struct refactor, #10 self-update LatestRelease, #12 func-var seam).
+AUDIT — cmd="cd \"${CLAUDE_PROJECT_DIR:-.}\" && go test -race ./..." exit=0 result="all packages ok"
+AUDIT — cmd="cd \"${CLAUDE_PROJECT_DIR:-.}\" && go vet ./... && echo \"VET_OK\" && go build ./... && echo \"BUILD_OK\"" exit=0 result="vet clean, build ok"
+AUDIT — coverage internal/update/update.go total 89.1% (up from 88.7%; user accepted <90% default)
+WITNESS CROSS-CHECK round 1 — go test -race ./... | go vet ./... | go build ./... | go tool cover all VERIFIED in witness (earlier GAP was a quote-escaping artifact); no FAIL/panic in test tails
+REVIEW ROUND 2 — fixed both suggestions: (1) TestNoticeRejectsMaliciousFreshCache test-locks render-time cache revalidation; (2) regex caps numeric components \d{1,9} so oversized tags rejected not zeroed (+validVersion oversized case)
+AUDIT — cmd="cd \"${CLAUDE_PROJECT_DIR:-.}\" && go test -race ./... && echo \"===VET===\" && go vet ./... ..." exit=0 result="race suite ok, vet clean, build ok, coverage 89.1%"
+SELF-REVIEW FIX ROUND — must-fix: stripped all comments from internal/update/*.go to honor user CLAUDE.md 'NEVER ADD COMMENTS' (overrides Go doc-comment idiom). Behavior unchanged; race suite + vet + build green.
+SELF-REVIEW PASS 2 — latch set; no new must-fix; finalizing chain
+CHAIN DONE — review chain converged (2 review rounds: round1 fixed 9, round2 fixed 2; PASS) + self-review (1 fix round: comments stripped)

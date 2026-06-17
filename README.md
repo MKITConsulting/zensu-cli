@@ -57,6 +57,24 @@ make build        # -> bin/zensu
 make install      # -> $GOBIN/zensu
 ```
 
+## Updates
+
+To update, re-run whichever method installed `zensu` — each one overwrites the
+binary in place with the latest release:
+
+```bash
+curl -fsSL https://zensu.dev/install.sh | sh        # Linux / macOS
+irm https://zensu.dev/install.ps1 | iex             # Windows / PowerShell
+go install github.com/MKITConsulting/zensu-cli/cmd/zensu@latest
+docker pull ghcr.io/mkitconsulting/zensu-cli:latest
+```
+
+`zensu` checks GitHub for a newer release at most once every 24 hours and, when
+one exists, prints a one-line hint to stderr after your command finishes. The
+check is cached, never blocks the command, and is automatically skipped in
+non-interactive contexts (pipes, redirects, CI). Opt out entirely by setting
+`ZENSU_NO_UPDATE_CHECK` (or the conventional `NO_UPDATE_NOTIFIER`).
+
 ## Authentication
 
 ```bash

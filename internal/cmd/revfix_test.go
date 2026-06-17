@@ -4,54 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/MKITConsulting/zensu-cli/internal/config"
 )
-
-func TestBuildBody_InputFileAndStdin(t *testing.T) {
-	dir := t.TempDir()
-	fp := filepath.Join(dir, "body.json")
-	if err := os.WriteFile(fp, []byte(`{"k":"v"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	got, err := buildBody(nil, fp, nil)
-	if err != nil || string(got) != `{"k":"v"}` {
-		t.Errorf("file input: got %q err %v", got, err)
-	}
-
-	got, err = buildBody(nil, "-", strings.NewReader(`{"s":1}`))
-	if err != nil || string(got) != `{"s":1}` {
-		t.Errorf("stdin input: got %q err %v", got, err)
-	}
-}
-
-func TestBuildBody_InvalidField(t *testing.T) {
-	if _, err := buildBody([]string{"noequalssign"}, "", nil); err == nil {
-		t.Error("field without = should error")
-	}
-	if _, err := buildBody([]string{"=v"}, "", nil); err == nil {
-		t.Error("field with empty key should error")
-	}
-}
-
-func TestAPICmd_NonJSONErrorBody(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("gateway down"))
-	}))
-	defer srv.Close()
-
-	f, _ := testFactory(srv)
-	cmd := NewAPICmd(f)
-	err := runCmd(t, cmd, "GET", "/api/x")
-	if err == nil || !strings.Contains(err.Error(), "500") || !strings.Contains(err.Error(), "gateway down") {
-		t.Fatalf("non-JSON error should surface status+body; got %v", err)
-	}
-}
 
 func TestFeaturesList_JSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

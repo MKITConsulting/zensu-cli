@@ -101,11 +101,6 @@ zensu features get <feature-id>
 zensu features create --product <product-id> --component <component-id> --title "Login" [--slug login]
 zensu features update <feature-id> --title "New title" [--description ... --priority ...]
 zensu features status <feature-id> testing
-
-# Escape hatch: call any Zensu API endpoint
-zensu api /api/products
-zensu api POST /api/products -f name=Acme -f productType=public_product
-zensu api PATCH /api/features/<id>/status -f status=released
 ```
 
 `--slug` is derived from `--title` when omitted. Add `--json` to typed commands

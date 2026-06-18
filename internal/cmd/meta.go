@@ -31,53 +31,79 @@ func NewMetaCmd(f *Factory) *cobra.Command {
 
 func newMetaScaffoldAgentCmd(_ *Factory) *cobra.Command {
 	var cli string
-	var asJSON bool
 	cmd := &cobra.Command{
-		Use:          "scaffold-agent",
-		Short:        "Generate CLI-specific Zensu adapter files",
-		Long:         "Generate CLI-specific adapter files for integrating Zensu with different AI coding tools. Supports Claude Code, Kiro, Cursor, and Copilot. For Claude Code, the zensu-claude-code plugin is the recommended approach.",
+		Use:   "scaffold-agent",
+		Short: "Generate CLI-specific Zensu adapter files (MCP-only)",
+		Long: mcpOnlyLong(
+			"Generate CLI-specific adapter files for integrating Zensu with different AI coding tools (Claude Code, Kiro, Cursor, Copilot).",
+			"adapter files are generated locally by the Zensu MCP server (scaffold_agent tool)",
+			"Use the Zensu MCP server, or for Claude Code the zensu-claude-code plugin (recommended).",
+		),
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return fmt.Errorf("scaffold-agent is not available over REST: adapter files are generated locally by the MCP server (scaffold_agent tool); use the Zensu MCP server or the zensu-claude-code plugin instead")
+			return mcpOnlyError(
+				"scaffold-agent",
+				"adapter files are generated locally by the MCP server (scaffold_agent tool)",
+				"use the Zensu MCP server or the zensu-claude-code plugin instead",
+			)
 		},
 	}
 	cmd.Flags().StringVar(&cli, "cli", "", "target CLI: claude-code|kiro|cursor|copilot|all (default: all)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
 }
 
 func newMetaSuggestWorkflowCmd(_ *Factory) *cobra.Command {
 	var product string
-	var asJSON bool
 	cmd := &cobra.Command{
-		Use:          "suggest-workflow",
-		Short:        "Suggest next workflow actions for a product",
-		Long:         "Analyze product state and suggest next workflow actions. Returns proactive recommendations based on missing security reviews, unlinked tests, empty journeys, and other gaps.",
+		Use:   "suggest-workflow",
+		Short: "Suggest next workflow actions for a product (MCP-only)",
+		Long: mcpOnlyLong(
+			"Analyze product state and suggest next workflow actions — proactive recommendations based on missing security reviews, unlinked tests, empty journeys, and other gaps.",
+			"the recommendation is composed inside the Zensu MCP server (suggest_workflow tool) from several read endpoints (features, journeys, ghost scans, security posture, visions)",
+			"Use the Zensu MCP server instead.",
+		),
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if product == "" {
 				return fmt.Errorf("--product is required")
 			}
-			return fmt.Errorf("suggest-workflow is not available over REST: the recommendation is composed in the MCP server (suggest_workflow tool) from several read endpoints (features, journeys, ghost scans, security posture, visions); use the Zensu MCP server instead")
+			return mcpOnlyError(
+				"suggest-workflow",
+				"the recommendation is composed in the MCP server (suggest_workflow tool) from several read endpoints (features, journeys, ghost scans, security posture, visions)",
+				"use the Zensu MCP server instead",
+			)
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product UUID (required)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
 }
 
 func newMetaWorkflowGuideCmd(_ *Factory) *cobra.Command {
-	var asJSON bool
 	cmd := &cobra.Command{
-		Use:          "workflow-guide <workflow>",
-		Short:        "Get a structured workflow guide",
-		Long:         "Get a structured workflow guide as JSON. Useful for clients without MCP prompt support. Returns step-by-step instructions with tool references. Workflow name: bootstrap|security-review|implement|pulse|ghost-scan",
+		Use:   "workflow-guide <workflow>",
+		Short: "Get a structured workflow guide (MCP-only)",
+		Long: mcpOnlyLong(
+			"Get a structured workflow guide (bootstrap|security-review|implement|pulse|ghost-scan) as step-by-step instructions with tool references.",
+			"the guide is served from a static map inside the Zensu MCP server (get_workflow_guide tool)",
+			"Use the Zensu MCP server instead.",
+		),
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			return fmt.Errorf("workflow-guide is not available over REST: the guide for %q is served from a static map inside the MCP server (get_workflow_guide tool); use the Zensu MCP server instead", args[0])
+			return mcpOnlyError(
+				"workflow-guide",
+				fmt.Sprintf("the guide for %q is served from a static map inside the MCP server (get_workflow_guide tool)", args[0]),
+				"use the Zensu MCP server instead",
+			)
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
+}
+
+func mcpOnlyError(verb, detail, useShort string) error {
+	return fmt.Errorf("%s is not available over REST: %s; %s", verb, detail, useShort)
+}
+
+func mcpOnlyLong(intro, why, useSuffix string) string {
+	return intro + "\n\nNot available over the REST CLI: " + why + ". " + useSuffix
 }

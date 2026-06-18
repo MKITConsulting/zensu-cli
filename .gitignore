@@ -2,3 +2,7 @@
 /dist/
 cover.out
 *.out
+
+# Zensu ephemeral runtime traces (kept local-only; .zensu/plans/** and .zensu/logs/*_tdd-*.log are tracked)
+.zensu/state/
+.zensu/logs/witness-*.log

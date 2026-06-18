@@ -83,3 +83,61 @@ func TestMetaWorkflowGuide_RequiresArg(t *testing.T) {
 		t.Fatal("workflow-guide without a <workflow> arg should error")
 	}
 }
+
+func TestMetaCommands_RejectRemovedJSONFlag(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("MCP-only meta commands must not call the REST API")
+	}))
+	defer srv.Close()
+
+	cases := [][]string{
+		{"scaffold-agent", "--json"},
+		{"suggest-workflow", "--json"},
+		{"workflow-guide", "bootstrap", "--json"},
+	}
+	for _, args := range cases {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			f, _ := testFactory(srv)
+			cmd := NewMetaCmd(f)
+			err := runCmd(t, cmd, args...)
+			if err == nil {
+				t.Fatalf("%s should reject the removed --json flag", args[0])
+			}
+			if !strings.Contains(err.Error(), "unknown flag") || !strings.Contains(err.Error(), "--json") {
+				t.Errorf("%s: expected unknown --json flag error, got: %v", args[0], err)
+			}
+		})
+	}
+}
+
+func TestMetaCommands_HonestHelp(t *testing.T) {
+	f, _ := testFactory(nil)
+	meta := NewMetaCmd(f)
+
+	mcpOnly := map[string]bool{
+		"scaffold-agent":   true,
+		"suggest-workflow": true,
+		"workflow-guide":   true,
+	}
+	seen := 0
+	for _, sub := range meta.Commands() {
+		if !mcpOnly[sub.Name()] {
+			continue
+		}
+		seen++
+		t.Run(sub.Name(), func(t *testing.T) {
+			if !strings.Contains(sub.Short, "(MCP-only)") {
+				t.Errorf("Short should flag the command MCP-only, got: %q", sub.Short)
+			}
+			if !strings.Contains(sub.Long, "Not available over the REST CLI") {
+				t.Errorf("Long should state the command is not available over REST, got: %q", sub.Long)
+			}
+			if !strings.Contains(sub.Long, "Zensu MCP server") {
+				t.Errorf("Long should point to the Zensu MCP server, got: %q", sub.Long)
+			}
+		})
+	}
+	if seen != len(mcpOnly) {
+		t.Errorf("expected to check %d MCP-only commands, saw %d", len(mcpOnly), seen)
+	}
+}

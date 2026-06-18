@@ -1,0 +1,26 @@
+TDD STARTED — Honest help + dead-flag removal for MCP-only meta stubs | steps: 2 | mode: vanilla
+S1 IMPL completed — files: internal/cmd/meta.go
+S2 IMPL completed — files: internal/cmd/meta_test.go
+S2 TESTED — internal/cmd/meta_test.go (TestMetaCommands_RejectRemovedJSONFlag)
+CHECKPOINT — cmd="go build ./..." exit=0 result="PASS — build clean, no output"
+CHECKPOINT — cmd="go vet ./..." exit=0 result="PASS — vet clean, no output"
+CHECKPOINT — cmd="go test ./internal/cmd/" exit=0 result="PASS — ok internal/cmd 0.462s"
+AUDIT — cmd="go test -race ./..." exit=0 result="PASS — all packages ok (auth, client, cmd, config, update)"
+AUDIT — cmd="go build ./... && echo BUILD_OK" exit=0 result="PASS — BUILD_OK"
+AUDIT CORRECTION — prior build-audit cmd= dropped quotes; literal cmd="go build ./... && echo "BUILD_OK"" exit=0 result="PASS — BUILD_OK" (witness line 17 tail=BUILD_OK)
+AUDIT — coverage(changed file internal/cmd/meta.go): NewMetaCmd 100% | newMetaScaffoldAgentCmd 100% | newMetaSuggestWorkflowCmd 100% | newMetaWorkflowGuideCmd 100% — PASS @ 90% (default-90%)
+WITNESS CROSS-CHECK — 5/5 cmd= claims verified in witness log; PASS claims corroborated (no FAIL/Error/panic in tails); no EVIDENCE GAP, no CONTRADICTION
+DISCIPLINE AUDIT SKIPPED — vanilla mode
+PRECONDITION DRIFT AUDIT — no drift (sole precondition 'go' present, decision n/a; no install/substitute/skip decisions to verify)
+VANILLA COMPLETE — 2/2 implemented | Build: ✓ passed | Coverage: 1/1 changed file (meta.go) >= 90%
+WORKTREE-DISCIPLINE FIX — edits had landed in origin repo; prior CHECKPOINT/AUDIT ran in worktree against UNCHANGED code (vacuous). Migrated via git diff>patch + git apply into worktree, restored origin to clean. Re-running full verification against migrated code below.
+AUDIT (post-migration) — cmd="go build ./..." exit=0 result="PASS — clean"
+AUDIT (post-migration) — cmd="go vet ./..." exit=0 result="PASS — clean"
+AUDIT (post-migration) — cmd="go test -race ./..." exit=0 result="PASS — internal/cmd ran fresh 1.651s (not cached), all pkgs ok"
+AUDIT (post-migration) — cmd="go test -race -run 'TestMeta' -v ./internal/cmd/" exit=0 result="PASS — 6 meta tests incl TestMetaCommands_RejectRemovedJSONFlag {scaffold-agent,suggest-workflow,workflow-guide}"
+AUDIT (post-migration) — coverage meta.go: NewMetaCmd/scaffold/suggest/workflow-guide all 100% — PASS @ 90%
+VANILLA COMPLETE (post-migration, authoritative) — 2/2 implemented | Build: ✓ passed | Coverage: meta.go 100% (>= 90%) | Tests: all green incl new --json-rejection regression | Worktree: changes confirmed in worktree, origin clean
+REVIEW ROUND 1 — applied A1 (mcpOnlyError/mcpOnlyLong helpers, exact strings preserved), T1 (TestMetaCommands_HonestHelp), T2 (assert "--json" in error), T4 (strings.Join subtest names). Declined A2 (--cli retained per user decision + existing test; no-comments rule bars doc-comment) and T3 (httptest guard kept for house-style; reviewer said no change required).
+AUDIT (round 1) — cmd="go build ./... && go vet ./..." result="PASS" | cmd="go test -race ./..." result="PASS all pkgs" | coverage meta.go all funcs 100%
+SELF-REVIEW — 7-dimension pass clean; no must-fix; advisory: A2/T3 (accepted by re-review), merge-interaction note (origin/main 786f751 relocates test fixtures). No fix round needed.
+CHAIN DONE — meta stub-honesty: 2 impl steps + 1 review-fix round | reviewer PASS (0/0/0) | self-review PASS | build/vet/test green | meta.go 100%

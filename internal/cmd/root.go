@@ -45,6 +45,8 @@ func NewRootCmd() *cobra.Command {
 		NewTiersCmd(f),
 		NewSecurityCmd(f),
 		NewJourneysCmd(f),
+		NewMocksCmd(f),
+		NewDesignCmd(f),
 		NewLinkCmd(f),
 		NewGhostCmd(f),
 		NewWikiCmd(f),

@@ -54,9 +54,7 @@ homebrew_casks:
       owner: MKITConsulting
       name: homebrew-tap
       branch: main
-      git:
-        url: "git@github.com:MKITConsulting/homebrew-tap.git"
-        private_key: "{{ .Env.HOMEBREW_TAP_DEPLOY_KEY }}"
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Casks
     homepage: "https://zensu.dev/"
     description: "GitHub-CLI-style terminal client for the Zensu Product Lifecycle Manager"

@@ -25,7 +25,7 @@ func NewGhostCmd(f *Factory) *cobra.Command {
 }
 
 func newGhostScanCmd(f *Factory) *cobra.Command {
-	var product, candidates, components, repoURL, branch string
+	var product, candidates, components, repoURL, branch, source string
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:          "scan",
@@ -43,9 +43,14 @@ func newGhostScanCmd(f *Factory) *cobra.Command {
 			if err := json.Unmarshal([]byte(candidates), &candidatesData); err != nil {
 				return fmt.Errorf("--candidates must be a JSON array: %w", err)
 			}
+			switch source {
+			case "api", "mcp", "web_ui":
+			default:
+				return fmt.Errorf("--source must be one of: api, mcp, web_ui")
+			}
 			payload := map[string]any{
 				"candidates": candidatesData,
-				"source":     "cli",
+				"source":     source,
 			}
 			if components != "" {
 				var componentsData json.RawMessage
@@ -87,6 +92,7 @@ func newGhostScanCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&components, "components", "", "optional JSON array of component objects")
 	cmd.Flags().StringVar(&repoURL, "repo-url", "", "repository URL")
 	cmd.Flags().StringVar(&branch, "branch", "", "branch name")
+	cmd.Flags().StringVar(&source, "source", "api", "scan source: api, mcp, or web_ui")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
 }

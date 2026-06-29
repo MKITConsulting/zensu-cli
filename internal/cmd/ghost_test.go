@@ -31,8 +31,8 @@ func TestGhostScan(t *testing.T) {
 	if !ok || len(cands) != 1 {
 		t.Errorf("scan body must carry candidates array: %v", body["candidates"])
 	}
-	if body["source"] != "cli" {
-		t.Errorf("scan body must set source=cli: %v", body["source"])
+	if body["source"] != "api" {
+		t.Errorf("scan body must default source=api: %v", body["source"])
 	}
 	if !strings.Contains(out.String(), "s9") {
 		t.Errorf("scan output missing scan id: %s", out.String())
@@ -65,6 +65,42 @@ func TestGhostScan_WithOptionalFlags(t *testing.T) {
 	}
 	if body["branch"] != "main" {
 		t.Errorf("scan body must carry branch: %v", body["branch"])
+	}
+}
+
+func TestGhostScan_SourceFlag(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"scan": map[string]any{"id": "s9"}})
+	}))
+	defer srv.Close()
+
+	f, _ := testFactory(srv)
+	cmd := NewGhostCmd(f)
+	if err := runCmd(t, cmd, "scan", "--product", "p1",
+		"--candidates", `[{"slug":"a","title":"A"}]`,
+		"--source", "web_ui"); err != nil {
+		t.Fatalf("ghost scan error: %v", err)
+	}
+	if body["source"] != "web_ui" {
+		t.Errorf("scan body must carry source=web_ui: %v", body["source"])
+	}
+}
+
+func TestGhostScan_RejectsInvalidSource(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("server must not be called when --source is invalid")
+	}))
+	defer srv.Close()
+
+	f, _ := testFactory(srv)
+	cmd := NewGhostCmd(f)
+	if err := runCmd(t, cmd, "scan", "--product", "p1",
+		"--candidates", `[{"slug":"a","title":"A"}]`,
+		"--source", "cli"); err == nil {
+		t.Fatal("ghost scan with invalid --source should error")
 	}
 }
 

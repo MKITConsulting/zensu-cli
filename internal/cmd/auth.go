@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/MKITConsulting/zensu-cli/internal/auth"
 	"github.com/MKITConsulting/zensu-cli/internal/config"
 )
 
@@ -35,7 +36,13 @@ func newAuthStatusCmd(f *Factory) *cobra.Command {
 			case cfg.AccessToken != "":
 				who := cfg.User
 				if who == "" {
-					who = "(unknown user)"
+					if email, org := auth.IdentityFromToken(cfg.AccessToken); email != "" {
+						cfg.SetIdentity(email, org)
+						who = email
+						_ = cfg.Save()
+					} else {
+						who = "(unknown user)"
+					}
 				}
 				fmt.Fprintf(f.Out, "Logged in to %s as %s", host, who)
 				if cfg.Org != "" {

@@ -120,3 +120,10 @@ func (c *Config) ResolveAPIURL(flag, env string) string {
 		return DefaultAPIURL
 	}
 }
+
+func (c *Config) SetIdentity(email, org string) {
+	c.User = email
+	if org != "" {
+		c.Org = org
+	}
+}

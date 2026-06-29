@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,19 +8,6 @@ import (
 
 	"github.com/MKITConsulting/zensu-cli/internal/config"
 )
-
-func TestIdentityFromToken(t *testing.T) {
-	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"a@b.c","orgName":"Acme"}`))
-	tok := "h." + payload + ".sig"
-	email, org := identityFromToken(tok)
-	if email != "a@b.c" || org != "Acme" {
-		t.Errorf("identityFromToken = (%q,%q), want (a@b.c, Acme)", email, org)
-	}
-
-	if e, o := identityFromToken("not-a-jwt"); e != "" || o != "" {
-		t.Errorf("malformed token should yield empty, got (%q,%q)", e, o)
-	}
-}
 
 func TestLoginWithToken_ValidatesAndPersists(t *testing.T) {
 	t.Setenv("ZENSU_CONFIG_DIR", t.TempDir())

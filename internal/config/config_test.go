@@ -10,6 +10,23 @@ import (
 	"github.com/MKITConsulting/zensu-cli/internal/config"
 )
 
+func TestSetIdentity(t *testing.T) {
+	c := &config.Config{User: "old@x", Org: "OldOrg"}
+
+	c.SetIdentity("new@x", "NewOrg")
+	if c.User != "new@x" || c.Org != "NewOrg" {
+		t.Errorf("full identity: got (%q,%q)", c.User, c.Org)
+	}
+
+	c.SetIdentity("solo@x", "")
+	if c.User != "solo@x" {
+		t.Errorf("email should update: got %q", c.User)
+	}
+	if c.Org != "NewOrg" {
+		t.Errorf("empty org must not clobber existing org: got %q", c.Org)
+	}
+}
+
 func TestLoad_MissingFileReturnsEmptyConfig(t *testing.T) {
 	t.Setenv("ZENSU_CONFIG_DIR", t.TempDir())
 

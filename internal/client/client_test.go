@@ -2,6 +2,7 @@ package client_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -95,6 +96,99 @@ func TestDo_RefreshesExpiredTokenBeforeRequest(t *testing.T) {
 	}
 	if !saved {
 		t.Error("expected refreshed tokens to be persisted via saver")
+	}
+}
+
+func TestDo_RefreshUpdatesIdentityFromJWT(t *testing.T) {
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"dev@zensu.dev","orgName":"Zensu"}`))
+	jwt := "h." + payload + ".sig"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/oauth/token":
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": jwt, "refresh_token": "new-ref", "expires_in": 900})
+		case "/api/products":
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	now := time.Now()
+	cfg := &config.Config{AccessToken: "old-acc", RefreshToken: "old-ref", ExpiresAt: now.Add(-time.Minute)}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token",
+		client.WithHTTPClient(srv.Client()),
+		client.WithClock(func() time.Time { return now }),
+		client.WithSaver(func(*config.Config) error { return nil }),
+	)
+	resp, err := c.Do(context.Background(), http.MethodGet, "/api/products", nil)
+	if err != nil {
+		t.Fatalf("Do error: %v", err)
+	}
+	resp.Body.Close()
+	if cfg.User != "dev@zensu.dev" || cfg.Org != "Zensu" {
+		t.Errorf("identity not updated after refresh: %+v", cfg)
+	}
+}
+
+func TestDo_RefreshKeepsIdentityWhenOpaque(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/oauth/token":
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "opaque-new", "refresh_token": "new-ref", "expires_in": 900})
+		case "/api/products":
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	now := time.Now()
+	cfg := &config.Config{User: "old@x", Org: "OldOrg", AccessToken: "old-acc", RefreshToken: "old-ref", ExpiresAt: now.Add(-time.Minute)}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token",
+		client.WithHTTPClient(srv.Client()),
+		client.WithClock(func() time.Time { return now }),
+		client.WithSaver(func(*config.Config) error { return nil }),
+	)
+	resp, err := c.Do(context.Background(), http.MethodGet, "/api/products", nil)
+	if err != nil {
+		t.Fatalf("Do error: %v", err)
+	}
+	resp.Body.Close()
+	if cfg.User != "old@x" || cfg.Org != "OldOrg" {
+		t.Errorf("opaque refresh wiped existing identity: %+v", cfg)
+	}
+}
+
+func TestDo_RefreshKeepsOrgWhenJWTHasNoOrg(t *testing.T) {
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"new@x"}`))
+	jwt := "h." + payload + ".sig"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/oauth/token":
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": jwt, "refresh_token": "new-ref", "expires_in": 900})
+		case "/api/products":
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	now := time.Now()
+	cfg := &config.Config{User: "old@x", Org: "OldOrg", AccessToken: "old-acc", RefreshToken: "old-ref", ExpiresAt: now.Add(-time.Minute)}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token",
+		client.WithHTTPClient(srv.Client()),
+		client.WithClock(func() time.Time { return now }),
+		client.WithSaver(func(*config.Config) error { return nil }),
+	)
+	resp, err := c.Do(context.Background(), http.MethodGet, "/api/products", nil)
+	if err != nil {
+		t.Fatalf("Do error: %v", err)
+	}
+	resp.Body.Close()
+	if cfg.User != "new@x" {
+		t.Errorf("email not updated on refresh: %q", cfg.User)
+	}
+	if cfg.Org != "OldOrg" {
+		t.Errorf("org clobbered by JWT without orgName: %q", cfg.Org)
 	}
 }
 

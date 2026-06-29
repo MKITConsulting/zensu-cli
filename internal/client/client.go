@@ -110,6 +110,9 @@ func (c *Client) refresh(ctx context.Context) error {
 	if tok.ExpiresIn > 0 {
 		c.cfg.ExpiresAt = c.now().Add(time.Duration(tok.ExpiresIn) * time.Second)
 	}
+	if email, org := auth.IdentityFromToken(tok.AccessToken); email != "" {
+		c.cfg.SetIdentity(email, org)
+	}
 	return c.save(c.cfg)
 }
 

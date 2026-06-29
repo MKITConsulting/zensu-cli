@@ -1,0 +1,22 @@
+TDD STARTED — CLI self-heals user identity from JWT | steps: 3 | mode: vanilla
+S1 IMPL completed — files: internal/auth/identity.go, internal/cmd/login.go, internal/auth/identity_test.go, internal/cmd/login_test.go
+S1 TESTED — internal/auth/identity_test.go
+S2 IMPL completed — files: internal/cmd/auth.go, internal/cmd/auth_test.go
+S2 TESTED — internal/cmd/auth_test.go (backfill + opaque)
+S3 IMPL completed — files: internal/client/client.go, internal/client/client_test.go
+S3 TESTED — internal/client/client_test.go (refresh identity)
+AUDIT — cmd="go build ./..." exit=0 result="PASS — build clean"
+AUDIT — cmd="go vet ./..." exit=0 result="PASS — no vet diagnostics"
+AUDIT — cmd="go test -race ./..." exit=0 result="PASS — all packages ok"
+DISCIPLINE AUDIT SKIPPED — vanilla mode
+VANILLA COMPLETE — 3/3 implemented | Build: ✓ passed | Coverage: changed-code paths covered (identity.go 100%, refresh 100%, status 91.7%); login.go file dragged by pre-existing loginWithBrowser 0%
+REVIEW ROUND 1 — fixed: Org-clobber guard (client.go:113, auth.go:40) via config.SetIdentity; control-char strip in IdentityFromToken; +6 regression tests (auth,client,cmd,config)
+AUDIT — cmd="go build ./..." exit=0 result="PASS — build clean"
+AUDIT — cmd="go vet ./..." exit=0 result="PASS — no diagnostics"
+AUDIT — cmd="go test -race ./..." exit=0 result="PASS — all packages ok"
+REVIEW ROUND 2 — fixed: loginWithBrowser reverted to unconditional cfg.User,cfg.Org assignment (full-replace on fresh login); SetIdentity merge kept for status+refresh self-heal only. Status Save() best-effort kept by design.
+AUDIT — cmd="go build ./..." exit=0 result="PASS"
+AUDIT — cmd="go vet ./..." exit=0 result="PASS"
+AUDIT — cmd="go test -race ./..." exit=0 result="PASS — all packages ok"
+SELF-REVIEW — PASS, no must-fix (1 advisory: status Save() best-effort, kept by design)
+VANILLA COMPLETE — 3/3 implemented | Build: ✓ | Vet: ✓ | Tests: go test -race ./... PASS | Review chain: PASS (0 findings) after 2 fix rounds | Coverage: new-code paths 100% (IdentityFromToken, stripControl, refresh, SetIdentity), newAuthStatusCmd 91.7%

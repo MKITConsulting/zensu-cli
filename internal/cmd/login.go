@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -107,7 +105,7 @@ func (f *Factory) loginWithBrowser(ctx context.Context, httpClient *http.Client,
 	if tok.ExpiresIn > 0 {
 		cfg.ExpiresAt = time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second)
 	}
-	email, org := identityFromToken(tok.AccessToken)
+	email, org := auth.IdentityFromToken(tok.AccessToken)
 	cfg.User, cfg.Org = email, org
 	if err := cfg.Save(); err != nil {
 		return err
@@ -119,23 +117,4 @@ func (f *Factory) loginWithBrowser(ctx context.Context, httpClient *http.Client,
 	}
 	fmt.Fprintf(f.Out, "Logged in to %s as %s\n", apiURL, who)
 	return nil
-}
-
-func identityFromToken(token string) (email, org string) {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return "", ""
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return "", ""
-	}
-	var claims struct {
-		Email   string `json:"email"`
-		OrgName string `json:"orgName"`
-	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return "", ""
-	}
-	return claims.Email, claims.OrgName
 }

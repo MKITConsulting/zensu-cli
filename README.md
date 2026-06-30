@@ -18,8 +18,8 @@ brew install --cask mkitconsulting/tap/zensu
 ```
 
 Taps `MKITConsulting/homebrew-tap` and installs the latest release. Upgrade with
-`brew upgrade --cask zensu`. The macOS Gatekeeper quarantine is cleared on install,
-so the unsigned binary runs without a security prompt.
+`brew upgrade --cask zensu`. The macOS binary is signed with an Apple Developer ID
+and notarized by Apple, so it runs without a Gatekeeper prompt.
 
 ### Install script (Linux / macOS)
 
@@ -118,6 +118,33 @@ OAuth endpoints are discovered via `/.well-known/oauth-authorization-server`
 (falling back to `/oauth/authorize` + `/oauth/token`).
 
 ## Commands
+
+Commands are grouped by resource. Run `zensu <group> --help` for the subcommands
+and flags of each group.
+
+| Group | Manages |
+| --- | --- |
+| `auth` | Authenticate `zensu` with a Zensu host (see [Authentication](#authentication)) |
+| `products` | Products |
+| `features` | Features |
+| `subfeatures` | Sub-features of a feature |
+| `tiers` | Pricing tiers and per-feature tier availability |
+| `roadmap` | Product roadmaps |
+| `journeys` | User journeys |
+| `security` | Feature security classification, tests, reviews, and posture |
+| `ghost` | Ghost scans and feature candidates |
+| `pulse` | Development sessions |
+| `link` | Link tests, docs, and source files to a feature |
+| `knowledge` | Search and inspect the organization's knowledge pool |
+| `design` | Inspect a product's design system |
+| `mocks` | Inspect a feature's design mocks |
+| `wiki` | Wiki pages |
+| `org` | Inspect the organization |
+| `doc` | Generate documentation context and CLAUDE.md templates |
+| `meta` | Agent integration and workflow guidance helpers |
+| `completion` | Shell completion scripts (see [Shell completion](#shell-completion)) |
+
+A typical `products` / `features` flow:
 
 ```bash
 zensu products list

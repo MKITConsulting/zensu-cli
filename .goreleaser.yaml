@@ -30,6 +30,21 @@ builds:
       - -X github.com/MKITConsulting/zensu-cli/internal/version.Commit={{ .ShortCommit }}
       - -X github.com/MKITConsulting/zensu-cli/internal/version.Date={{ .Date }}
 
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids:
+        - zensu
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        wait: true
+        timeout: 20m
+
 archives:
   - id: zensu
     name_template: "zensu_{{ .Version }}_{{ .Os }}_{{ .Arch }}"

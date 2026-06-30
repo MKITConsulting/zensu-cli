@@ -34,3 +34,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          MACOS_SIGN_P12: ${{ secrets.APPLE_CERTIFICATE }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          MACOS_NOTARY_KEY: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.APPLE_API_KEY }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER }}

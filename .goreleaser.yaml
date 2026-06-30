@@ -78,10 +78,6 @@ homebrew_casks:
       name: zensu-release-bot
       email: noreply@zensu.dev
     commit_msg_template: "chore(zensu): cask update for {{ .ProjectName }} {{ .Tag }}"
-    hooks:
-      post:
-        install: |
-          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/zensu"] if OS.mac?
 
 dockers:
   - image_templates:

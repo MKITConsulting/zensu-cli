@@ -142,7 +142,7 @@ func newRoadmapCreateCmd(f *Factory) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
 	cmd.Flags().StringVar(&title, "title", "", "roadmap title (required)")
-	cmd.Flags().StringVar(&period, "period", "", "anchor/start period label, e.g. '2026-Q2'")
+	cmd.Flags().StringVar(&period, "period", "", "anchor/start period — quarter (2026-Q2), month (2026-06), week (2026-W23), or day (2026-06-15)")
 	cmd.Flags().StringVar(&description, "description", "", "roadmap description")
 	cmd.Flags().StringArrayVar(&goals, "goal", nil, "goal string (repeatable)")
 	cmd.Flags().StringVar(&status, "status", "", "roadmap status: draft|active|completed|archived (default draft)")
@@ -192,7 +192,7 @@ func newRoadmapUpdateCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&title, "title", "", "roadmap title (required)")
-	cmd.Flags().StringVar(&period, "period", "", "period label, e.g. '2026-Q2'")
+	cmd.Flags().StringVar(&period, "period", "", "time period — quarter (2026-Q2), month (2026-06), week (2026-W23), or day (2026-06-15)")
 	cmd.Flags().StringVar(&description, "description", "", "roadmap description")
 	cmd.Flags().StringArrayVar(&goals, "goal", nil, "goal string (repeatable)")
 	cmd.Flags().StringVar(&status, "status", "", "roadmap status: draft|active|completed|archived")
@@ -254,8 +254,8 @@ func newRoadmapAddFeatureCmd(f *Factory) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&feature, "feature", "", "feature ID (required)")
 	cmd.Flags().IntVar(&sortOrder, "sort-order", 0, "sort order within the roadmap (ascending, default 0)")
-	cmd.Flags().StringVar(&startPeriod, "start-period", "", "start period for the timeline bar, e.g. '2026-Q2'")
-	cmd.Flags().StringVar(&endPeriod, "end-period", "", "end period for the timeline bar, e.g. '2026-Q4'")
+	cmd.Flags().StringVar(&startPeriod, "start-period", "", "start period for the timeline bar — quarter (2026-Q2), month (2026-06), week (2026-W23), or day (2026-06-15)")
+	cmd.Flags().StringVar(&endPeriod, "end-period", "", "end period for the timeline bar — quarter (2026-Q4), month (2026-12), week (2026-W42), or day (2026-12-31)")
 	return cmd
 }
 
@@ -282,7 +282,7 @@ func newRoadmapMilestoneCreateCmd(f *Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "milestone-create <roadmap-id>",
 		Short:        "Create a milestone marker on a roadmap",
-		Long:         "Create a milestone marker on a roadmap (e.g. a release or key date), positioned at a period on the timeline (quarter, month or ISO week — match the roadmap's granularity).",
+		Long:         "Create a milestone marker on a roadmap (e.g. a release or key date), positioned at a period on the timeline (quarter, month, ISO week or day — match the roadmap's granularity).",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -314,7 +314,7 @@ func newRoadmapMilestoneCreateCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&title, "title", "", "milestone title (required), e.g. 'GA Release'")
-	cmd.Flags().StringVar(&period, "period", "", "period the milestone sits in, e.g. '2026-Q3'")
+	cmd.Flags().StringVar(&period, "period", "", "period the milestone sits in — quarter (2026-Q3), month (2026-06), week (2026-W23), or day (2026-06-15)")
 	cmd.Flags().StringVar(&status, "status", "", "milestone status, e.g. planned|done")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd

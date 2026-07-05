@@ -95,7 +95,7 @@ func TestExchangeCode_PostsFormAndParsesTokens(t *testing.T) {
 			t.Errorf("redirect_uri: got %q", r.Form.Get("redirect_uri"))
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"access_token": "acc-1", "refresh_token": "ref-1", "expires_in": 900, "token_type": "Bearer",
+			"access_token": "acc-1", "refresh_token": "ref-1", "expires_in": 900, "token_type": "Bearer", "scope": "read write",
 		})
 	}))
 	defer srv.Close()
@@ -106,6 +106,9 @@ func TestExchangeCode_PostsFormAndParsesTokens(t *testing.T) {
 	}
 	if tok.AccessToken != "acc-1" || tok.RefreshToken != "ref-1" || tok.ExpiresIn != 900 {
 		t.Errorf("token mismatch: %+v", tok)
+	}
+	if tok.Scope != "read write" {
+		t.Errorf("scope echo: got %q want %q", tok.Scope, "read write")
 	}
 }
 

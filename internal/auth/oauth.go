@@ -23,6 +23,7 @@ type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int64  `json:"expires_in"`
+	Scope        string `json:"scope"`
 }
 
 func DiscoverEndpoints(ctx context.Context, httpClient *http.Client, apiURL string) Endpoints {

@@ -144,6 +144,20 @@ and flags of each group.
 | `meta` | Agent integration and workflow guidance helpers |
 | `completion` | Shell completion scripts (see [Shell completion](#shell-completion)) |
 
+Pulse treats the server-side privacy setting as authoritative. When tracking is
+disabled, `zensu pulse start` and `zensu pulse end` succeed as no-ops and explain
+that nothing was recorded. With `--json`, they preserve the machine-readable
+`{"status":"tracking_disabled"}` response so integrations can skip follow-up
+commands when no session id was created. Agent integrations should use
+`--minimal-json`, which returns only `id` or `status` and omits user, organization,
+project-path, changed-file, and feature metadata. Failures in minimal mode use
+stable local messages and never reflect remote response data. Pulse session
+arguments and enabled responses must contain canonical UUIDs; `pulse end` also
+requires the response id to match the requested session. Pass changed paths with
+one `--changed-file <path>` per file so commas and surrounding whitespace remain
+part of the filename; the legacy comma-separated `--changed-files` flag remains
+available for compatibility.
+
 A typical `products` / `features` flow:
 
 ```bash

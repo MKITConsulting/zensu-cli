@@ -71,7 +71,8 @@ zensu products list [--json]
 zensu products get <product-id> [--json]            # response embeds components[]
 zensu products create --name <name> [--slug s] [--type public|internal|hybrid] [--description d]
 zensu products import <product-id> --repo-url <url> [--repo-type github|gitlab|bitbucket|local]
-zensu products vision-create [flags]                # store a product vision
+zensu products vision-create --title <t> --content <markdown>
+    [--product <uuid>] [--source studio|import|claude-code]   # omit --product for greenfield visions
 zensu products vision-get <vision-id>
 zensu products bootstrap-apply <vision-id>          # payload: {"components":[{name,slug,description}],
                                                     #   "features":[{title,slug,description,component,
@@ -89,10 +90,12 @@ zensu features create --product <id> --component <id> --title <t> [--slug s] [--
 zensu features update <feature-id> [--title t] [--description d] [--priority low|medium|high|critical]
 zensu features status <feature-id> <new-status>     # dedicated transition command
 zensu features history <feature-id> [--json]
-zensu features revision <feature-id> [flags]        # new revision (version) of a feature
-zensu features merge <feature-id> [flags]           # merge sources into target
-zensu features split <feature-id> [flags]           # split into child features
-zensu features deprecate <feature-id> [flags]
+zensu features revision <feature-id> --scope-summary <s> [--scope-details d]
+    [--estimated-effort S|M|L|XL] [--coverage-target 0-100] [--docs-required]
+    [--target-release v] [--assignee a] [--created-by api|mcp|web-ui|github-sync]
+zensu features merge <target-feature-id> --source '<json-uuid-array>' --title <t> --slug <s> [--reason r]
+zensu features split <feature-id> --children '<json>' [--reason r]   # children: [{title, slug}]
+zensu features deprecate <feature-id> [--reason r] [--replacement <uuid>] [--removal-planned-at RFC3339]
 ```
 
 ### subfeatures
@@ -100,7 +103,7 @@ zensu features deprecate <feature-id> [flags]
 ```
 zensu subfeatures add <feature-id> --title <t> [--slug s] [--description d]
     [--priority critical|high|medium|low] [--status s] [--assignee a]   # status defaults to planned
-zensu subfeatures list <feature-id>
+zensu subfeatures list <feature-id> [--compact]     # compact: id, slug, title, status, priority only
 zensu subfeatures promote [feature-id] <subfeature-id>   # promote to top-level feature
 ```
 
@@ -147,8 +150,8 @@ attributes and recalculates the security score automatically.
 zensu ghost scan --product <id> --candidates '<json-array>' [--components '<json-array>']
     [--repo-url u] [--branch b] [--source api|mcp|web_ui]   # see --help for the candidate shape
 zensu ghost candidates <scan-id>                    # ordered by confidence
-zensu ghost approve <scan-id> <candidate-id>
-zensu ghost reject <scan-id> <candidate-id>         # optional reason
+zensu ghost approve <scan-id> <candidate-id> --product <id>
+zensu ghost reject <scan-id> <candidate-id> --product <id> [--reason r]
 zensu ghost batch <scan-id> --product <id> [--approve-ids '<json-uuids>']
     [--reject-ids '<json-uuids>'] [--reject-reason r]
 zensu ghost apply <scan-id> --product <id> [--enrich-existing]
@@ -173,24 +176,37 @@ existing session.
 ### tiers / roadmap / journeys
 
 ```
-zensu tiers create [flags]                          # pricing tier for a product
-zensu tiers list [flags]
+zensu tiers create --product <id> --name <n> --slug <s> --tier-order <int>
+    [--description d] [--color c] [--default]       # tier-order: 1 = lowest, ascending
+zensu tiers list --product <id>
 zensu tiers matrix --product <id>                   # complete tier matrix
-zensu tiers set-feature <feature-id> [flags]        # tier availability of a feature
+zensu tiers set-feature <feature-id> --tiers '<json>'
+    # entries: [{"tierId": ..., "gatingType": "hard|soft|preview", "tierLimits": {...}?}]
 
-zensu roadmap create [flags]
-zensu roadmap list / get / update / delete
-zensu roadmap add-feature <roadmap-id> [flags]
-zensu roadmap remove-feature <roadmap-id> [flags]   # membership only, feature survives
-zensu roadmap milestone-create / milestone-list / milestone-delete
+zensu roadmap create --product <id> --title <t> [--period '2026-Q2'] [--goal g]...
+    [--description d] [--status draft|active|completed|archived]
+zensu roadmap list --product <id>
+zensu roadmap get <roadmap-id>
+zensu roadmap update <roadmap-id> --title <t> [--period p] [--goal g]... [--description d] [--status s]
+zensu roadmap delete <roadmap-id>                   # linked features survive, membership only
+zensu roadmap add-feature <roadmap-id> --feature <id>
+    [--start-period '2026-Q2'] [--end-period '2026-Q4'] [--sort-order n]
+zensu roadmap remove-feature <roadmap-id> <feature-id>
+zensu roadmap milestone-create <roadmap-id> --title <t> [--period '2026-Q3'] [--status planned|done]
+zensu roadmap milestone-list <roadmap-id>
+zensu roadmap milestone-delete <roadmap-id> <milestone-id>
 
-zensu journeys create [flags]
+zensu journeys create --product <id> --title <t> [--slug s] [--description d]
+    [--persona p] [--priority critical|high|medium|low]
+    [--type critical|happy_path|edge_case|error_path|onboarding] [--tier <uuid>]
 zensu journeys list --product <id>
 zensu journeys get <journey-id>
-zensu journeys step <journey-id> [flags]            # add a step
+zensu journeys step <journey-id> --product <id> --title <t> --step-order <int>
+    [--description d] [--expected-result r] [--feature <uuid>] [--critical]
+    [--interaction-type action|navigation|input|validation|output|wait]
 zensu journeys steps <journey-id>                   # list steps
 zensu journeys health <journey-id>                  # health analysis
-zensu journeys suggest [flags]                      # context to suggest journeys
+zensu journeys suggest --product <id>               # context to suggest journeys
 ```
 
 ### knowledge / design / mocks / wiki / org
@@ -200,7 +216,7 @@ zensu knowledge search --query "<text>" [--limit 1-50] [--scope org|personal]
 zensu knowledge get <item-id>
 zensu knowledge sources
 
-zensu design context <product-id>                   # Design.md, shared CSS, assets
+zensu design context <product-id> [--component <id>]   # Design.md, shared CSS, assets
 
 zensu mocks list <feature-id>
 zensu mocks get <feature-id> <mock-id>              # metadata or raw content
@@ -208,10 +224,11 @@ zensu mocks get <feature-id> <mock-id>              # metadata or raw content
 zensu wiki create --product <uuid> --title <t> --content <markdown>
     [--doc-type <type>] [--audience <a>] [--visibility public|private]
     [--entity-type feature|component|product --entity-id <uuid>]   # visibility defaults to private
-zensu wiki list [filters]
-zensu wiki update <page-id> [flags]
+zensu wiki list [--product <uuid>] [--audience <a>] [--parent <uuid>]
+zensu wiki update <page-id> [--title t] [--content markdown] [--change-summary s]
+    [--visibility public|private]
 
-zensu org users                                     # search organization members
+zensu org users [--query "name-or-email"]           # omit --query to list all members
 ```
 
 ### doc

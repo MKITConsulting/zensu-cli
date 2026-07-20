@@ -31,6 +31,10 @@ documentation requirements are satisfied.
 The `zensu` CLI is a thin, typed client over the Zensu REST API. It works
 against the hosted service and any self-hosted deployment.
 
+If your host also lists `/zensu:*` skills (the zensu-claude-code plugin is
+installed), use those instead of this skill — they add agents, hooks, and
+review chains on top of the same CLI.
+
 ## Session start: verify the CLI
 
 ```bash

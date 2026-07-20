@@ -203,6 +203,30 @@ zensu completion powershell >> $PROFILE
 
 Run `zensu completion <shell> --help` for the full per-shell instructions.
 
+## Agent skill
+
+[`skills/zensu/`](skills/zensu/) contains a standalone agent skill that teaches
+AI coding agents how to drive Zensu through this CLI — feature tracking, status
+transitions, security reviews, release gates, ghost scans, pulse sessions, and
+doc generation. It is plain Markdown in the `SKILL.md` format: it requires only
+the `zensu` binary, no agent plugin, and works with any agent that loads
+skills (Claude Code, and any other host that supports the format).
+
+```bash
+# Claude Code (personal skills)
+mkdir -p ~/.claude/skills
+cp -r skills/zensu ~/.claude/skills/zensu
+
+# or per project
+mkdir -p .claude/skills
+cp -r skills/zensu .claude/skills/zensu
+```
+
+If you use Claude Code with the full
+[zensu-claude-code](https://github.com/MKITConsulting/zensu-claude-code)
+plugin, skip this — the plugin ships richer `/zensu:*` skills, agents, and
+hooks.
+
 ## Configuration precedence
 
 API base URL: `--api-url` flag → `ZENSU_API_URL` → stored host → `https://api.zensu.dev`.

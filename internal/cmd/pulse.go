@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 )
 
 const pulseTrackingDisabledStatus = "tracking_disabled"
+const nilPulseSessionID = "00000000-0000-0000-0000-000000000000"
 
 var (
 	errPulseRequestFailed   = errors.New("Pulse request failed")
@@ -28,13 +30,63 @@ type pulseCommandResponse struct {
 
 func normalizePulseSessionID(raw string) (string, error) {
 	normalized := strings.ToLower(raw)
-	if !pulseSessionIDPattern.MatchString(normalized) {
-		return "", fmt.Errorf("invalid session id %q: expected canonical UUID", raw)
+	if !pulseSessionIDPattern.MatchString(normalized) || normalized == nilPulseSessionID {
+		return "", fmt.Errorf("invalid session id %q: expected canonical UUID (non-nil)", raw)
 	}
 	return normalized, nil
 }
 
+func rejectDuplicatePulseResponseFields(raw []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	opening, ok := token.(json.Delim)
+	if !ok || opening != '{' {
+		return fmt.Errorf("expected JSON object")
+	}
+
+	seen := make(map[string]struct{}, 2)
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		key, ok := token.(string)
+		if !ok {
+			return fmt.Errorf("expected JSON object key")
+		}
+
+		protectedKey := ""
+		switch {
+		case strings.EqualFold(key, "id"):
+			protectedKey = "id"
+		case strings.EqualFold(key, "status"):
+			protectedKey = "status"
+		}
+		if protectedKey != "" {
+			if _, exists := seen[protectedKey]; exists {
+				return fmt.Errorf("duplicate Pulse response field %q", protectedKey)
+			}
+			seen[protectedKey] = struct{}{}
+		}
+
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+	}
+	if _, err := decoder.Token(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func parsePulseCommandResponse(raw []byte) (pulseCommandResponse, error) {
+	if err := rejectDuplicatePulseResponseFields(raw); err != nil {
+		return pulseCommandResponse{}, fmt.Errorf("invalid Pulse response: %w", err)
+	}
 	var response pulseCommandResponse
 	if err := json.Unmarshal(raw, &response); err != nil {
 		return pulseCommandResponse{}, fmt.Errorf("invalid Pulse response: %w", err)

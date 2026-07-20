@@ -166,6 +166,57 @@ func TestParsePulseCommandResponse_RejectsNonUUIDSessionID(t *testing.T) {
 	}
 }
 
+func TestPulseStart_RejectsNilSessionID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"` + nilPulseSessionID + `"}`))
+	}))
+	defer srv.Close()
+
+	f, out := testFactory(srv)
+	cmd := NewPulseCmd(f)
+	err := runCmd(t, cmd, "start", "--head-sha", "abc123")
+	if err == nil || !strings.Contains(err.Error(), "expected canonical UUID (non-nil)") {
+		t.Fatalf("pulse start error = %v", err)
+	}
+	if got := out.String(); got != "" {
+		t.Fatalf("pulse start output before nil UUID validation = %q", got)
+	}
+}
+
+func TestParsePulseCommandResponse_RejectsDuplicateProtectedFields(t *testing.T) {
+	tests := map[string]string{
+		"id case variant":     `{"id":"` + pulseTestSessionID + `","ID":"22222222-2222-4222-8222-222222222222"}`,
+		"status case variant": `{"status":"tracking_disabled","STATUS":"","id":"` + pulseTestSessionID + `"}`,
+	}
+
+	for name, raw := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := parsePulseCommandResponse([]byte(raw))
+			if err == nil || !strings.Contains(err.Error(), "duplicate Pulse response field") {
+				t.Fatalf("parse error = %v", err)
+			}
+		})
+	}
+}
+
+func TestPulseStart_MinimalJSONRejectsDuplicatePrivacyStatusWithoutReflection(t *testing.T) {
+	const sentinel = "sensitive-override"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"tracking_disabled","STATUS":"` + sentinel + `","id":"` + pulseTestSessionID + `"}`))
+	}))
+	defer srv.Close()
+
+	f, out := testFactory(srv)
+	cmd := NewPulseCmd(f)
+	err := runCmd(t, cmd, "start", "--head-sha", "abc123", "--minimal-json")
+	if !errors.Is(err, errInvalidPulseResponse) {
+		t.Fatalf("pulse start error = %v, want %v", err, errInvalidPulseResponse)
+	}
+	if strings.Contains(err.Error(), sentinel) || strings.Contains(out.String(), sentinel) {
+		t.Fatalf("minimal mode reflected hostile response data: err=%v out=%q", err, out.String())
+	}
+}
+
 func TestParsePulseCommandResponse_RejectsDisabledResponseWithSessionID(t *testing.T) {
 	_, err := parsePulseCommandResponse([]byte(`{"status":"tracking_disabled","id":"` + pulseTestSessionID + `"}`))
 	if err == nil || !strings.Contains(err.Error(), "tracking_disabled must not include a session id") {
@@ -265,6 +316,22 @@ func TestPulseCommands_RejectInvalidSessionID(t *testing.T) {
 		cmd := NewPulseCmd(f)
 		err := runCmd(t, cmd, args...)
 		if err == nil || !strings.Contains(err.Error(), "expected canonical UUID") {
+			t.Fatalf("%v error = %v", args, err)
+		}
+	}
+}
+
+func TestPulseCommands_RejectNilSessionID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("server must not be called for the nil session id")
+	}))
+	defer srv.Close()
+
+	for _, args := range [][]string{{"end", nilPulseSessionID}, {"summary", nilPulseSessionID}} {
+		f, _ := testFactory(srv)
+		cmd := NewPulseCmd(f)
+		err := runCmd(t, cmd, args...)
+		if err == nil || !strings.Contains(err.Error(), "expected canonical UUID (non-nil)") {
 			t.Fatalf("%v error = %v", args, err)
 		}
 	}

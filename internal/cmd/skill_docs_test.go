@@ -131,6 +131,60 @@ func TestSkillDocs_DocumentedInvocationsExist(t *testing.T) {
 	}
 }
 
+func TestSkillDocs_EverySubcommandIsDocumented(t *testing.T) {
+	root := NewRootCmd()
+	documented := map[string]bool{}
+	for _, file := range []string{"SKILL.md", "reference.md"} {
+		for _, inv := range documentedInvocations(readSkillDoc(t, file)) {
+			if inv.sub != "" {
+				documented[inv.group+" "+inv.sub] = true
+			}
+		}
+	}
+	for _, group := range root.Commands() {
+		if group.Name() == "help" || group.Name() == "completion" || group.Hidden || !group.HasSubCommands() {
+			continue
+		}
+		for _, sub := range group.Commands() {
+			if sub.Name() == "help" || sub.Hidden {
+				continue
+			}
+			if !documented[group.Name()+" "+sub.Name()] {
+				t.Errorf("command %q %q exists in the CLI but no fenced invocation documents it", group.Name(), sub.Name())
+			}
+		}
+	}
+}
+
+func TestReadme_GroupTableMatchesRootCommands(t *testing.T) {
+	root := NewRootCmd()
+	want := rootGroupNames(root)
+
+	b, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	documented := map[string]bool{}
+	for _, m := range groupTableRowRe.FindAllStringSubmatch(string(b), -1) {
+		documented[m[1]] = true
+	}
+	if len(documented) == 0 {
+		t.Fatal("README.md command-group table not found — parser or doc structure broke")
+	}
+
+	for name := range want {
+		if !documented[name] {
+			t.Errorf("command group %q exists in the CLI but is missing from the README command table", name)
+		}
+	}
+	for name := range documented {
+		if !want[name] {
+			t.Errorf("README command table documents %q, which is not a CLI command group", name)
+		}
+	}
+
+}
+
 func TestSkillDocs_SkillCommandMapCoversAllGroups(t *testing.T) {
 	root := NewRootCmd()
 	doc := readSkillDoc(t, "SKILL.md")

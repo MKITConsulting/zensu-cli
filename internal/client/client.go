@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/MKITConsulting/zensu-cli/internal/auth"
@@ -14,9 +15,12 @@ import (
 )
 
 const (
-	tokenSkew      = 30 * time.Second
-	defaultTimeout = 30 * time.Second
+	tokenSkew            = 30 * time.Second
+	defaultTimeout       = 30 * time.Second
+	defaultUploadTimeout = 5 * time.Minute
 )
+
+const jsonContentType = "application/json"
 
 type APIError struct {
 	StatusCode int    `json:"-"`
@@ -32,12 +36,27 @@ func (e *APIError) Error() string {
 }
 
 type Client struct {
-	BaseURL    string
-	TokenURL   string
-	HTTPClient *http.Client
-	cfg        *config.Config
-	now        func() time.Time
-	save       func(*config.Config) error
+	BaseURL       string
+	TokenURL      string
+	HTTPClient    *http.Client
+	UploadTimeout time.Duration
+	cfg           *config.Config
+	now           func() time.Time
+	save          func(*config.Config) error
+}
+
+func refuseCrossHostRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) == 0 {
+		return nil
+	}
+	origin := via[0].URL
+	if req.URL.Host != origin.Host {
+		return fmt.Errorf("refusing cross-host redirect to %s", req.URL.Host)
+	}
+	if origin.Scheme == "https" && req.URL.Scheme != "https" {
+		return fmt.Errorf("refusing redirect that downgrades %s to %s", origin.Scheme, req.URL.Scheme)
+	}
+	return nil
 }
 
 type Option func(*Client)
@@ -48,29 +67,48 @@ func WithClock(now func() time.Time) Option { return func(c *Client) { c.now = n
 
 func WithSaver(save func(*config.Config) error) Option { return func(c *Client) { c.save = save } }
 
+func WithUploadTimeout(d time.Duration) Option { return func(c *Client) { c.UploadTimeout = d } }
+
 func New(cfg *config.Config, baseURL, tokenURL string, opts ...Option) *Client {
 	c := &Client{
-		BaseURL:    baseURL,
-		TokenURL:   tokenURL,
-		HTTPClient: &http.Client{Timeout: defaultTimeout},
-		cfg:        cfg,
-		now:        time.Now,
-		save:       func(cf *config.Config) error { return cf.Save() },
+		BaseURL:       baseURL,
+		TokenURL:      tokenURL,
+		HTTPClient:    &http.Client{Timeout: defaultTimeout, CheckRedirect: refuseCrossHostRedirect},
+		UploadTimeout: defaultUploadTimeout,
+		cfg:           cfg,
+		now:           time.Now,
+		save:          func(cf *config.Config) error { return cf.Save() },
 	}
 	for _, o := range opts {
 		o(c)
+	}
+	if c.HTTPClient.CheckRedirect == nil {
+		guarded := *c.HTTPClient
+		guarded.CheckRedirect = refuseCrossHostRedirect
+		c.HTTPClient = &guarded
 	}
 	return c
 }
 
 func (c *Client) Do(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
+	return c.do(ctx, method, path, jsonContentType, body)
+}
+
+func (c *Client) DoWithContentType(ctx context.Context, method, path, contentType string, body []byte) (*http.Response, error) {
+	if body != nil && contentType == "" {
+		return nil, fmt.Errorf("content type is required for %s %s", method, path)
+	}
+	return c.do(ctx, method, path, contentType, body)
+}
+
+func (c *Client) do(ctx context.Context, method, path, contentType string, body []byte) (*http.Response, error) {
 	if c.usingBearer() && c.tokenExpired() {
 		if err := c.refresh(ctx); err != nil {
 			return nil, err
 		}
 	}
 
-	resp, err := c.send(ctx, method, path, body)
+	resp, err := c.send(ctx, method, path, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -79,9 +117,19 @@ func (c *Client) Do(ctx context.Context, method, path string, body []byte) (*htt
 		if err := c.refresh(ctx); err != nil {
 			return nil, err
 		}
-		return c.send(ctx, method, path, body)
+		return c.send(ctx, method, path, contentType, body)
 	}
 	return resp, nil
+}
+
+func (c *Client) httpClientFor(contentType string) *http.Client {
+	isUpload := strings.HasPrefix(contentType, "multipart/form-data")
+	if !isUpload || c.UploadTimeout <= 0 || c.HTTPClient.Timeout <= 0 || c.UploadTimeout <= c.HTTPClient.Timeout {
+		return c.HTTPClient
+	}
+	upload := *c.HTTPClient
+	upload.Timeout = c.UploadTimeout
+	return &upload
 }
 
 func (c *Client) usingBearer() bool {
@@ -116,7 +164,7 @@ func (c *Client) refresh(ctx context.Context) error {
 	return c.save(c.cfg)
 }
 
-func (c *Client) send(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
+func (c *Client) send(ctx context.Context, method, path, contentType string, body []byte) (*http.Response, error) {
 	var r io.Reader
 	if body != nil {
 		r = bytes.NewReader(body)
@@ -133,9 +181,9 @@ func (c *Client) send(ctx context.Context, method, path string, body []byte) (*h
 	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", contentType)
 	}
-	return c.HTTPClient.Do(req)
+	return c.httpClientFor(contentType).Do(req)
 }
 
 func CheckResponse(resp *http.Response) error {

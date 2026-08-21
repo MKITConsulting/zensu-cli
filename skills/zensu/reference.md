@@ -55,7 +55,7 @@ Global flags on every command: `--api-url <url>`. Typed commands accept
 | `link` | Link tests, docs, and source files to a feature |
 | `knowledge` | Organization knowledge pool search |
 | `design` | Product design-system context |
-| `mocks` | Feature design mocks |
+| `mocks` | Feature design mocks — upload and inspect |
 | `wiki` | Wiki pages |
 | `org` | Organization users |
 | `doc` | Documentation context and CLAUDE.md templates |
@@ -224,6 +224,8 @@ zensu knowledge sources
 
 zensu design context <product-id> [--component <id>]   # Design.md, shared CSS, assets
 
+zensu mocks create <feature-id> <file> [--title t] [--alt-text a]
+    # file extension picks the type: .png/.jpg/.jpeg -> image, .html/.htm -> html
 zensu mocks list <feature-id>
 zensu mocks get <feature-id> <mock-id>              # metadata or raw content
 

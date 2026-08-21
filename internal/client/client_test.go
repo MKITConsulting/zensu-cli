@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -250,5 +253,385 @@ func TestCheckResponse_ParsesAPIError(t *testing.T) {
 	}
 	if apiErr.StatusCode != 400 || apiErr.Code != "bad_request" || apiErr.Message != "missing name" {
 		t.Errorf("APIError fields wrong: %+v", apiErr)
+	}
+}
+
+func TestAPIError_Error(t *testing.T) {
+	withMessage := (&client.APIError{StatusCode: 404, Code: "not_found", Message: "feature not found"}).Error()
+	if withMessage != "feature not found (status 404)" {
+		t.Errorf("APIError with message: got %q", withMessage)
+	}
+	withoutMessage := (&client.APIError{StatusCode: 500}).Error()
+	if withoutMessage != "request failed with status 500" {
+		t.Errorf("APIError without message: got %q", withoutMessage)
+	}
+}
+
+func TestCheckResponse_PassesSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"m1"}`))
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
+	resp, err := c.Do(context.Background(), http.MethodPost, "/api/features/f1/mocks", nil)
+	if err != nil {
+		t.Fatalf("Do error: %v", err)
+	}
+	defer resp.Body.Close()
+	if err := client.CheckResponse(resp); err != nil {
+		t.Errorf("CheckResponse must accept a 2xx response, got: %v", err)
+	}
+}
+
+func TestDoWithContentType_RejectsEmptyContentType(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("no request may be sent without a declared content type")
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
+	_, err := c.DoWithContentType(context.Background(), http.MethodPost, "/api/features/f1/mocks", "", []byte("body"))
+	if err == nil {
+		t.Fatal("DoWithContentType must reject an empty content type")
+	}
+	if !strings.Contains(err.Error(), "content type is required") {
+		t.Errorf("error should name the missing content type, got: %v", err)
+	}
+}
+
+type deadlineRecorder struct {
+	deadlines map[string]time.Duration
+}
+
+func (d *deadlineRecorder) RoundTrip(r *http.Request) (*http.Response, error) {
+	var left time.Duration
+	if dl, ok := r.Context().Deadline(); ok {
+		left = time.Until(dl)
+	}
+	if d.deadlines == nil {
+		d.deadlines = map[string]time.Duration{}
+	}
+	d.deadlines[r.Header.Get("Content-Type")] = left
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader("{}")),
+		Header:     make(http.Header),
+		Request:    r,
+	}, nil
+}
+
+func TestUploadsGetALongerDeadlineThanJSONCalls(t *testing.T) {
+	rec := &deadlineRecorder{}
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, "http://zensu.test", "http://zensu.test/oauth/token",
+		client.WithHTTPClient(&http.Client{Timeout: 30 * time.Second, Transport: rec}),
+	)
+
+	resp, err := c.Do(context.Background(), http.MethodPost, "/api/products", []byte(`{"name":"p"}`))
+	if err != nil {
+		t.Fatalf("Do error: %v", err)
+	}
+	resp.Body.Close()
+
+	resp, err = c.DoWithContentType(context.Background(), http.MethodPost, "/api/features/f1/mocks", "multipart/form-data; boundary=b", []byte("payload"))
+	if err != nil {
+		t.Fatalf("DoWithContentType error: %v", err)
+	}
+	resp.Body.Close()
+
+	jsonLeft := rec.deadlines["application/json"]
+	uploadLeft := rec.deadlines["multipart/form-data; boundary=b"]
+	if jsonLeft <= 0 || uploadLeft <= 0 {
+		t.Fatalf("both requests must carry a client deadline: json=%v upload=%v", jsonLeft, uploadLeft)
+	}
+	if jsonLeft > 30*time.Second {
+		t.Errorf("a JSON call must keep the default 30s budget, got %v", jsonLeft)
+	}
+	if uploadLeft <= jsonLeft {
+		t.Errorf("an upload must get more time than a JSON call: upload=%v json=%v", uploadLeft, jsonLeft)
+	}
+	if uploadLeft < 4*time.Minute {
+		t.Errorf("an upload must get the 5m default budget, not the JSON one: got %v", uploadLeft)
+	}
+
+	resp, err = c.Do(context.Background(), http.MethodPost, "/api/products", []byte(`{"name":"q"}`))
+	if err != nil {
+		t.Fatalf("Do error: %v", err)
+	}
+	resp.Body.Close()
+	if after := rec.deadlines["application/json"]; after > 30*time.Second {
+		t.Errorf("the upload budget must not leak into a later JSON call: got %v", after)
+	}
+}
+
+func TestWithUploadTimeout_Overrides(t *testing.T) {
+	rec := &deadlineRecorder{}
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, "http://zensu.test", "http://zensu.test/oauth/token",
+		client.WithHTTPClient(&http.Client{Timeout: 30 * time.Second, Transport: rec}),
+		client.WithUploadTimeout(30*time.Minute),
+	)
+	resp, err := c.DoWithContentType(context.Background(), http.MethodPost, "/api/features/f1/mocks", "multipart/form-data; boundary=b", []byte("payload"))
+	if err != nil {
+		t.Fatalf("DoWithContentType error: %v", err)
+	}
+	resp.Body.Close()
+	if left := rec.deadlines["multipart/form-data; boundary=b"]; left < 25*time.Minute {
+		t.Errorf("WithUploadTimeout not honored: deadline in %v", left)
+	}
+}
+
+func TestDo_SurfacesTransportError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
+	srv.Close()
+
+	if _, err := c.Do(context.Background(), http.MethodGet, "/api/products", nil); err == nil {
+		t.Fatal("Do should error when the host is unreachable")
+	}
+}
+
+func TestDo_RejectsUnusableRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	defer srv.Close()
+
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
+	_, err := c.Do(context.Background(), "BAD METHOD", "/api/products", nil)
+	if err == nil {
+		t.Fatal("Do should error on a request it cannot construct")
+	}
+	if !strings.Contains(err.Error(), "creating request") {
+		t.Errorf("error should name the construction failure, got: %v", err)
+	}
+}
+
+func TestDo_SurfacesRefreshFailureAfter401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth/token" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{AccessToken: "stale", RefreshToken: "r1"}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
+	_, err := c.Do(context.Background(), http.MethodGet, "/api/products", nil)
+	if err == nil {
+		t.Fatal("Do should error when the post-401 refresh fails")
+	}
+	if !strings.Contains(err.Error(), "refreshing session") {
+		t.Errorf("error should name the failed refresh, got: %v", err)
+	}
+}
+
+func TestDo_SendsJSONContentType(t *testing.T) {
+	var gotType string
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotType = r.Header.Get("Content-Type")
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
+	resp, err := c.Do(context.Background(), http.MethodPost, "/api/products", []byte(`{"name":"p"}`))
+	if err != nil {
+		t.Fatalf("Do error: %v", err)
+	}
+	resp.Body.Close()
+	if gotType != "application/json" {
+		t.Errorf("Content-Type: got %q want application/json", gotType)
+	}
+	if string(gotBody) != `{"name":"p"}` {
+		t.Errorf("body: got %q", gotBody)
+	}
+}
+
+func TestDoWithContentType_UsesCallerContentType(t *testing.T) {
+	const boundaryType = "multipart/form-data; boundary=zensu-test"
+	var gotType string
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotType = r.Header.Get("Content-Type")
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
+	resp, err := c.DoWithContentType(context.Background(), http.MethodPost, "/api/features/f1/mocks", boundaryType, []byte("--zensu-test--\r\n"))
+	if err != nil {
+		t.Fatalf("DoWithContentType error: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("status: got %d want 201", resp.StatusCode)
+	}
+	if gotType != boundaryType {
+		t.Errorf("Content-Type: got %q want %q", gotType, boundaryType)
+	}
+	if string(gotBody) != "--zensu-test--\r\n" {
+		t.Errorf("body: got %q", gotBody)
+	}
+}
+
+func TestDoWithContentType_RetriesOn401KeepingContentTypeAndBody(t *testing.T) {
+	const boundaryType = "multipart/form-data; boundary=zensu-test"
+	var seenTypes []string
+	var seenBodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/oauth/token":
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "fresh", "refresh_token": "r2", "expires_in": 900})
+		case "/api/features/f1/mocks":
+			body, _ := io.ReadAll(r.Body)
+			seenTypes = append(seenTypes, r.Header.Get("Content-Type"))
+			seenBodies = append(seenBodies, string(body))
+			if r.Header.Get("Authorization") == "Bearer fresh" {
+				w.WriteHeader(http.StatusCreated)
+				return
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{AccessToken: "stale", RefreshToken: "r1"}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
+	resp, err := c.DoWithContentType(context.Background(), http.MethodPost, "/api/features/f1/mocks", boundaryType, []byte("payload"))
+	if err != nil {
+		t.Fatalf("DoWithContentType error: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("after 401+refresh status: got %d want 201", resp.StatusCode)
+	}
+	if len(seenTypes) != 2 {
+		t.Fatalf("expected exactly 2 upload attempts (401 then retry), got %d", len(seenTypes))
+	}
+	for i, got := range seenTypes {
+		if got != boundaryType {
+			t.Errorf("attempt %d Content-Type: got %q want %q", i+1, got, boundaryType)
+		}
+	}
+	for i, got := range seenBodies {
+		if got != "payload" {
+			t.Errorf("attempt %d body: got %q want %q", i+1, got, "payload")
+		}
+	}
+}
+
+func TestNew_RefusesCrossHostRedirect(t *testing.T) {
+	var elsewhere *httptest.Server
+	elsewhere = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-Key") != "" || r.Header.Get("Authorization") != "" {
+			t.Error("credentials must never reach a redirect target on another host")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer elsewhere.Close()
+
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+"/stolen", http.StatusFound)
+	}))
+	defer api.Close()
+
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, api.URL, api.URL+"/oauth/token")
+	_, err := c.Do(context.Background(), http.MethodGet, "/api/products", nil)
+	if err == nil {
+		t.Fatal("a cross-host redirect must be refused")
+	}
+	if !strings.Contains(err.Error(), "refusing cross-host redirect") {
+		t.Errorf("error should name the refused redirect, got: %v", err)
+	}
+}
+
+func TestDoWithContentType_AllowsEmptyContentTypeWithoutBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Content-Type"); got != "" {
+			t.Errorf("a bodyless request must not declare a content type, got %q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
+	resp, err := c.DoWithContentType(context.Background(), http.MethodGet, "/api/products", "", nil)
+	if err != nil {
+		t.Fatalf("a bodyless request needs no content type: %v", err)
+	}
+	resp.Body.Close()
+}
+
+func TestNew_AllowsSameHostRedirect(t *testing.T) {
+	var hops []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hops = append(hops, r.URL.Path)
+		if r.URL.Path == "/api/products" {
+			http.Redirect(w, r, "/api/products/", http.StatusFound)
+			return
+		}
+		if r.Header.Get("X-API-Key") != "zsk_k" {
+			t.Errorf("the credential must survive a same-host redirect, got %q", r.Header.Get("X-API-Key"))
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token")
+	resp, err := c.Do(context.Background(), http.MethodGet, "/api/products", nil)
+	if err != nil {
+		t.Fatalf("a same-host redirect must be followed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status after the redirect: got %d want 200", resp.StatusCode)
+	}
+	if len(hops) != 2 {
+		t.Errorf("expected the redirect to be followed once, saw hops %v", hops)
+	}
+}
+
+func TestNew_KeepsTheRedirectGuardWhenAClientIsInjected(t *testing.T) {
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, "http://zensu.test", "http://zensu.test/oauth/token",
+		client.WithHTTPClient(&http.Client{}),
+	)
+	if c.HTTPClient.CheckRedirect == nil {
+		t.Fatal("an injected client must not be able to drop the redirect guard silently")
+	}
+	err := c.HTTPClient.CheckRedirect(
+		&http.Request{URL: &url.URL{Scheme: "https", Host: "evil.test"}},
+		[]*http.Request{{URL: &url.URL{Scheme: "https", Host: "zensu.test"}}},
+	)
+	if err == nil || !strings.Contains(err.Error(), "refusing cross-host redirect") {
+		t.Errorf("the reinstated guard must refuse a cross-host redirect, got: %v", err)
+	}
+}
+
+func TestRefuseCrossHostRedirect_RefusesSchemeDowngrade(t *testing.T) {
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, "https://zensu.test", "https://zensu.test/oauth/token")
+	err := c.HTTPClient.CheckRedirect(
+		&http.Request{URL: &url.URL{Scheme: "http", Host: "zensu.test"}},
+		[]*http.Request{{URL: &url.URL{Scheme: "https", Host: "zensu.test"}}},
+	)
+	if err == nil || !strings.Contains(err.Error(), "downgrades") {
+		t.Errorf("an https->http redirect on the same host must be refused, got: %v", err)
 	}
 }

@@ -137,7 +137,7 @@ and flags of each group.
 | `link` | Link tests, docs, and source files to a feature |
 | `knowledge` | Search and inspect the organization's knowledge pool |
 | `design` | Inspect a product's design system |
-| `mocks` | Inspect a feature's design mocks |
+| `mocks` | Upload and inspect a feature's design mocks |
 | `wiki` | Wiki pages |
 | `org` | Inspect the organization |
 | `doc` | Generate documentation context and CLAUDE.md templates |

@@ -183,6 +183,13 @@ func TestReadme_GroupTableMatchesRootCommands(t *testing.T) {
 		}
 	}
 
+	row := regexp.MustCompile("(?m)^\\| `mocks` \\| (.+) \\|$").FindStringSubmatch(string(b))
+	if row == nil {
+		t.Fatal("README command table has no `mocks` row")
+	}
+	if !strings.Contains(strings.ToLower(row[1]), "upload") {
+		t.Errorf("the README `mocks` row must name the write path, got %q", row[1])
+	}
 }
 
 func TestSkillDocs_SkillCommandMapCoversAllGroups(t *testing.T) {

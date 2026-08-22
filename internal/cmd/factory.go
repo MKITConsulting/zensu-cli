@@ -39,9 +39,12 @@ func readResponse(resp *http.Response, err error) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, readErr := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, apiError(resp.StatusCode, raw)
+	}
+	if readErr != nil {
+		return nil, fmt.Errorf("reading response body: %w", readErr)
 	}
 	return raw, nil
 }
@@ -74,12 +77,32 @@ var bidiControls = &unicode.RangeTable{
 	},
 }
 
-func sanitizeTerminal(s string) string {
+func isUnsafeControl(r rune) bool {
+	return r < 0x20 || (r >= 0x7f && r <= 0x9f) || unicode.Is(bidiControls, r)
+}
+
+func sanitizeRunes(s string, keepNewline bool) string {
 	return strings.Map(func(r rune) rune {
 		if r == '\t' {
 			return ' '
 		}
-		if r < 0x20 || (r >= 0x7f && r <= 0x9f) || unicode.Is(bidiControls, r) {
+		if keepNewline && r == '\n' {
+			return r
+		}
+		if isUnsafeControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+func sanitizeTerminal(s string) string { return sanitizeRunes(s, false) }
+
+func sanitizeMultiline(s string) string { return sanitizeRunes(s, true) }
+
+func sanitizeUploadFileName(s string) string {
+	return strings.Map(func(r rune) rune {
+		if isUnsafeControl(r) || r == '"' || r == '\\' {
 			return -1
 		}
 		return r
@@ -95,6 +118,6 @@ func printJSON(w io.Writer, raw []byte) error {
 			return err
 		}
 	}
-	_, err := w.Write([]byte(sanitizeTerminal(string(raw)) + "\n"))
+	_, err := w.Write([]byte(sanitizeMultiline(string(raw)) + "\n"))
 	return err
 }

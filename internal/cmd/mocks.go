@@ -140,8 +140,15 @@ func newMocksCreateCmd(f *Factory) *cobra.Command {
 func mockUploadBody(fileName, path, title, altText string) ([]byte, string, error) {
 	limit := maxMockUploadBytes()
 
-	if link, err := os.Lstat(path); err == nil && link.Mode()&os.ModeSymlink != 0 {
+	link, err := os.Lstat(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("reading mock file: %w", err)
+	}
+	if link.Mode()&os.ModeSymlink != 0 {
 		return nil, "", fmt.Errorf("%s is a symlink; pass the file it points at so the upload is what you expect", path)
+	}
+	if !link.Mode().IsRegular() {
+		return nil, "", fmt.Errorf("%s is not a regular file", path)
 	}
 
 	file, err := os.Open(path)
@@ -157,8 +164,8 @@ func mockUploadBody(fileName, path, title, altText string) ([]byte, string, erro
 	if !info.Mode().IsRegular() {
 		return nil, "", fmt.Errorf("%s is not a regular file", path)
 	}
-	if again, err := os.Lstat(path); err != nil || !os.SameFile(again, info) {
-		return nil, "", fmt.Errorf("%s changed while it was being opened; not uploading it", path)
+	if err := verifyPathUnchanged(path, info); err != nil {
+		return nil, "", err
 	}
 	if info.Size() > limit {
 		return nil, "", fmt.Errorf("mock file is %d bytes, which exceeds the %d byte limit", info.Size(), limit)
@@ -166,10 +173,18 @@ func mockUploadBody(fileName, path, title, altText string) ([]byte, string, erro
 	return buildMockBody(fileName, file, limit, title, altText)
 }
 
+func verifyPathUnchanged(path string, opened os.FileInfo) error {
+	again, err := os.Lstat(path)
+	if err != nil || !os.SameFile(again, opened) {
+		return fmt.Errorf("%s changed while it was being opened; not uploading it", path)
+	}
+	return nil
+}
+
 func buildMockBody(fileName string, r io.Reader, limit int64, title, altText string) ([]byte, string, error) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
-	part, err := mw.CreateFormFile("file", sanitizeTerminal(fileName))
+	part, err := mw.CreateFormFile("file", sanitizeUploadFileName(fileName))
 	if err != nil {
 		return nil, "", err
 	}

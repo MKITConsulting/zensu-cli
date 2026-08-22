@@ -501,7 +501,7 @@ func TestMocksCreate_UploadsBinaryBytesUnchanged(t *testing.T) {
 }
 
 func TestMocksCreate_EscapesAwkwardFileName(t *testing.T) {
-	const awkward = "a\"quote\nand-newline.png"
+	const awkward = "a\"quote\nand\ttab.png"
 	var gotFileName string
 	var partHeaderCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -546,8 +546,8 @@ func TestMocksCreate_EscapesAwkwardFileName(t *testing.T) {
 	if partHeaderCount != 2 {
 		t.Errorf("the file part must carry exactly Content-Disposition and Content-Type, got %d headers", partHeaderCount)
 	}
-	if !strings.Contains(gotFileName, "quote") {
-		t.Errorf("the file name should still round-trip recognizably, got %q", gotFileName)
+	if gotFileName != "aquoteandtab.png" {
+		t.Errorf("the transmitted name must come from the upload sanitizer, which drops the quote, the newline and the tab rather than rewriting any of them; reverting buildMockBody to the display sanitizer would yield a space where the tab was, got %q", gotFileName)
 	}
 }
 
@@ -798,6 +798,34 @@ func TestMocksCreate_RefusesSymlink(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "PRIVATE KEY") || strings.Contains(out.String(), "PRIVATE KEY") {
 		t.Error("the linked file's contents must never appear in output")
+	}
+}
+
+func TestVerifyPathUnchanged_RefusesAPathWhoseLinkIdentityDiffersFromTheOpenedFile(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.png")
+	if err := os.WriteFile(target, []byte("PNG"), 0o600); err != nil {
+		t.Fatalf("writing target fixture: %v", err)
+	}
+	opened, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("stat target fixture: %v", err)
+	}
+
+	if err := verifyPathUnchanged(target, opened); err != nil {
+		t.Errorf("a path still naming the opened file must pass the re-check, got: %v", err)
+	}
+
+	if err := verifyPathUnchanged(filepath.Join(dir, "gone.png"), opened); err == nil {
+		t.Error("the re-check must fail closed when the path can no longer be stat'ed")
+	}
+
+	link := filepath.Join(dir, "link.png")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("this platform cannot create symlinks: %v", err)
+	}
+	if err := verifyPathUnchanged(link, opened); err == nil {
+		t.Error("the re-check must compare the path's own link identity, so a symlink resolving to the opened file is still refused; relaxing os.Lstat to os.Stat here would accept it and silently remove the symlink guard")
 	}
 }
 

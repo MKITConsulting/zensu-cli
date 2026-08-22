@@ -559,6 +559,31 @@ func TestNew_RefusesCrossHostRedirect(t *testing.T) {
 	}
 }
 
+func TestNew_StopsAfterTooManyRedirects(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		http.Redirect(w, r, "/api/products", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	bounded := srv.Client()
+	bounded.Timeout = 2 * time.Second
+
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(bounded))
+	_, err := c.Do(context.Background(), http.MethodGet, "/api/products", nil)
+	if err == nil {
+		t.Fatal("a same-host redirect loop must be refused")
+	}
+	if hits != 10 {
+		t.Errorf("the guard refuses at len(via) >= 10, so the server must be hit exactly 10 times, got %d", hits)
+	}
+	if !strings.Contains(err.Error(), "stopped after 10 redirects") {
+		t.Errorf("the error must name the hop limit exactly, so a changed cap cannot pass unnoticed, got: %v", err)
+	}
+}
+
 func TestDoWithContentType_AllowsEmptyContentTypeWithoutBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Content-Type"); got != "" {
@@ -621,6 +646,38 @@ func TestNew_KeepsTheRedirectGuardWhenAClientIsInjected(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "refusing cross-host redirect") {
 		t.Errorf("the reinstated guard must refuse a cross-host redirect, got: %v", err)
+	}
+}
+
+func TestNew_KeepsTheRedirectGuardWhenTheInjectedClientCarriesItsOwnPolicy(t *testing.T) {
+	var innerCalled bool
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, "http://zensu.test", "http://zensu.test/oauth/token",
+		client.WithHTTPClient(&http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+			innerCalled = true
+			return nil
+		}}),
+	)
+	err := c.HTTPClient.CheckRedirect(
+		&http.Request{URL: &url.URL{Scheme: "https", Host: "evil.test"}},
+		[]*http.Request{{URL: &url.URL{Scheme: "https", Host: "zensu.test"}}},
+	)
+	if err == nil || !strings.Contains(err.Error(), "refusing cross-host redirect") {
+		t.Errorf("a caller policy must not be able to drop the guard: supplying any CheckRedirect also replaces the stdlib default, so the guard has to run first, got: %v", err)
+	}
+	if innerCalled {
+		t.Error("the caller policy must not be consulted for a hop the guard already refused")
+	}
+
+	innerCalled = false
+	if err := c.HTTPClient.CheckRedirect(
+		&http.Request{URL: &url.URL{Scheme: "https", Host: "zensu.test"}},
+		[]*http.Request{{URL: &url.URL{Scheme: "https", Host: "zensu.test"}}},
+	); err != nil {
+		t.Errorf("a hop the guard permits must still reach the caller policy, got: %v", err)
+	}
+	if !innerCalled {
+		t.Error("the caller policy must still run for a hop the guard permits")
 	}
 }
 

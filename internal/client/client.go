@@ -45,6 +45,8 @@ type Client struct {
 	save          func(*config.Config) error
 }
 
+const maxRedirects = 10
+
 func refuseCrossHostRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) == 0 {
 		return nil
@@ -55,6 +57,9 @@ func refuseCrossHostRedirect(req *http.Request, via []*http.Request) error {
 	}
 	if origin.Scheme == "https" && req.URL.Scheme != "https" {
 		return fmt.Errorf("refusing redirect that downgrades %s to %s", origin.Scheme, req.URL.Scheme)
+	}
+	if len(via) >= maxRedirects {
+		return fmt.Errorf("stopped after %d redirects", len(via))
 	}
 	return nil
 }
@@ -73,7 +78,7 @@ func New(cfg *config.Config, baseURL, tokenURL string, opts ...Option) *Client {
 	c := &Client{
 		BaseURL:       baseURL,
 		TokenURL:      tokenURL,
-		HTTPClient:    &http.Client{Timeout: defaultTimeout, CheckRedirect: refuseCrossHostRedirect},
+		HTTPClient:    &http.Client{Timeout: defaultTimeout},
 		UploadTimeout: defaultUploadTimeout,
 		cfg:           cfg,
 		now:           time.Now,
@@ -82,11 +87,18 @@ func New(cfg *config.Config, baseURL, tokenURL string, opts ...Option) *Client {
 	for _, o := range opts {
 		o(c)
 	}
-	if c.HTTPClient.CheckRedirect == nil {
-		guarded := *c.HTTPClient
-		guarded.CheckRedirect = refuseCrossHostRedirect
-		c.HTTPClient = &guarded
+	inner := c.HTTPClient.CheckRedirect
+	guarded := *c.HTTPClient
+	guarded.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := refuseCrossHostRedirect(req, via); err != nil {
+			return err
+		}
+		if inner != nil {
+			return inner(req, via)
+		}
+		return nil
 	}
+	c.HTTPClient = &guarded
 	return c
 }
 

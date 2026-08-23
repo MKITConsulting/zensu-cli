@@ -151,6 +151,9 @@ func saveCache(c cache) error {
 	if err != nil {
 		return err
 	}
+	if err := config.GuardRealDirWrite(dir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dir, cacheDirPerm); err != nil {
 		return err
 	}

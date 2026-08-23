@@ -35,6 +35,10 @@ func ConfigDir() (string, error) {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "zensu"), nil
 	}
+	return UserConfigDir()
+}
+
+func UserConfigDir() (string, error) {
 	if runtime.GOOS == "windows" {
 		base, err := os.UserConfigDir()
 		if err != nil {
@@ -79,6 +83,9 @@ func Load() (*Config, error) {
 func (c *Config) Save() error {
 	dir, err := ConfigDir()
 	if err != nil {
+		return err
+	}
+	if err := GuardRealDirWrite(dir); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dir, dirPerm); err != nil {

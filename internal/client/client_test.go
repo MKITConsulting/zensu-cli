@@ -210,7 +210,10 @@ func TestDo_RetriesOnce401ThenRefresh(t *testing.T) {
 	defer srv.Close()
 
 	cfg := &config.Config{AccessToken: "stale", RefreshToken: "r1"}
-	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token",
+		client.WithHTTPClient(srv.Client()),
+		client.WithSaver(func(*config.Config) error { return nil }),
+	)
 	resp, err := c.Do(context.Background(), http.MethodGet, "/api/products", nil)
 	if err != nil {
 		t.Fatalf("Do error: %v", err)

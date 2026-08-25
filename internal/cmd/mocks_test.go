@@ -383,8 +383,8 @@ func TestMocksCreate_MissingFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("mocks create with an unreadable file should error")
 	}
-	if !strings.Contains(err.Error(), "reading mock file") {
-		t.Errorf("error should name the local read failure, got: %v", err)
+	if !strings.Contains(err.Error(), "inspecting mock file") {
+		t.Errorf("four different failures shared one wrapper, so no test could say which step failed; a path that does not exist fails at the pre-open stat and must say so, got: %v", err)
 	}
 }
 
@@ -419,11 +419,35 @@ func TestMocksCreate_MalformedSuccessBody(t *testing.T) {
 	path := writeMockFile(t, "hero.png", "png")
 	f, out := testFactory(srv)
 	cmd := NewMocksCmd(f)
-	if err := runCmd(t, cmd, "create", "f1", path); err == nil {
+	err := runCmd(t, cmd, "create", "f1", path)
+	if err == nil {
 		t.Fatal("mocks create should error when a 201 carries an undecodable body")
 	}
 	if got := out.String(); got != "" {
 		t.Errorf("mocks create must not print a summary from an undecodable body, got:\n%s", got)
+	}
+	if !strings.Contains(err.Error(), "accepted") {
+		t.Errorf("the server already created the mock by the time the body is decoded, and POST carries no idempotency key, so an error that reads like a total failure invites a retry that duplicates the mock; it must say the upload was accepted, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "mocks list f1") {
+		t.Errorf("the error must point at the command that shows whether the mock is already there, got: %v", err)
+	}
+}
+
+func TestMocksCreate_SanitizesTheFeatureIDItEchoes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"m1","mock_type":"image","file_name":"hero.png","mime_type":"image/png","file_size_bytes":3}`))
+	}))
+	defer srv.Close()
+
+	path := writeMockFile(t, "hero.png", "png")
+	f, out := testFactory(srv)
+	if err := runCmd(t, NewMocksCmd(f), "create", "f1\u001b[2Jx", path); err != nil {
+		t.Fatalf("mocks create error: %v", err)
+	}
+	if strings.ContainsRune(out.String(), 0x1b) {
+		t.Errorf("every server-supplied field on this summary is sanitized while the feature id is echoed raw; this CLI is documented as agent-invoked, so that id usually comes from a previous API response rather than a keyboard, got %q", out.String())
 	}
 }
 
@@ -801,30 +825,50 @@ func TestMocksCreate_RefusesSymlink(t *testing.T) {
 	}
 }
 
-func TestVerifyPathUnchanged_RefusesAPathWhoseLinkIdentityDiffersFromTheOpenedFile(t *testing.T) {
+func TestVerifyPathUnchanged_ComparesBothTheStatBeforeOpeningAndThePathsOwnLinkIdentity(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.png")
 	if err := os.WriteFile(target, []byte("PNG"), 0o600); err != nil {
 		t.Fatalf("writing target fixture: %v", err)
+	}
+	before, err := os.Lstat(target)
+	if err != nil {
+		t.Fatalf("lstat target fixture: %v", err)
 	}
 	opened, err := os.Stat(target)
 	if err != nil {
 		t.Fatalf("stat target fixture: %v", err)
 	}
 
-	if err := verifyPathUnchanged(target, opened); err != nil {
-		t.Errorf("a path still naming the opened file must pass the re-check, got: %v", err)
+	if err := verifyPathUnchanged(target, before, opened); err != nil {
+		t.Errorf("a path still naming the file that was inspected and then opened must pass, got: %v", err)
 	}
 
-	if err := verifyPathUnchanged(filepath.Join(dir, "gone.png"), opened); err == nil {
+	other := filepath.Join(dir, "other.png")
+	if err := os.WriteFile(other, []byte("OTHER"), 0o600); err != nil {
+		t.Fatalf("writing second fixture: %v", err)
+	}
+	stale, err := os.Lstat(other)
+	if err != nil {
+		t.Fatalf("lstat second fixture: %v", err)
+	}
+	if err := verifyPathUnchanged(target, stale, opened); err == nil {
+		t.Error("comparing only the two post-open stats asserts that the path still resolves to what was opened, not that the opened file is the one inspected beforehand; a swap in that window — including one planted as a hard link, whose inode equals its target's — passes unless the pre-open stat is compared too")
+	}
+
+	if err := verifyPathUnchanged(filepath.Join(dir, "gone.png"), before, opened); err == nil {
 		t.Error("the re-check must fail closed when the path can no longer be stat'ed")
+	}
+	if err := verifyPathUnchanged(filepath.Join(dir, "gone.png"), before, opened); err != nil &&
+		!strings.Contains(err.Error(), "re-checking") {
+		t.Errorf("a stat failure is not tampering and must say so, wrapped so errors.Is keeps working, got: %v", err)
 	}
 
 	link := filepath.Join(dir, "link.png")
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("this platform cannot create symlinks: %v", err)
 	}
-	if err := verifyPathUnchanged(link, opened); err == nil {
+	if err := verifyPathUnchanged(link, before, opened); err == nil {
 		t.Error("the re-check must compare the path's own link identity, so a symlink resolving to the opened file is still refused; relaxing os.Lstat to os.Stat here would accept it and silently remove the symlink guard")
 	}
 }
@@ -872,6 +916,27 @@ func TestMaxMockUploadBytes_HonorsTheEnvOverride(t *testing.T) {
 	t.Setenv(maxUploadBytesEnv, "9223372036854775807")
 	if got := maxMockUploadBytes(); got != maxUploadBytesCeiling {
 		t.Errorf("an override that would overflow limit+1 must be clamped: got %d want %d", got, maxUploadBytesCeiling)
+	}
+	if maxUploadBytesCeiling > 512<<20 {
+		t.Errorf("the whole body is assembled in a bytes.Buffer that grows by doubling, so a ceiling the process cannot hold turns a clean refusal into an out-of-memory kill; got %d, which is above what an in-memory path survives", maxUploadBytesCeiling)
+	}
+}
+
+type failingReader struct{ err error }
+
+func (f failingReader) Read([]byte) (int, error) { return 0, f.err }
+
+func TestBuildMockBody_ReportsASourceReadFailure(t *testing.T) {
+	wantErr := errors.New("disk went away mid-read")
+	_, _, err := buildMockBody("hero.png", failingReader{err: wantErr}, 1024, "", "")
+	if err == nil {
+		t.Fatal("io.Copy's error here comes from the source file, not from the bytes.Buffer it writes into, so unlike the other multipart returns it can genuinely fail")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("the cause must stay wrapped so a mid-upload read failure is distinguishable from an API error at the call site, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "reading mock file") {
+		t.Errorf("the wrap must name the step that failed, got: %v", err)
 	}
 }
 

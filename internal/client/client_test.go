@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -690,5 +691,163 @@ func TestRefuseCrossHostRedirect_RefusesSchemeDowngrade(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "downgrades") {
 		t.Errorf("an https->http redirect on the same host must be refused, got: %v", err)
+	}
+}
+
+func TestRefuseCrossHostRedirect_AllowsTheSameHostSpelledDifferently(t *testing.T) {
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, "https://zensu.test", "https://zensu.test/oauth/token")
+	for _, target := range []string{"zensu.test:443", "ZENSU.TEST"} {
+		if err := c.HTTPClient.CheckRedirect(
+			&http.Request{URL: &url.URL{Scheme: "https", Host: target}},
+			[]*http.Request{{URL: &url.URL{Scheme: "https", Host: "zensu.test"}}},
+		); err != nil {
+			t.Errorf("url.URL.Host carries the port and preserves case, so spelling out the default port or shifting case is refused as cross-host with a message that reads as nonsense; %q is the same origin, got: %v", target, err)
+		}
+	}
+	if err := c.HTTPClient.CheckRedirect(
+		&http.Request{URL: &url.URL{Scheme: "https", Host: "evil.test"}},
+		[]*http.Request{{URL: &url.URL{Scheme: "https", Host: "zensu.test"}}},
+	); err == nil {
+		t.Error("loosening the comparison must not let a genuinely different host through")
+	}
+
+	plain := client.New(cfg, "http://zensu.test", "http://zensu.test/oauth/token")
+	if err := plain.HTTPClient.CheckRedirect(
+		&http.Request{URL: &url.URL{Scheme: "http", Host: "zensu.test:80"}},
+		[]*http.Request{{URL: &url.URL{Scheme: "http", Host: "zensu.test"}}},
+	); err != nil {
+		t.Errorf("the default port for http is 80, so spelling it out is the same origin, got: %v", err)
+	}
+	if err := plain.HTTPClient.CheckRedirect(
+		&http.Request{URL: &url.URL{Scheme: "http", Host: "zensu.test:8080"}},
+		[]*http.Request{{URL: &url.URL{Scheme: "http", Host: "zensu.test"}}},
+	); err == nil {
+		t.Error("a different port is a different origin and must stay refused; dropping the port entirely would make two services on one host indistinguishable")
+	}
+}
+
+func TestHTTPClientFor_LeavesTheClientAloneWhenTheBudgetsMatch(t *testing.T) {
+	rec := &deadlineRecorder{}
+	cfg := &config.Config{APIKey: "zsk_k"}
+	base := &http.Client{Timeout: 30 * time.Second, Transport: rec}
+	c := client.New(cfg, "http://zensu.test", "http://zensu.test/oauth/token",
+		client.WithHTTPClient(base),
+		client.WithUploadTimeout(30*time.Second),
+	)
+	resp, err := c.DoWithContentType(context.Background(), http.MethodPost, "/api/features/f1/mocks", "multipart/form-data; boundary=b", []byte("payload"))
+	if err != nil {
+		t.Fatalf("DoWithContentType error: %v", err)
+	}
+	resp.Body.Close()
+	if got := rec.deadlines["multipart/form-data; boundary=b"]; got > 35*time.Second {
+		t.Errorf("an upload budget equal to the base needs no second client and must not extend the deadline, got roughly %v", got.Round(time.Second))
+	}
+}
+
+func TestRefuseCrossHostRedirect_AllowsAnUpgradeToHTTPSOnTheSameHost(t *testing.T) {
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, "http://zensu.test", "http://zensu.test/oauth/token")
+	if err := c.HTTPClient.CheckRedirect(
+		&http.Request{URL: &url.URL{Scheme: "https", Host: "zensu.test"}},
+		[]*http.Request{{URL: &url.URL{Scheme: "http", Host: "zensu.test"}}},
+	); err != nil {
+		t.Errorf("a plain-http base URL that the server upgrades to https on the same host is the ordinary deployment shape; normalizing the default port made 80 and 443 differ and refused it as cross-host, got: %v", err)
+	}
+	if err := c.HTTPClient.CheckRedirect(
+		&http.Request{URL: &url.URL{Scheme: "https", Host: "evil.test"}},
+		[]*http.Request{{URL: &url.URL{Scheme: "http", Host: "zensu.test"}}},
+	); err == nil {
+		t.Error("allowing the upgrade must not also allow it to a different host")
+	}
+
+	for _, pair := range [][2]string{{"zensu.test:80", "zensu.test"}, {"zensu.test", "zensu.test:443"}} {
+		if err := c.HTTPClient.CheckRedirect(
+			&http.Request{URL: &url.URL{Scheme: "https", Host: pair[1]}},
+			[]*http.Request{{URL: &url.URL{Scheme: "http", Host: pair[0]}}},
+		); err != nil {
+			t.Errorf("comparing raw ports across differing schemes makes the upgrade work only when both sides spell the port the same way; %s to %s is the same host at each scheme's default, got: %v", pair[0], pair[1], err)
+		}
+	}
+	if err := c.HTTPClient.CheckRedirect(
+		&http.Request{URL: &url.URL{Scheme: "https", Host: "zensu.test:8443"}},
+		[]*http.Request{{URL: &url.URL{Scheme: "http", Host: "zensu.test"}}},
+	); err == nil {
+		t.Error("an upgrade to a non-default port is a different origin and must stay refused")
+	}
+}
+
+func TestNew_HonorsTheInjectedPolicysVerdictForAPermittedHop(t *testing.T) {
+	refused := errors.New("the caller policy said no")
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, "https://zensu.test", "https://zensu.test/oauth/token",
+		client.WithHTTPClient(&http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+			return refused
+		}}),
+	)
+	err := c.HTTPClient.CheckRedirect(
+		&http.Request{URL: &url.URL{Scheme: "https", Host: "zensu.test"}},
+		[]*http.Request{{URL: &url.URL{Scheme: "https", Host: "zensu.test"}}},
+	)
+	if !errors.Is(err, refused) {
+		t.Errorf("calling the caller policy and discarding its answer would keep every other assertion in this file green while the injected policy became a no-op; its verdict must be returned, got: %v", err)
+	}
+}
+
+func TestHTTPClientFor_HonorsAnUploadTimeoutShorterThanTheBase(t *testing.T) {
+	rec := &deadlineRecorder{}
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, "http://zensu.test", "http://zensu.test/oauth/token",
+		client.WithHTTPClient(&http.Client{Timeout: 30 * time.Second, Transport: rec}),
+		client.WithUploadTimeout(5*time.Second),
+	)
+	resp, err := c.DoWithContentType(context.Background(), http.MethodPost, "/api/features/f1/mocks", "multipart/form-data; boundary=b", []byte("payload"))
+	if err != nil {
+		t.Fatalf("DoWithContentType error: %v", err)
+	}
+	resp.Body.Close()
+	if got := rec.deadlines["multipart/form-data; boundary=b"]; got > 10*time.Second {
+		t.Errorf("the option is named for the upload timeout, not for a floor under it: a caller asking for 5s got roughly %v", got.Round(time.Second))
+	}
+}
+
+func TestHTTPClientFor_GivesAnUploadADeadlineWhenTheBaseClientHasNone(t *testing.T) {
+	rec := &deadlineRecorder{}
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, "http://zensu.test", "http://zensu.test/oauth/token",
+		client.WithHTTPClient(&http.Client{Transport: rec}),
+	)
+	resp, err := c.DoWithContentType(context.Background(), http.MethodPost, "/api/features/f1/mocks", "multipart/form-data; boundary=b", []byte("payload"))
+	if err != nil {
+		t.Fatalf("DoWithContentType error: %v", err)
+	}
+	resp.Body.Close()
+	if rec.deadlines["multipart/form-data; boundary=b"] == 0 {
+		t.Error("a zero base timeout means no deadline at all, which is exactly the case where an upload budget matters most; it must still receive UploadTimeout")
+	}
+}
+
+func TestHTTPClientFor_MatchesTheMediaTypeExactly(t *testing.T) {
+	rec := &deadlineRecorder{}
+	cfg := &config.Config{APIKey: "zsk_k"}
+	c := client.New(cfg, "http://zensu.test", "http://zensu.test/oauth/token",
+		client.WithHTTPClient(&http.Client{Timeout: 30 * time.Second, Transport: rec}),
+	)
+	resp, err := c.DoWithContentType(context.Background(), http.MethodPost, "/api/features/f1/mocks", "multipart/form-datax", []byte("payload"))
+	if err != nil {
+		t.Fatalf("DoWithContentType error: %v", err)
+	}
+	resp.Body.Close()
+	if got := rec.deadlines["multipart/form-datax"]; got > 60*time.Second {
+		t.Errorf("a media type is a structured value, not a string prefix: multipart/form-datax is not an upload and must keep the base budget, got roughly %v", got.Round(time.Second))
+	}
+
+	resp, err = c.DoWithContentType(context.Background(), http.MethodPost, "/api/features/f1/mocks", "Multipart/Form-Data; boundary=b", []byte("payload"))
+	if err != nil {
+		t.Fatalf("DoWithContentType error: %v", err)
+	}
+	resp.Body.Close()
+	if got := rec.deadlines["Multipart/Form-Data; boundary=b"]; got <= 60*time.Second {
+		t.Errorf("RFC 7231 media types are case-insensitive, so this is an upload and must get the longer budget, got roughly %v", got.Round(time.Second))
 	}
 }

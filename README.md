@@ -245,6 +245,18 @@ hooks.
 
 API base URL: `--api-url` flag → `ZENSU_API_URL` → stored host → `https://api.zensu.dev`.
 
+Mock upload size: `ZENSU_MAX_UPLOAD_BYTES` → `33554432` (32 MiB). Raise it for a deployment
+whose server accepts larger design mocks. The value is capped at 536870912 (512 MiB), because
+the CLI assembles the whole multipart body in memory before sending it. An unparseable or
+non-positive value falls back to the 32 MiB default.
+
+Response size: `ZENSU_MAX_RESPONSE_BYTES` → `67108864` (64 MiB), capped at 536870912 (512 MiB).
+This bounds every API response read through a `zensu` subcommand — not only `mocks get --raw` —
+so a peer cannot drive the process out of memory by streaming. It does not reach the OAuth
+token and endpoint-discovery requests, which read their own responses. It is deliberately
+separate from the upload knob: raising what you may upload should not raise how much a server
+may make you hold.
+
 ## License
 
 [Apache License 2.0](LICENSE).

@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -47,16 +49,44 @@ type Client struct {
 
 const maxRedirects = 10
 
+func defaultPortForScheme(scheme string) string {
+	if scheme == "https" {
+		return "443"
+	}
+	return "80"
+}
+
+func normalizedPort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	return defaultPortForScheme(u.Scheme)
+}
+
+func atDefaultPort(u *url.URL) bool {
+	return u.Port() == "" || u.Port() == defaultPortForScheme(u.Scheme)
+}
+
+func sameHostAndPort(a, b *url.URL) bool {
+	if !strings.EqualFold(a.Hostname(), b.Hostname()) {
+		return false
+	}
+	if a.Scheme == b.Scheme {
+		return normalizedPort(a) == normalizedPort(b)
+	}
+	return atDefaultPort(a) && atDefaultPort(b)
+}
+
 func refuseCrossHostRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) == 0 {
 		return nil
 	}
 	origin := via[0].URL
-	if req.URL.Host != origin.Host {
-		return fmt.Errorf("refusing cross-host redirect to %s", req.URL.Host)
-	}
 	if origin.Scheme == "https" && req.URL.Scheme != "https" {
 		return fmt.Errorf("refusing redirect that downgrades %s to %s", origin.Scheme, req.URL.Scheme)
+	}
+	if !sameHostAndPort(req.URL, origin) {
+		return fmt.Errorf("refusing cross-host redirect to %s", req.URL.Host)
 	}
 	if len(via) >= maxRedirects {
 		return fmt.Errorf("stopped after %d redirects", len(via))
@@ -135,8 +165,11 @@ func (c *Client) do(ctx context.Context, method, path, contentType string, body 
 }
 
 func (c *Client) httpClientFor(contentType string) *http.Client {
-	isUpload := strings.HasPrefix(contentType, "multipart/form-data")
-	if !isUpload || c.UploadTimeout <= 0 || c.HTTPClient.Timeout <= 0 || c.UploadTimeout <= c.HTTPClient.Timeout {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil || mediaType != "multipart/form-data" {
+		return c.HTTPClient
+	}
+	if c.UploadTimeout <= 0 || c.UploadTimeout == c.HTTPClient.Timeout {
 		return c.HTTPClient
 	}
 	upload := *c.HTTPClient

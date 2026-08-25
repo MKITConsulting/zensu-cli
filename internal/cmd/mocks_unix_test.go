@@ -32,8 +32,8 @@ func TestMocksCreate_ReportsAFileItCannotOpen(t *testing.T) {
 	if err == nil {
 		t.Fatal("mocks create must refuse a file it cannot open; os.Lstat succeeds on a mode-000 file, so only os.Open catches this")
 	}
-	if !strings.Contains(err.Error(), "reading mock file") {
-		t.Errorf("the error should name the failed read, got: %v", err)
+	if !strings.Contains(err.Error(), "opening mock file") {
+		t.Errorf("the pre-open stat succeeds on a mode-000 file, so this must be reported as the open failing and not share a wrapper with the stat, got: %v", err)
 	}
 }
 

@@ -49,7 +49,7 @@ const maxMockBytes = 32 << 20
 
 const maxUploadBytesEnv = "ZENSU_MAX_UPLOAD_BYTES"
 
-const maxUploadBytesCeiling = 1 << 40
+const maxUploadBytesCeiling = 512 << 20
 
 func maxMockUploadBytes() int64 {
 	if raw := os.Getenv(maxUploadBytesEnv); raw != "" {
@@ -116,13 +116,16 @@ func newMocksCreateCmd(f *Factory) *cobra.Command {
 				return err
 			}
 			if asJSON {
-				return printJSON(f.Out, raw)
+				if err := printJSON(f.Out, raw); err != nil {
+					return uploadAcceptedError(featureID, err)
+				}
+				return nil
 			}
 			var m featureMock
 			if err := json.Unmarshal(raw, &m); err != nil {
-				return err
+				return uploadAcceptedError(featureID, err)
 			}
-			fmt.Fprintf(f.Out, "Uploaded %s mock to feature %s\n", sanitizeTerminal(m.MockType), featureID)
+			fmt.Fprintf(f.Out, "Uploaded %s mock to feature %s\n", sanitizeTerminal(m.MockType), sanitizeTerminal(featureID))
 			fmt.Fprintf(f.Out, "ID:           %s\n", sanitizeTerminal(m.ID))
 			fmt.Fprintf(f.Out, "Title:        %s\n", sanitizeTerminal(derefMockStr(m.Title)))
 			fmt.Fprintf(f.Out, "File name:    %s\n", sanitizeTerminal(m.FileName))
@@ -142,29 +145,29 @@ func mockUploadBody(fileName, path, title, altText string) ([]byte, string, erro
 
 	link, err := os.Lstat(path)
 	if err != nil {
-		return nil, "", fmt.Errorf("reading mock file: %w", err)
+		return nil, "", fmt.Errorf("inspecting mock file: %w", err)
 	}
 	if link.Mode()&os.ModeSymlink != 0 {
-		return nil, "", fmt.Errorf("%s is a symlink; pass the file it points at so the upload is what you expect", path)
+		return nil, "", fmt.Errorf("%s is a symlink; pass the file it points at so the upload is what you expect", sanitizeTerminal(path))
 	}
 	if !link.Mode().IsRegular() {
-		return nil, "", fmt.Errorf("%s is not a regular file", path)
+		return nil, "", fmt.Errorf("%s is not a regular file", sanitizeTerminal(path))
 	}
 
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, "", fmt.Errorf("reading mock file: %w", err)
+		return nil, "", fmt.Errorf("opening mock file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 
 	info, err := file.Stat()
 	if err != nil {
-		return nil, "", fmt.Errorf("reading mock file: %w", err)
+		return nil, "", fmt.Errorf("inspecting opened mock file: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, "", fmt.Errorf("%s is not a regular file", path)
+		return nil, "", fmt.Errorf("%s stopped being a regular file while it was being opened", sanitizeTerminal(path))
 	}
-	if err := verifyPathUnchanged(path, info); err != nil {
+	if err := verifyPathUnchanged(path, link, info); err != nil {
 		return nil, "", err
 	}
 	if info.Size() > limit {
@@ -173,10 +176,17 @@ func mockUploadBody(fileName, path, title, altText string) ([]byte, string, erro
 	return buildMockBody(fileName, file, limit, title, altText)
 }
 
-func verifyPathUnchanged(path string, opened os.FileInfo) error {
+func uploadAcceptedError(featureID string, cause error) error {
+	return fmt.Errorf("the server accepted the upload but its response could not be shown: %w; run zensu mocks list %s before retrying so you do not create a duplicate", cause, sanitizeTerminal(featureID))
+}
+
+func verifyPathUnchanged(path string, before, opened os.FileInfo) error {
 	again, err := os.Lstat(path)
-	if err != nil || !os.SameFile(again, opened) {
-		return fmt.Errorf("%s changed while it was being opened; not uploading it", path)
+	if err != nil {
+		return fmt.Errorf("re-checking mock file: %w", err)
+	}
+	if !os.SameFile(again, opened) || !os.SameFile(before, opened) {
+		return fmt.Errorf("%s changed while it was being opened; not uploading it", sanitizeTerminal(path))
 	}
 	return nil
 }
@@ -286,7 +296,7 @@ func newMocksGetCmd(f *Factory) *cobra.Command {
 				fmt.Fprintf(f.Out, "Size:         %d bytes\n", m.FileSizeBytes)
 				return nil
 			}
-			return fmt.Errorf("mock %s not found for feature %s", mockID, featureID)
+			return fmt.Errorf("mock %s not found for feature %s", sanitizeTerminal(mockID), sanitizeTerminal(featureID))
 		},
 	}
 	cmd.Flags().BoolVar(&raw, "raw", false, "print the mock's raw content to stdout instead of metadata")

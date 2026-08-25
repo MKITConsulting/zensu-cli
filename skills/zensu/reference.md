@@ -226,6 +226,9 @@ zensu design context <product-id> [--component <id>]   # Design.md, shared CSS, 
 
 zensu mocks create <feature-id> <file> [--title t] [--alt-text a]
     # file extension picks the type: .png/.jpg/.jpeg -> image, .html/.htm -> html
+    # 32 MiB default; ZENSU_MAX_UPLOAD_BYTES raises it, capped at 512 MiB because the
+    # body is assembled in memory. Responses have their own bound, ZENSU_MAX_RESPONSE_BYTES
+    # (64 MiB default), applied to every response a subcommand reads.
 zensu mocks list <feature-id>
 zensu mocks get <feature-id> <mock-id>              # metadata or raw content
 

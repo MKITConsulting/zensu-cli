@@ -117,6 +117,11 @@ func TestSanitizeTerminal_StripsControlAndBidiRunes(t *testing.T) {
 			t.Errorf("rune %#U must be stripped, got %q", bad, got)
 		}
 	}
+	for _, bad := range []rune{0x200e, 0x2066, 0xfeff, 0xe0001} {
+		if strings.ContainsRune(sanitizeTerminal(string(bad)), bad) {
+			t.Errorf("rune %#U must be stripped: without this assertion its whole range can be deleted from the table with the suite still green, and the directional isolates render exactly like the override that was already covered", bad)
+		}
+	}
 	if strings.ContainsRune(got, '\t') {
 		t.Errorf("a tab inside a value would open an extra column and must become a space, got %q", got)
 	}
@@ -270,5 +275,208 @@ func TestReadResponse_ReportsATruncatedBodyAsATransportFailure(t *testing.T) {
 	}
 	if errors.Unwrap(err) == nil {
 		t.Error("the transport cause must stay wrapped: swapping the wrapping verb for a plain one would break errors.Is for every caller without failing a test")
+	}
+}
+
+func TestRequestWithContentType_RefusesAResponseLargerThanTheCeiling(t *testing.T) {
+	t.Setenv(maxUploadBytesEnv, "1024")
+	t.Setenv(maxResponseBytesEnv, "4096")
+	oversized := bytes.Repeat([]byte("x"), int(maxResponseBytes())+4096)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(oversized)
+	}))
+	defer srv.Close()
+
+	f, _ := testFactory(srv)
+	_, err := f.requestWithContentType(context.Background(), http.MethodPost, "/api/features/f1/mocks", "multipart/form-data; boundary=b", []byte("payload"))
+	if err == nil {
+		t.Fatal("the CLI caps what it sends but buffered whatever a peer chose to stream back; a body past the ceiling must be refused rather than held in memory")
+	}
+	if !strings.Contains(err.Error(), "response body exceeds") {
+		t.Errorf("the over-size refusal must be distinguishable from the truncation error, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "reading response body") {
+		t.Errorf("an over-size body is not a transport failure and must not borrow that wording, got: %v", err)
+	}
+}
+
+type failingWriter struct{ err error }
+
+func (f failingWriter) Write([]byte) (int, error) { return 0, f.err }
+
+func TestPrintJSON_SurfacesAWriteFailureOnTheValidJSONPath(t *testing.T) {
+	wantErr := errors.New("broken pipe")
+	err := printJSON(failingWriter{err: wantErr}, []byte(`{"id":"m1"}`))
+	if !errors.Is(err, wantErr) {
+		t.Errorf("stdout can be a closed pipe, so the write failure must reach the caller rather than be swallowed, got: %v", err)
+	}
+}
+
+func TestAPIError_KeepsTheExcerptShortWhateverTheBodySize(t *testing.T) {
+	err := apiError(500, bytes.Repeat([]byte("x"), 200*1024))
+	if len(err.Error()) > 8*1024 {
+		t.Errorf("the response cap bounds what the CLI holds, not what it renders; an error string never needs more than a few KiB and this one was %d bytes", len(err.Error()))
+	}
+	if !strings.Contains(err.Error(), "status 500") {
+		t.Errorf("the status must survive the excerpt, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "truncated") {
+		t.Errorf("a reader must be told the body was cut rather than shown a silently partial one, got a %d byte message", len(err.Error()))
+	}
+	short := apiError(400, []byte(`{"code":"bad_request","message":"pick another slug"}`))
+	if !strings.Contains(short.Error(), "pick another slug") {
+		t.Errorf("an ordinary message must pass through whole, got: %v", short)
+	}
+	if strings.Contains(short.Error(), "truncated") {
+		t.Errorf("an ordinary message must not be marked truncated, got: %v", short)
+	}
+}
+
+func TestMaxResponseBytes_IsIndependentOfTheUploadKnob(t *testing.T) {
+	t.Setenv(maxUploadBytesEnv, "")
+	t.Setenv(maxResponseBytesEnv, "")
+	base := maxResponseBytes()
+
+	t.Setenv(maxUploadBytesEnv, "536870912")
+	if got := maxResponseBytes(); got != base {
+		t.Errorf("deriving the response budget from the upload knob means raising it to upload one large mock also authorises that much attacker-chosen response on every command, and lowering it makes ordinary responses unreadable; got %d want %d", got, base)
+	}
+
+	t.Setenv(maxResponseBytesEnv, "4096")
+	if got := maxResponseBytes(); got != 4096 {
+		t.Errorf("the response budget must have its own knob: got %d want 4096", got)
+	}
+	t.Setenv(maxResponseBytesEnv, "9223372036854775807")
+	if got := maxResponseBytes(); got != responseBytesCeiling {
+		t.Errorf("an override past the ceiling must be clamped so limit+1 cannot overflow: got %d want %d", got, responseBytesCeiling)
+	}
+	t.Setenv(maxResponseBytesEnv, "not-a-number")
+	if got := maxResponseBytes(); got != defaultResponseBytes {
+		t.Errorf("an unparseable override must fall back to the default: got %d", got)
+	}
+}
+
+func TestRequestWithContentType_KeepsOrdinaryResponsesReadableWhenTheUploadKnobIsLowered(t *testing.T) {
+	t.Setenv(maxUploadBytesEnv, "1024")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(bytes.Repeat([]byte("z"), 64*1024))
+	}))
+	defer srv.Close()
+
+	f, _ := testFactory(srv)
+	if _, err := f.request(context.Background(), http.MethodGet, "/api/products", nil); err != nil {
+		t.Fatalf("the knob exists to restrict what the CLI uploads; lowering it must not make every ordinary list or get response unreadable, got: %v", err)
+	}
+}
+
+func TestRequestWithContentType_PrefersTheAPIErrorWhenANon2xxBodyIsAlsoOversized(t *testing.T) {
+	t.Setenv(maxUploadBytesEnv, "1024")
+	t.Setenv(maxResponseBytesEnv, "4096")
+	oversized := bytes.Repeat([]byte("x"), int(maxResponseBytes())+4096)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write(oversized)
+	}))
+	defer srv.Close()
+
+	f, _ := testFactory(srv)
+	_, err := f.request(context.Background(), http.MethodGet, "/api/products", nil)
+	if err == nil {
+		t.Fatal("a 500 must still surface as an error")
+	}
+	if !strings.Contains(err.Error(), "status 500") {
+		t.Errorf("this file already pins that the status outranks a truncated body; an oversized body must not be the one case where the status is dropped, got: %v", err)
+	}
+}
+
+func TestPrintJSON_KeepsInvalidUTF8BytesInTheValidJSONBranch(t *testing.T) {
+	body := []byte("{\"title\":\"a\xffb\"}")
+	out := &bytes.Buffer{}
+	if err := printJSON(out, body); err != nil {
+		t.Fatalf("printJSON error: %v", err)
+	}
+	if !bytes.Contains(out.Bytes(), []byte{0xff}) {
+		t.Errorf("ranging over a string yields U+FFFD for an invalid byte and WriteRune then emits its three-byte encoding, silently rewriting a body this branch exists to pass through byte-exact, got %q", out.Bytes())
+	}
+}
+
+func TestRequestWithContentType_AcceptsABodyAtTheCeiling(t *testing.T) {
+	t.Setenv(maxUploadBytesEnv, "1024")
+	t.Setenv(maxResponseBytesEnv, "4096")
+	atLimit := bytes.Repeat([]byte("y"), int(maxResponseBytes()))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(atLimit)
+	}))
+	defer srv.Close()
+
+	f, _ := testFactory(srv)
+	raw, err := f.requestWithContentType(context.Background(), http.MethodPost, "/api/features/f1/mocks", "multipart/form-data; boundary=b", []byte("payload"))
+	if err != nil {
+		t.Fatalf("a body exactly at the ceiling must still be accepted, got: %v", err)
+	}
+	if len(raw) != len(atLimit) {
+		t.Errorf("the accepted body must arrive whole: got %d bytes, want %d", len(raw), len(atLimit))
+	}
+}
+
+func TestPrintJSON_EscapesUnsafeRunesInsideValidJSON(t *testing.T) {
+	out := &bytes.Buffer{}
+	if err := printJSON(out, []byte("{\"title\":\"invoice\u202egnp.exe\"}")); err != nil {
+		t.Fatalf("printJSON error: %v", err)
+	}
+	got := out.String()
+	if strings.ContainsRune(got, 0x202e) {
+		t.Errorf("RFC 8259 requires escaping only U+0000-U+001F, so every rune in the control table is legal unescaped inside a JSON string and rides this byte-exact branch straight to the terminal; it must be re-encoded instead, got %q", got)
+	}
+	if !strings.Contains(got, "\\u202e") {
+		t.Errorf("the rune must survive as an escape so any JSON parser still decodes the same value, got %q", got)
+	}
+	if !strings.Contains(got, "invoice") || !strings.Contains(got, "gnp.exe") {
+		t.Errorf("the surrounding text must be untouched, got %q", got)
+	}
+
+	astral := &bytes.Buffer{}
+	if err := printJSON(astral, []byte("{\"tag\":\"a\U000e0041b\"}")); err != nil {
+		t.Fatalf("printJSON error: %v", err)
+	}
+	if strings.ContainsRune(astral.String(), 0xe0041) {
+		t.Errorf("a rune above U+FFFF needs a surrogate pair rather than a single escape, got %q", astral.String())
+	}
+	if !strings.Contains(astral.String(), "\\udb40\\udc41") {
+		t.Errorf("the surrogate pair for U+E0041 must be emitted, got %q", astral.String())
+	}
+}
+
+type recordingWriter struct{ writes []string }
+
+func (w *recordingWriter) Write(p []byte) (int, error) {
+	w.writes = append(w.writes, string(p))
+	return len(p), nil
+}
+
+func TestPrintJSON_DoesNotCopyTheWholeBodyOnTheFallbackPath(t *testing.T) {
+	var w recordingWriter
+	if err := printJSON(&w, []byte("not json at all")); err != nil {
+		t.Fatalf("the fallback path must still print, got: %v", err)
+	}
+	if len(w.writes) != 2 {
+		t.Fatalf("the body and its newline must travel as separate writes so a large body is never concatenated in front of the response ceiling, got %d writes: %q", len(w.writes), w.writes)
+	}
+	if w.writes[0] != "not json at all" {
+		t.Errorf("the first write carries the sanitized body alone, got %q", w.writes[0])
+	}
+	if w.writes[1] != "\n" {
+		t.Errorf("the second write carries only the newline, got %q", w.writes[1])
+	}
+}
+
+func TestPrintJSON_SurfacesAWriteFailureOnTheFallbackPath(t *testing.T) {
+	wantErr := errors.New("broken pipe")
+	err := printJSON(failingWriter{err: wantErr}, []byte("not json at all"))
+	if !errors.Is(err, wantErr) {
+		t.Errorf("a closed pipe must reach the caller on the fallback path too, got: %v", err)
 	}
 }

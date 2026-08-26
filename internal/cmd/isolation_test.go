@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +16,8 @@ import (
 	"github.com/MKITConsulting/zensu-cli/internal/config"
 	"github.com/MKITConsulting/zensu-cli/internal/testutil"
 )
+
+var fixtureSeq atomic.Int64
 
 func TestMain(m *testing.M) {
 	os.Exit(testutil.RunWithIsolatedConfigDir(m.Run))
@@ -41,49 +45,81 @@ func TestConfigDir_IsIsolatedFromRealCredentialStore(t *testing.T) {
 
 func TestDefaultSaver_WritesIntoIsolatedConfigDir(t *testing.T) {
 	dir := testutil.RequireIsolatedConfigDir(t)
-	hosts := filepath.Join(dir, "hosts.json")
-	if err := os.Remove(hosts); err != nil && !os.IsNotExist(err) {
-		t.Fatalf("clearing %s: %v", hosts, err)
-	}
+	testutil.ClearIsolatedConfigDir(t, dir)
+
+	seq := strconv.FormatInt(fixtureSeq.Add(1), 10)
+	wantAccess, wantRefresh := "cmd-saver-acc-"+seq, "cmd-saver-ref-"+seq
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/oauth/token" {
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"access_token":  "isolated-access",
-				"refresh_token": "isolated-refresh",
-				"expires_in":    900,
-			})
-			return
+		switch r.URL.Path {
+		case "/oauth/token":
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": wantAccess, "refresh_token": wantRefresh, "expires_in": 900})
+		default:
+			w.WriteHeader(http.StatusOK)
 		}
-		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
-	cfg := &config.Config{AccessToken: "stale", RefreshToken: "r1", ExpiresAt: time.Now().Add(-time.Minute)}
+	before := time.Now()
+	cfg := &config.Config{AccessToken: "stale", RefreshToken: "r1", ExpiresAt: before.Add(-time.Minute)}
 	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
-
 	resp, err := c.Do(context.Background(), http.MethodGet, "/api/products", nil)
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 
-	if cfg.AccessToken != "isolated-access" {
+	if cfg.AccessToken != wantAccess {
 		t.Fatalf("refresh did not run: in-memory access token is %q", cfg.AccessToken)
 	}
 
-	raw, err := os.ReadFile(hosts)
+	stored := testutil.SoleEntry(t, dir)
+	raw, err := os.ReadFile(stored)
 	if err != nil {
-		t.Fatalf("the default saver did not write %s: %v", hosts, err)
+		t.Fatalf("reading %s: %v", stored, err)
 	}
 	var persisted config.Config
 	if err := json.Unmarshal(raw, &persisted); err != nil {
-		t.Fatalf("decoding %s: %v", hosts, err)
+		t.Fatalf("decoding %s: %v", stored, err)
 	}
-	if persisted.AccessToken != "isolated-access" {
-		t.Errorf("persisted access token: got %q want %q", persisted.AccessToken, "isolated-access")
+	if persisted.AccessToken != wantAccess {
+		t.Errorf("persisted access token: got %q want %q", persisted.AccessToken, wantAccess)
 	}
-	if persisted.RefreshToken != "isolated-refresh" {
-		t.Errorf("persisted refresh token: got %q want %q", persisted.RefreshToken, "isolated-refresh")
+	if persisted.RefreshToken != wantRefresh {
+		t.Errorf("persisted refresh token: got %q want %q", persisted.RefreshToken, wantRefresh)
+	}
+	if !persisted.ExpiresAt.After(before) {
+		t.Errorf("persisted expiry %s is not after the refresh started at %s — expires_in was not applied", persisted.ExpiresAt, before)
+	}
+}
+
+func TestConfigSave_WritesIntoIsolatedConfigDir(t *testing.T) {
+	dir := testutil.RequireIsolatedConfigDir(t)
+	testutil.ClearIsolatedConfigDir(t, dir)
+
+	seq := strconv.FormatInt(fixtureSeq.Add(1), 10)
+	cfg := &config.Config{
+		APIURL:       "https://api.example.test",
+		AccessToken:  "cmd-isolated-acc-" + seq,
+		RefreshToken: "cmd-isolated-ref-" + seq,
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	stored := testutil.SoleEntry(t, dir)
+	raw, err := os.ReadFile(stored)
+	if err != nil {
+		t.Fatalf("reading %s: %v", stored, err)
+	}
+	var persisted config.Config
+	if err := json.Unmarshal(raw, &persisted); err != nil {
+		t.Fatalf("decoding %s: %v", stored, err)
+	}
+	if persisted.AccessToken != cfg.AccessToken {
+		t.Errorf("persisted access token: got %q want %q", persisted.AccessToken, cfg.AccessToken)
+	}
+	if persisted.RefreshToken != cfg.RefreshToken {
+		t.Errorf("persisted refresh token: got %q want %q", persisted.RefreshToken, cfg.RefreshToken)
 	}
 }

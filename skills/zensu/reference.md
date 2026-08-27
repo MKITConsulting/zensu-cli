@@ -55,7 +55,7 @@ Global flags on every command: `--api-url <url>`. Typed commands accept
 | `link` | Link tests, docs, and source files to a feature |
 | `knowledge` | Organization knowledge pool search |
 | `design` | Product design-system context |
-| `mocks` | Feature design mocks |
+| `mocks` | Feature design mocks — upload and inspect |
 | `wiki` | Wiki pages |
 | `org` | Organization users |
 | `doc` | Documentation context and CLAUDE.md templates |
@@ -205,6 +205,12 @@ zensu journeys step <journey-id> --product <id> --title <t> --step-order <int>
     [--description d] [--expected-result r] [--feature <uuid>] [--critical]
     [--interaction-type action|navigation|input|validation|output|wait]
 zensu journeys steps <journey-id>                   # list steps
+zensu journeys step-update <journey-id> <step-id> --product <id> [--title t] [--step-order <int>]
+    [--description d] [--expected-result r] [--feature <uuid>] [--critical]
+    [--interaction-type action|navigation|input|validation|output|wait]
+    # read-modify-write, last writer wins; omitted flags are resent unchanged
+zensu journeys step-delete <journey-id> <step-id> --product <id>
+    # remaining steps keep their order, so reorder afterwards if it must stay gap-free
 zensu journeys health <journey-id>                  # health analysis
 zensu journeys suggest --product <id>               # context to suggest journeys
 ```
@@ -218,6 +224,11 @@ zensu knowledge sources
 
 zensu design context <product-id> [--component <id>]   # Design.md, shared CSS, assets
 
+zensu mocks create <feature-id> <file> [--title t] [--alt-text a]
+    # file extension picks the type: .png/.jpg/.jpeg -> image, .html/.htm -> html
+    # 32 MiB default; ZENSU_MAX_UPLOAD_BYTES raises it, capped at 512 MiB because the
+    # body is assembled in memory. Responses have their own bound, ZENSU_MAX_RESPONSE_BYTES
+    # (64 MiB default), applied to every response a subcommand reads.
 zensu mocks list <feature-id>
 zensu mocks get <feature-id> <mock-id>              # metadata or raw content
 
@@ -229,6 +240,17 @@ zensu wiki update <page-id> [--title t] [--content markdown] [--change-summary s
     [--visibility public|private]
 
 zensu org users [--query "name-or-email"]           # omit --query to list all members
+```
+
+### meta
+
+These verbs are informational stubs in the CLI: the work happens in the Zensu MCP
+server or the host's Zensu plugin, and each command explains where to go instead.
+
+```
+zensu meta workflow-guide <workflow>                # bootstrap|security-review|implement|pulse|ghost-scan
+zensu meta suggest-workflow --product <uuid>
+zensu meta scaffold-agent [--cli claude-code|kiro|cursor|copilot|all]
 ```
 
 ### doc

@@ -26,7 +26,7 @@ type TokenResponse struct {
 	Scope        string `json:"scope"`
 }
 
-func DiscoverEndpoints(ctx context.Context, httpClient *http.Client, apiURL string) Endpoints {
+func DiscoverEndpoints(ctx context.Context, httpClient *http.Client, apiURL string, trustedHosts []string) Endpoints {
 	fallback := Endpoints{
 		Authorization: strings.TrimRight(apiURL, "/") + "/oauth/authorize",
 		Token:         strings.TrimRight(apiURL, "/") + "/oauth/token",
@@ -53,13 +53,13 @@ func DiscoverEndpoints(ctx context.Context, httpClient *http.Client, apiURL stri
 	if meta.AuthorizationEndpoint == "" || meta.TokenEndpoint == "" {
 		return fallback
 	}
-	if !endpointTrusted(apiURL, meta.AuthorizationEndpoint) || !endpointTrusted(apiURL, meta.TokenEndpoint) {
+	if !EndpointTrusted(apiURL, meta.AuthorizationEndpoint, trustedHosts) || !EndpointTrusted(apiURL, meta.TokenEndpoint, trustedHosts) {
 		return fallback
 	}
 	return Endpoints{Authorization: meta.AuthorizationEndpoint, Token: meta.TokenEndpoint}
 }
 
-func endpointTrusted(apiURL, endpoint string) bool {
+func EndpointTrusted(apiURL, endpoint string, trustedHosts []string) bool {
 	a, err := url.Parse(apiURL)
 	if err != nil {
 		return false
@@ -71,7 +71,36 @@ func endpointTrusted(apiURL, endpoint string) bool {
 	if a.Scheme == "https" && e.Scheme != "https" {
 		return false
 	}
-	return true
+	if sameOrigin(a, e) {
+		return true
+	}
+	for _, h := range trustedHosts {
+		if strings.EqualFold(strings.TrimSpace(h), e.Hostname()) {
+			return true
+		}
+	}
+	return false
+}
+
+func defaultPortForScheme(scheme string) string {
+	if scheme == "https" {
+		return "443"
+	}
+	return "80"
+}
+
+func normalizedPort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	return defaultPortForScheme(u.Scheme)
+}
+
+func sameOrigin(a, e *url.URL) bool {
+	if !strings.EqualFold(a.Hostname(), e.Hostname()) {
+		return false
+	}
+	return normalizedPort(a) == normalizedPort(e)
 }
 
 func AuthorizeURL(authzEndpoint, redirectURI, challenge, state, scope string) string {

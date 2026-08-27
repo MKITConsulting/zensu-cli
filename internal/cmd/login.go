@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/MKITConsulting/zensu-cli/internal/auth"
+	"github.com/MKITConsulting/zensu-cli/internal/client"
 	"github.com/MKITConsulting/zensu-cli/internal/config"
 )
 
@@ -30,7 +31,7 @@ func newAuthLoginCmd(f *Factory) *cobra.Command {
 				return err
 			}
 			apiURL := cfg.ResolveAPIURL(apiURLFlag, os.Getenv("ZENSU_API_URL"))
-			httpClient := &http.Client{Timeout: 30 * time.Second}
+			httpClient := client.NewGuardedHTTPClient(discoveryTimeout)
 
 			if cmd.Flags().Changed("with-token") {
 				return f.loginWithToken(cmd.Context(), httpClient, cfg, apiURL, withToken, cmd.InOrStdin())
@@ -68,7 +69,7 @@ func (f *Factory) loginWithToken(ctx context.Context, httpClient *http.Client, c
 }
 
 func (f *Factory) loginWithBrowser(ctx context.Context, httpClient *http.Client, cfg *config.Config, apiURL string) error {
-	eps := auth.DiscoverEndpoints(ctx, httpClient, apiURL)
+	eps := auth.DiscoverEndpoints(ctx, httpClient, apiURL, trustedAuthHosts(os.Getenv(trustedAuthHostsEnv)))
 	pkce, err := auth.GeneratePKCE()
 	if err != nil {
 		return err

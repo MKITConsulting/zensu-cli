@@ -73,3 +73,16 @@ func TestNewRootCmd_CompletionStillGenerates(t *testing.T) {
 		t.Error("generated zsh completion should still contain #compdef")
 	}
 }
+
+func TestTrustedAuthHosts_ParsesTheOperatorsList(t *testing.T) {
+	if got := trustedAuthHosts(""); got != nil {
+		t.Errorf("an unset variable must trust nothing beyond the API host itself, got %q", got)
+	}
+	if got := trustedAuthHosts("   ,  , "); got != nil {
+		t.Errorf("a list of only separators and blanks must not widen trust, got %q", got)
+	}
+	got := trustedAuthHosts(" auth.example , ,sso.example ")
+	if len(got) != 2 || got[0] != "auth.example" || got[1] != "sso.example" {
+		t.Errorf("each host must be trimmed and empty entries dropped, got %q", got)
+	}
+}

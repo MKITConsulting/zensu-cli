@@ -21,7 +21,7 @@ func TestDiscoverEndpoints_RejectsSchemeDowngrade(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ep := auth.DiscoverEndpoints(context.Background(), srv.Client(), srv.URL)
+	ep := auth.DiscoverEndpoints(context.Background(), srv.Client(), srv.URL, nil)
 	if ep.Token != srv.URL+"/oauth/token" {
 		t.Errorf("downgraded http token_endpoint must be rejected → fallback; got %q", ep.Token)
 	}
@@ -30,7 +30,7 @@ func TestDiscoverEndpoints_RejectsSchemeDowngrade(t *testing.T) {
 	}
 }
 
-func TestDiscoverEndpoints_AllowsCrossHostHTTPS(t *testing.T) {
+func TestDiscoverEndpoints_RejectsCrossHostTokenEndpointByDefault(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"authorization_endpoint": "https://mcp.other.example/oauth/authorize",
@@ -39,9 +39,66 @@ func TestDiscoverEndpoints_AllowsCrossHostHTTPS(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ep := auth.DiscoverEndpoints(context.Background(), srv.Client(), srv.URL)
+	ep := auth.DiscoverEndpoints(context.Background(), srv.Client(), srv.URL, nil)
+	if ep.Token != srv.URL+"/oauth/token" {
+		t.Errorf("the refresh token is sent to the token endpoint, so a host the user never named must not be honored without opting in; got %q", ep.Token)
+	}
+	if ep.Authorization != srv.URL+"/oauth/authorize" {
+		t.Errorf("a cross-host authorization_endpoint must fall back for the same reason; got %q", ep.Authorization)
+	}
+}
+
+func TestDiscoverEndpoints_AllowsCrossHostWhenTheHostIsExplicitlyTrusted(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"authorization_endpoint": "https://mcp.other.example/oauth/authorize",
+			"token_endpoint":         "https://mcp.other.example/oauth/token",
+		})
+	}))
+	defer srv.Close()
+
+	ep := auth.DiscoverEndpoints(context.Background(), srv.Client(), srv.URL, []string{"MCP.Other.Example"})
 	if ep.Token != "https://mcp.other.example/oauth/token" {
-		t.Errorf("cross-host https token_endpoint should be honored; got %q", ep.Token)
+		t.Errorf("a separate auth host stays possible when the operator names it, and the match is case-insensitive; got %q", ep.Token)
+	}
+}
+
+func TestDiscoverEndpoints_TreatsASpelledOutDefaultPortAsTheSameHost(t *testing.T) {
+	if !auth.EndpointTrusted("https://api.example", "https://api.example:443/oauth/token", nil) {
+		t.Error("https://api.example and https://api.example:443 are the same origin, so spelling the port out must not force a fallback")
+	}
+	if auth.EndpointTrusted("https://api.example", "https://api.example:8443/oauth/token", nil) {
+		t.Error("a real port change is a different origin and must not be trusted")
+	}
+	if !auth.EndpointTrusted("https://API.Example", "https://api.example/oauth/token", nil) {
+		t.Error("host comparison must be case-insensitive")
+	}
+}
+
+func TestDiscoverEndpoints_RejectsATrustedHostThatDowngradesTheScheme(t *testing.T) {
+	if auth.EndpointTrusted("https://api.example", "http://mcp.other.example/oauth/token", []string{"mcp.other.example"}) {
+		t.Error("naming a host as trusted must not also waive the https requirement")
+	}
+}
+
+func TestDiscoverEndpoints_NormalizesThePlainHTTPDefaultPort(t *testing.T) {
+	if !auth.EndpointTrusted("http://api.internal", "http://api.internal:80/oauth/token", nil) {
+		t.Error("a self-hosted plaintext deployment must still recognise its own host when the default port is spelled out")
+	}
+	if auth.EndpointTrusted("http://api.internal", "http://api.internal:8080/oauth/token", nil) {
+		t.Error("a different port is a different origin over http too")
+	}
+}
+
+func TestDiscoverEndpoints_RefusesUnparseableURLs(t *testing.T) {
+	if auth.EndpointTrusted("://not-a-url", "https://api.example/oauth/token", nil) {
+		t.Error("an API URL that cannot be parsed offers nothing to compare against and must not be trusted")
+	}
+	if auth.EndpointTrusted("https://api.example", "://not-a-url", nil) {
+		t.Error("an endpoint that cannot be parsed must not be trusted")
+	}
+	if auth.EndpointTrusted("https://api.example", "/oauth/token", nil) {
+		t.Error("an endpoint with no host names no origin and must not be trusted")
 	}
 }
 

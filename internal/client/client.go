@@ -94,6 +94,10 @@ func refuseCrossHostRedirect(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
+func NewGuardedHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout, CheckRedirect: refuseCrossHostRedirect}
+}
+
 type Option func(*Client)
 
 func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.HTTPClient = h } }

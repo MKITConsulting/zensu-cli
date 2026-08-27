@@ -245,6 +245,17 @@ hooks.
 
 API base URL: `--api-url` flag → `ZENSU_API_URL` → stored host → `https://api.zensu.dev`.
 
+OAuth endpoint discovery: the CLI reads `/.well-known/oauth-authorization-server` from the API
+host and, by default, honours the endpoints it names only when they sit on that same host —
+port and case normalised. The token endpoint receives your refresh token, so a discovery
+document must not be able to move it to a host you never named. Redirects during discovery and
+during the login exchange are refused for the same reason.
+
+Separate auth host: `ZENSU_TRUSTED_AUTH_HOSTS` is a comma-separated list of additional hosts
+whose discovered endpoints are accepted, for a deployment whose issuer really is a different
+host. Naming a host here does not waive the HTTPS requirement — an `https` API URL still
+refuses an `http` endpoint. Unset means no host beyond the API host is trusted.
+
 Mock upload size: `ZENSU_MAX_UPLOAD_BYTES` → `33554432` (32 MiB). Raise it for a deployment
 whose server accepts larger design mocks. The value is capped at 536870912 (512 MiB), because
 the CLI assembles the whole multipart body in memory before sending it. An unparseable or

@@ -12,23 +12,24 @@ import (
 )
 
 func TestDiscoverEndpoints_UsesWellKnownWhenAvailable(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/.well-known/oauth-authorization-server" {
 			t.Errorf("unexpected discovery path: %s", r.URL.Path)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"authorization_endpoint": "https://issuer.test/oauth/authorize",
-			"token_endpoint":         "https://issuer.test/oauth/token",
+			"authorization_endpoint": srv.URL + "/authz/authorize",
+			"token_endpoint":         srv.URL + "/authz/token",
 		})
 	}))
 	defer srv.Close()
 
-	ep := auth.DiscoverEndpoints(context.Background(), srv.Client(), srv.URL)
-	if ep.Authorization != "https://issuer.test/oauth/authorize" {
-		t.Errorf("Authorization: got %q", ep.Authorization)
+	ep := auth.DiscoverEndpoints(context.Background(), srv.Client(), srv.URL, nil)
+	if ep.Authorization != srv.URL+"/authz/authorize" {
+		t.Errorf("a same-host discovery document must win over the conventional fallback path; got %q", ep.Authorization)
 	}
-	if ep.Token != "https://issuer.test/oauth/token" {
-		t.Errorf("Token: got %q", ep.Token)
+	if ep.Token != srv.URL+"/authz/token" {
+		t.Errorf("a same-host discovery document must win over the conventional fallback path; got %q", ep.Token)
 	}
 }
 
@@ -38,7 +39,7 @@ func TestDiscoverEndpoints_FallsBackOnError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ep := auth.DiscoverEndpoints(context.Background(), srv.Client(), srv.URL)
+	ep := auth.DiscoverEndpoints(context.Background(), srv.Client(), srv.URL, nil)
 	if ep.Authorization != srv.URL+"/oauth/authorize" {
 		t.Errorf("fallback Authorization: got %q want %q", ep.Authorization, srv.URL+"/oauth/authorize")
 	}

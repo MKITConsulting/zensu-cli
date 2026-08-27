@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"context"
-	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -14,6 +14,20 @@ import (
 	"github.com/MKITConsulting/zensu-cli/internal/version"
 )
 
+const discoveryTimeout = 30 * time.Second
+
+const trustedAuthHostsEnv = "ZENSU_TRUSTED_AUTH_HOSTS"
+
+func trustedAuthHosts(raw string) []string {
+	var hosts []string
+	for _, h := range strings.Split(raw, ",") {
+		if h = strings.TrimSpace(h); h != "" {
+			hosts = append(hosts, h)
+		}
+	}
+	return hosts
+}
+
 func NewRootCmd() *cobra.Command {
 	var apiURLFlag string
 	f := &Factory{Out: os.Stdout}
@@ -23,7 +37,8 @@ func NewRootCmd() *cobra.Command {
 			return nil, err
 		}
 		apiURL := cfg.ResolveAPIURL(apiURLFlag, os.Getenv("ZENSU_API_URL"))
-		eps := auth.DiscoverEndpoints(ctx, &http.Client{Timeout: 30 * time.Second}, apiURL)
+		trusted := trustedAuthHosts(os.Getenv(trustedAuthHostsEnv))
+		eps := auth.DiscoverEndpoints(ctx, client.NewGuardedHTTPClient(discoveryTimeout), apiURL, trusted)
 		return client.New(cfg, apiURL, eps.Token), nil
 	}
 

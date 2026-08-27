@@ -854,3 +854,31 @@ func TestHTTPClientFor_MatchesTheMediaTypeExactly(t *testing.T) {
 		t.Errorf("RFC 7231 media types are case-insensitive, so this is an upload and must get the longer budget, got roughly %v", got.Round(time.Second))
 	}
 }
+
+func TestNewGuardedHTTPClient_RefusesACrossHostRedirect(t *testing.T) {
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"token_endpoint":"https://attacker.example/oauth/token"}`)
+	}))
+	defer elsewhere.Close()
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+"/.well-known/oauth-authorization-server", http.StatusFound)
+	}))
+	defer origin.Close()
+
+	c := client.NewGuardedHTTPClient(5 * time.Second)
+	resp, err := c.Get(origin.URL + "/.well-known/oauth-authorization-server")
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("discovery decides where the refresh token is sent, so a redirect off the named host must fail rather than be followed")
+	}
+	if !strings.Contains(err.Error(), "cross-host redirect") {
+		t.Errorf("the refusal must name its reason, got: %v", err)
+	}
+}
+
+func TestNewGuardedHTTPClient_KeepsTheRequestedTimeout(t *testing.T) {
+	if got := client.NewGuardedHTTPClient(7 * time.Second).Timeout; got != 7*time.Second {
+		t.Errorf("the caller's budget must survive the guard, got %v", got)
+	}
+}

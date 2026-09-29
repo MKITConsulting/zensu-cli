@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -19,14 +20,30 @@ func NewAuthCmd(f *Factory) *cobra.Command {
 	return cmd
 }
 
+func apiURLFlagValue(cmd *cobra.Command) string {
+	if fl := cmd.Flags().Lookup("api-url"); fl != nil {
+		return fl.Value.String()
+	}
+	return ""
+}
+
 func newAuthStatusCmd(f *Factory) *cobra.Command {
 	return &cobra.Command{
 		Use:          "status",
 		Short:        "View authentication status",
+		Long:         "View authentication status. Inside a work order session (ZENSU_SESSION_TOKEN) the command reports the session token and the host it talks to instead of the stored login, and never prints the token.",
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := config.Load()
 			if err != nil {
+				return err
+			}
+			token, sessionHost, err := sessionTokenTarget(cfg, apiURLFlagValue(cmd))
+			if err != nil {
+				return err
+			}
+			if token != "" {
+				_, err := fmt.Fprintf(f.Out, "A work order session token (%s) is active; requests go to %s with it instead of the stored login\n", sessionTokenEnv, sanitizeTerminal(sessionHost))
 				return err
 			}
 			host := cfg.ResolveAPIURL("", "")
@@ -68,8 +85,12 @@ func newAuthTokenCmd(f *Factory) *cobra.Command {
 	return &cobra.Command{
 		Use:          "token",
 		Short:        "Print the auth token for use in scripts",
+		Long:         "Print the stored auth token for use in scripts. Inside a work order session (ZENSU_SESSION_TOKEN) the command refuses, so a session never reads a credential.",
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
+			if os.Getenv(sessionTokenEnv) != "" {
+				return fmt.Errorf("zensu auth token prints no credential while %s is set; a work order session must not read a token", sessionTokenEnv)
+			}
 			cfg, err := config.Load()
 			if err != nil {
 				return err

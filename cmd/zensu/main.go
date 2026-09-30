@@ -16,7 +16,7 @@ func main() {
 	update.Finish(notice, os.Stderr)
 	cancel()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		fmt.Fprintln(os.Stderr, "error:", cmd.ErrorText(err))
 		os.Exit(1)
 	}
 }

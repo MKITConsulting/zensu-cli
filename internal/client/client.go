@@ -136,6 +136,14 @@ func New(cfg *config.Config, baseURL, tokenURL string, opts ...Option) *Client {
 	return c
 }
 
+func (c *Client) WithTimeout(d time.Duration) *Client {
+	h := *c.HTTPClient
+	h.Timeout = d
+	cp := *c
+	cp.HTTPClient = &h
+	return &cp
+}
+
 func (c *Client) Do(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
 	return c.do(ctx, method, path, jsonContentType, body)
 }
@@ -179,6 +187,27 @@ func (c *Client) httpClientFor(contentType string) *http.Client {
 	upload := *c.HTTPClient
 	upload.Timeout = c.UploadTimeout
 	return &upload
+}
+
+const SessionTokenPrefix = "zst_"
+
+const (
+	AuthModeNone         = "none"
+	AuthModeAPIKey       = "api_key"
+	AuthModeSessionToken = "session_token"
+	AuthModeLogin        = "login"
+)
+
+func (c *Client) AuthMode() string {
+	switch {
+	case c.cfg.APIKey != "":
+		return AuthModeAPIKey
+	case strings.HasPrefix(c.cfg.AccessToken, SessionTokenPrefix):
+		return AuthModeSessionToken
+	case c.cfg.AccessToken != "":
+		return AuthModeLogin
+	}
+	return AuthModeNone
 }
 
 func (c *Client) usingBearer() bool {

@@ -3,9 +3,11 @@ package auth_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/MKITConsulting/zensu-cli/internal/auth"
@@ -126,6 +128,54 @@ func TestExchangeCode_ErrorsOnOAuthError(t *testing.T) {
 	}
 }
 
+func TestPostToken_KeepsControlBytesOfAnOAuthErrorOffTheTerminal(t *testing.T) {
+	cases := []struct {
+		name string
+		body map[string]string
+		want string
+	}{
+		{"description", map[string]string{"error": "invalid_grant", "error_description": "\x1b]0;pwned\x07x"}, "token endpoint: invalid_grant: ]0;pwnedx"},
+		{"code and description", map[string]string{"error": "invalid_grant\x1b[2J", "error_description": "expired \xe2\x80\xaegnp.exe\xc2\x9b"}, "token endpoint: invalid_grant[2J: expired gnp.exe"},
+		{"code of control bytes only", map[string]string{"error": "\x1b\x07", "error_description": "x"}, "token endpoint returned 400"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(tc.body)
+			}))
+			defer srv.Close()
+			if _, err := auth.ExchangeCode(context.Background(), srv.Client(), srv.URL, "http://127.0.0.1/callback", "x", "y"); err == nil || err.Error() != tc.want {
+				t.Errorf("ExchangeCode error = %q, want %q", err, tc.want)
+			}
+			if _, err := auth.RefreshToken(context.Background(), srv.Client(), srv.URL, "r1"); err == nil || err.Error() != tc.want {
+				t.Errorf("RefreshToken error = %q, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestPostToken_ReportsRequestTransportAndDecodeFailures(t *testing.T) {
+	if _, err := auth.RefreshToken(context.Background(), http.DefaultClient, "http://zensu.test/\x7f", "r1"); err == nil || !strings.Contains(err.Error(), "invalid control character in URL") {
+		t.Errorf("unusable token endpoint error = %v", err)
+	}
+	closed := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	closedURL := closed.URL
+	closed.Close()
+	if _, err := auth.RefreshToken(context.Background(), http.DefaultClient, closedURL, "r1"); err == nil || !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("refused connection error = %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, "not json")
+	}))
+	defer srv.Close()
+	if _, err := auth.RefreshToken(context.Background(), srv.Client(), srv.URL, "r1"); err == nil || !strings.HasPrefix(err.Error(), "decoding token response: ") {
+		t.Errorf("undecodable token response error = %v", err)
+	}
+}
+
 func TestRefreshToken_PostsRefreshGrant(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -152,18 +202,51 @@ func TestRefreshToken_PostsRefreshGrant(t *testing.T) {
 
 func TestValidateAPIKey(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-API-Key") != "zsk_good" {
+		switch r.Header.Get("X-API-Key") {
+		case "zsk_good":
+			w.WriteHeader(http.StatusOK)
+		case "zsk_agent":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"code":"agent_key_not_allowed","message":"an agent key serves only the work order worker routes"}`))
+		case "zsk_forbidden":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"code":"insufficient_scope","message":"no"}`))
+		case "zsk_garbled":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`not json`))
+		default:
 			w.WriteHeader(http.StatusUnauthorized)
-			return
 		}
-		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
-	if err := auth.ValidateAPIKey(context.Background(), srv.Client(), srv.URL, "zsk_good"); err != nil {
-		t.Errorf("valid key should pass, got %v", err)
+	cases := []struct {
+		key     string
+		want    auth.APIKeyKind
+		wantErr string
+	}{
+		{"zsk_good", auth.APIKeyKindUser, ""},
+		{"zsk_agent", auth.APIKeyKindAgent, ""},
+		{"zsk_bad", "", "api key rejected (status 401)"},
+		{"zsk_forbidden", "", "api key rejected (status 403)"},
+		{"zsk_garbled", "", "api key rejected (status 403)"},
 	}
-	if err := auth.ValidateAPIKey(context.Background(), srv.Client(), srv.URL, "zsk_bad"); err == nil {
-		t.Error("invalid key should error, got nil")
+	for _, tc := range cases {
+		kind, err := auth.ValidateAPIKey(context.Background(), srv.Client(), srv.URL, tc.key)
+		if tc.wantErr == "" && (err != nil || kind != tc.want) {
+			t.Errorf("%s: kind %q err %v, want %q", tc.key, kind, err, tc.want)
+		}
+		if tc.wantErr != "" && (err == nil || err.Error() != tc.wantErr || kind != "") {
+			t.Errorf("%s: kind %q err %v, want %q", tc.key, kind, err, tc.wantErr)
+		}
+	}
+}
+
+func TestValidateAPIKey_TransportAndRequestErrors(t *testing.T) {
+	if _, err := auth.ValidateAPIKey(context.Background(), http.DefaultClient, "http://127.0.0.1:1", "zsk_x"); err == nil {
+		t.Error("a refused connection must fail")
+	}
+	if _, err := auth.ValidateAPIKey(context.Background(), http.DefaultClient, "http://bad host", "zsk_x"); err == nil {
+		t.Error("an invalid URL must fail")
 	}
 }

@@ -3,9 +3,13 @@ package cmd
 import (
 	"bytes"
 	"encoding/base64"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/MKITConsulting/zensu-cli/internal/config"
 )
@@ -261,5 +265,113 @@ func TestAuthLogout_ClearsCredentials(t *testing.T) {
 	}
 	if after.AccessToken != "" || after.RefreshToken != "" || after.APIKey != "" {
 		t.Errorf("credentials not cleared after logout: %+v", after)
+	}
+}
+
+func saveAuthConfig(t *testing.T, cfg config.Config) {
+	t.Helper()
+	t.Setenv("ZENSU_CONFIG_DIR", t.TempDir())
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+}
+
+func TestAuthToken_RefusesInsideAWorkOrderSession(t *testing.T) {
+	saveAuthConfig(t, config.Config{APIURL: "https://api.example.test", APIKey: "zsk_stored_key", AccessToken: "stored-access"})
+	t.Setenv(sessionTokenEnv, woSessionToken)
+	f, out := authFactory()
+	err := runCmd(t, NewAuthCmd(f), "token")
+	if err == nil || err.Error() != "zensu auth token prints no credential while ZENSU_SESSION_TOKEN is set; a work order session must not read a token" {
+		t.Fatalf("error = %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("output = %q, want no credential", out.String())
+	}
+}
+
+func TestAuthStatus_ReportsTheActiveSessionTokenWithoutPrintingIt(t *testing.T) {
+	saveAuthConfig(t, config.Config{APIURL: "https://stored.example.test", APIKey: "zsk_stored_key"})
+	t.Setenv(sessionTokenEnv, woSessionToken)
+	t.Setenv("ZENSU_API_URL", "https://env.example.test")
+	f, out := authFactory()
+	if err := runCmd(t, NewAuthCmd(f), "status"); err != nil {
+		t.Fatalf("auth status: %v", err)
+	}
+	if out.String() != "A work order session token (ZENSU_SESSION_TOKEN) is active; requests go to https://env.example.test with it instead of the stored login\n" {
+		t.Fatalf("output = %q", out.String())
+	}
+	if strings.Contains(out.String(), woSessionToken) || strings.Contains(out.String(), "zsk_stored_key") {
+		t.Fatalf("status printed a credential: %q", out.String())
+	}
+}
+
+func TestAuthStatus_SessionTokenNamesTheStoredHost(t *testing.T) {
+	saveAuthConfig(t, config.Config{APIURL: "https://stored.example.test"})
+	t.Setenv(sessionTokenEnv, woSessionToken)
+	t.Setenv("ZENSU_API_URL", "")
+	f, out := authFactory()
+	if err := runCmd(t, NewAuthCmd(f), "status"); err != nil {
+		t.Fatalf("auth status: %v", err)
+	}
+	if out.String() != "A work order session token (ZENSU_SESSION_TOKEN) is active; requests go to https://stored.example.test with it instead of the stored login\n" {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestAuthStatus_SessionTokenFollowsTheAPIURLFlag(t *testing.T) {
+	saveAuthConfig(t, config.Config{APIURL: "https://stored.example.test"})
+	t.Setenv(sessionTokenEnv, woSessionToken)
+	t.Setenv("ZENSU_API_URL", "https://env.example.test")
+	f, out := authFactory()
+	var apiURL string
+	root := &cobra.Command{Use: "zensu"}
+	root.PersistentFlags().StringVar(&apiURL, "api-url", "", "Zensu API base URL")
+	root.AddCommand(NewAuthCmd(f))
+	if err := runCmd(t, root, "--api-url", "https://flag.example.test", "auth", "status"); err != nil {
+		t.Fatalf("auth status: %v", err)
+	}
+	if out.String() != "A work order session token (ZENSU_SESSION_TOKEN) is active; requests go to https://flag.example.test with it instead of the stored login\n" {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestAuthStatus_ExpiredLoginSaysItWillRefresh(t *testing.T) {
+	saveAuthConfig(t, config.Config{APIURL: "https://api.example.test", AccessToken: "acc-1", User: "dev@example.test", ExpiresAt: time.Now().Add(-time.Minute)})
+	t.Setenv(sessionTokenEnv, "")
+	f, out := authFactory()
+	if err := runCmd(t, NewAuthCmd(f), "status"); err != nil {
+		t.Fatalf("auth status: %v", err)
+	}
+	if out.String() != "Logged in to https://api.example.test as dev@example.test\nAccess token expired (will refresh on next request)\n" {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestAuthStatusAndToken_SurfaceAnUnreadableConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ZENSU_CONFIG_DIR", dir)
+	t.Setenv(sessionTokenEnv, "")
+	if err := os.WriteFile(filepath.Join(dir, "hosts.json"), []byte("{"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	for _, verb := range []string{"status", "token"} {
+		f, out := authFactory()
+		if err := runCmd(t, NewAuthCmd(f), verb); err == nil || err.Error() != "unexpected end of JSON input" || out.Len() != 0 {
+			t.Errorf("auth %s: error = %v output = %q", verb, err, out.String())
+		}
+	}
+}
+
+func TestAuthStatus_SessionTokenWithoutAHostIsRefused(t *testing.T) {
+	saveAuthConfig(t, config.Config{APIKey: "zsk_stored_key"})
+	t.Setenv(sessionTokenEnv, woSessionToken)
+	t.Setenv("ZENSU_API_URL", "")
+	f, out := authFactory()
+	err := runCmd(t, NewAuthCmd(f), "status")
+	if err == nil || err.Error() != "ZENSU_SESSION_TOKEN needs the host that issued it: set ZENSU_API_URL or pass --api-url; a session token is never sent to the built-in default https://api.zensu.dev" {
+		t.Fatalf("error = %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("output = %q", out.String())
 	}
 }

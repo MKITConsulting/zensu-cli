@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/MKITConsulting/zensu-cli/internal/version"
 )
 
 const pulseTrackingDisabledStatus = "tracking_disabled"
@@ -158,33 +160,58 @@ func NewPulseCmd(f *Factory) *cobra.Command {
 	return cmd
 }
 
+func pulseStartRequest(workOrder, headSha, branch, project, product, clientName, clientVersion string) (string, []byte, error) {
+	if workOrder != "" {
+		if project != "" || product != "" {
+			return "", nil, fmt.Errorf("--project and --product do not apply to --work-order; the order names its product")
+		}
+		payload := map[string]string{"clientName": clientName, "clientVersion": clientVersion}
+		if headSha != "" {
+			payload["startSha"] = headSha
+		}
+		if branch != "" {
+			payload["branch"] = branch
+		}
+		body, err := json.Marshal(payload)
+		return "/api/work-orders/" + url.PathEscape(workOrder) + "/pulse-session", body, err
+	}
+	if headSha == "" {
+		return "", nil, fmt.Errorf("--head-sha is required")
+	}
+	payload := map[string]string{"headSha": headSha}
+	if branch != "" {
+		payload["branch"] = branch
+	}
+	if project != "" {
+		payload["projectPath"] = project
+	}
+	if product != "" {
+		payload["productId"] = product
+	}
+	body, err := json.Marshal(payload)
+	return "/api/pulse/sessions", body, err
+}
+
 func newPulseStartCmd(f *Factory) *cobra.Command {
-	var headSha, branch, project, product string
+	var headSha, branch, project, product, workOrder, clientName, clientVersion string
 	var asJSON, minimalJSON bool
 	cmd := &cobra.Command{
-		Use:          "start",
-		Short:        "Start a new development session",
-		Long:         "Start a new development session. Call at the beginning of a coding session with the current git HEAD SHA. Sessions are idempotent — calling with the same head_sha returns the existing session.",
+		Use:   "start",
+		Short: "Start a new development session",
+		Long: "Start a new development session. Call at the beginning of a coding session with the current git HEAD SHA. Sessions are idempotent — calling with the same head_sha returns the existing session.\n\n" +
+			"With --work-order the session of a work order is linked to that order. It authenticates with ZENSU_SESSION_TOKEN, is idempotent per attempt, belongs to the Pulse journal of the agent key's creator and honors that person's tracking opt-out; --head-sha is optional there.",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if headSha == "" {
-				return fmt.Errorf("--head-sha is required")
-			}
-			payload := map[string]string{"headSha": headSha}
-			if branch != "" {
-				payload["branch"] = branch
-			}
-			if project != "" {
-				payload["projectPath"] = project
-			}
-			if product != "" {
-				payload["productId"] = product
-			}
-			body, err := json.Marshal(payload)
+			path, body, err := pulseStartRequest(workOrder, headSha, branch, project, product, clientName, clientVersion)
 			if err != nil {
 				return err
 			}
-			raw, err := f.request(cmd.Context(), http.MethodPost, "/api/pulse/sessions", body)
+			if workOrder != "" {
+				if _, err := f.workClient(cmd.Context(), "pulse start --work-order", sessionTokenCredential); err != nil {
+					return err
+				}
+			}
+			raw, err := f.request(cmd.Context(), http.MethodPost, path, body)
 			if err != nil {
 				return pulseRequestError(minimalJSON, err)
 			}
@@ -198,15 +225,26 @@ func newPulseStartCmd(f *Factory) *cobra.Command {
 			if asJSON {
 				return printJSON(f.Out, raw)
 			}
+			if response.Status == pulseTrackingDisabledStatus && workOrder != "" {
+				_, err = fmt.Fprintln(f.Out, "No Pulse session was created: the agent key's creator turned tracking off or is no longer an active member.")
+				return err
+			}
 			if response.Status == pulseTrackingDisabledStatus {
 				_, err = fmt.Fprintln(f.Out, "Pulse tracking is disabled in Zensu; no session was created.")
+				return err
+			}
+			if workOrder != "" {
+				_, err = fmt.Fprintf(f.Out, "Linked session %s to work order %s\n", response.ID, sanitizeTerminal(workOrder))
 				return err
 			}
 			_, err = fmt.Fprintf(f.Out, "Started session %s\n", response.ID)
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&headSha, "head-sha", "", "current git HEAD SHA, short or full (required)")
+	cmd.Flags().StringVar(&headSha, "head-sha", "", "current git HEAD SHA, short or full (required without --work-order)")
+	cmd.Flags().StringVar(&workOrder, "work-order", "", "link the session to this work order (needs ZENSU_SESSION_TOKEN)")
+	cmd.Flags().StringVar(&clientName, "client-name", workClientName, "client name recorded with a work order session")
+	cmd.Flags().StringVar(&clientVersion, "client-version", version.Version, "client version recorded with a work order session")
 	cmd.Flags().StringVar(&branch, "branch", "", "current git branch name")
 	cmd.Flags().StringVar(&project, "project", "", "absolute path to the project root")
 	cmd.Flags().StringVar(&product, "product", "", "Zensu product UUID to associate with this session")

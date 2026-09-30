@@ -53,7 +53,11 @@ zensu auth status   # authenticated? against which host?
   `export ZENSU_API_URL=https://zensu.internal.example.com` or the global
   `--api-url` flag.
 - **Any auth error mid-session** (401, invalid_grant, expired token) → run
-  `zensu auth login` and retry the command.
+  `zensu auth login` and retry the command. Inside a work order session
+  (`ZENSU_SESSION_TOKEN` is set) this does not apply: a `401
+  invalid_session_token` or a `409 stale_attempt` means stop, make no further
+  forge writes and end the session; never log in there and never run
+  `zensu auth token`, which refuses inside a session.
 
 ## Ground rules
 
@@ -72,7 +76,12 @@ zensu auth status   # authenticated? against which host?
 7. **Enrich, don't duplicate.** When applying a ghost scan to a product that
    already has features, use `zensu ghost apply --enrich-existing`.
 8. **Confirm destructive or bulk actions with the user first** (ghost apply,
-   feature merge/split/deprecate, roadmap delete).
+   feature merge/split/deprecate, roadmap delete, `work cancel`,
+   `plan abandon`). Work order decisions (`work approve|requeue|cancel|answer|
+   overturn|confirm-merge`, `work policy set`, `work repositories
+   add|update|remove`, `plan approve|finalize|abandon|confirm-merge`,
+   `plan followup accept|dismiss`) belong to the user: run one only when the
+   user asks for that decision, never on your own initiative.
 9. **Help output is authoritative.** For any flag detail not listed here, run
    `zensu <group> [<command>] --help`.
 
@@ -202,19 +211,58 @@ zensu wiki create --product <id> --title "..." --content "<markdown>" \
 zensu doc claude-md --product <id> --variant full|minimal|ci-only   # CLAUDE.md template
 ```
 
+### Work orders
+
+Humans push plans and decide; autonomous sessions report. Decisions need the
+browser login of `zensu auth login`; API keys and MCP clients cannot make them.
+Inside a session `ZENSU_SESSION_TOKEN` overrides any login.
+
+```bash
+zensu plan push .zensu/plans/checkout.md      # creates the plan, missing features and revisions
+zensu plan status <plan-id> --watch
+zensu work get <work-order-id> --json         # spec, answered questions, policy
+zensu work event <work-order-id> --stage implementing --client-event-id <id>
+zensu work ask <work-order-id> --category scope --question "..." --blocking
+zensu work answer <question-id> --answer "..."   # human; requeues the blocked order
+```
+
+`plan push` refuses before its first write when a target revision is an open
+item of another live plan (the error names the item, the revision and that
+plan; whether to run `zensu plan abandon <plan-id>` is the user's decision) or
+when its new features would exceed the organization's feature allowance;
+`--dry-run` reports the same refusals. `scope_summary` belongs to `title` items
+and to `feature` items with `new_revision: true`, and `task` to a one-item plan.
+`plan status --watch` retries timeouts, refused or reset connections, responses
+cut off mid-body, 429 and 5xx with backoff and prints one stderr line per retry;
+TLS failures, refused redirects and an invalid API URL end it at once. An agent
+key claims only in products whose policy allows it; the user runs
+`zensu work policy set --product <product id> --add-allowed-key <key id>`.
+
+When the product requires a plan approval (the default), a session plans
+before it implements; `implementing` before the approval answers `409
+plan_approval_required`:
+
+```bash
+zensu work event <work-order-id> --stage planning
+zensu work event <work-order-id> --artifact plan --url <link to the plan> --summary "..."
+zensu work event <work-order-id> --blocked plan_approval --reason "..."   # ends the session
+zensu work approve <work-order-id>            # human; requeues the order for a new claim
+```
+
 ## Scripting patterns
 
 ```bash
 # ids for scripting
 zensu features list --product "$PRODUCT" --status testing --json | jq -r '.[].id'
 
-# raw API access when no typed command exists (prefer typed commands)
+# raw API access when no typed command exists (prefer typed commands;
+# never inside a work order session, where `auth token` refuses)
 curl -sH "Authorization: Bearer $(zensu auth token)" "$ZENSU_API_URL/api/..."
 ```
 
 ## Full command map
 
-Nineteen command groups: `auth products features subfeatures tiers roadmap
-journeys security ghost pulse link knowledge design mocks wiki org doc meta
-completion`. Per-group commands, verified flag sets, and all enum vocabularies
+Twenty-one command groups: `auth products features subfeatures tiers roadmap
+journeys security ghost pulse work plan link knowledge design mocks wiki org doc
+meta completion`. Per-group commands, verified flag sets, and all enum vocabularies
 are in [reference.md](reference.md).

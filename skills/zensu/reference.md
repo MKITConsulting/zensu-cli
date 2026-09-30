@@ -183,7 +183,8 @@ Sessions are idempotent per HEAD SHA — `start` with the same SHA continues the
 existing session. With `--work-order` the session authenticates with
 `ZENSU_SESSION_TOKEN`, is idempotent per attempt, lands in the Pulse journal of
 the agent key's creator and honors that person's tracking opt-out
-(`{"status":"tracking_disabled"}`). Zensu ends it when the attempt ends.
+(`{"status":"tracking_disabled"}`, also the answer when the key's creator is no
+longer an active member). Zensu ends it when the attempt ends.
 
 ### work
 
@@ -200,6 +201,12 @@ combines with neither. In text mode `policy set` prints the resulting
 `Allowed agent keys:` (or `none`). The server drops stored keys that are no
 longer active and refuses newly named keys that are not active agent keys
 (`422 invalid_agent_keys`); the error names the flag that supplied them.
+`policy set` writes the policy back with the version it read; when someone
+changed the policy in between (`409 policy_changed`), it reads the policy again
+and repeats the change. It makes at most three attempts and notes each repeat on
+stderr. A server from before this check refuses the version
+(`400 invalid_body`); the command then writes once without it and says on stderr
+that a simultaneous change is not detected.
 
 ```
 # humans (browser login; read commands also work with an API key)

@@ -1347,7 +1347,12 @@ type automationPolicy struct {
 	AllowedAPIKeyIDs       []string `json:"allowed_api_key_ids"`
 	MaxQuestionsPerOrder   int      `json:"max_questions_per_order"`
 	QuestionReminderHours  int      `json:"question_reminder_hours"`
+	UpdatedAt              string   `json:"updated_at"`
 }
+
+const policyWriteAttempts = 3
+
+const policyVersionUnknown = `unknown field "expectedUpdatedAt"`
 
 func editAllowedKeys(current, add, remove []string) []string {
 	dropped := map[string]bool{}
@@ -1409,7 +1414,9 @@ func newWorkPolicySetCmd(f *Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set",
 		Short: "Change a product's automation policy; unset flags keep their current value",
-		Long: "Change a product's automation policy. The command reads the effective policy, applies the given flags and writes the full policy back. " +
+		Long: "Change a product's automation policy. The command reads the effective policy, applies the given flags and writes the full policy back with the version it read. " +
+			"When someone changed the policy in between, the server refuses the write and the command reads the policy again and repeats the change; it makes at most three attempts and notes each repeat on stderr. " +
+			"A server from before this check refuses the version field; the command then writes once without it and says so on stderr. " +
 			"--allowed-key replaces the list of agent keys whose workers may claim; --add-allowed-key and --remove-allowed-key change the list the command just read and cannot be combined with --allowed-key. " +
 			"The server drops stored keys that are no longer active and refuses newly named keys that are not active agent keys. " +
 			"--clear-max-order-cost removes the cost cap of one order. Needs the browser login of `zensu auth login`.",
@@ -1422,62 +1429,90 @@ func newWorkPolicySetCmd(f *Factory) *cobra.Command {
 				return err
 			}
 			path := "/api/products/" + url.PathEscape(product) + "/automation-policy"
-			raw, err := f.request(cmd.Context(), http.MethodGet, path, nil)
-			if err != nil {
-				return err
-			}
-			var p automationPolicy
-			if err := json.Unmarshal(raw, &p); err != nil {
-				return fmt.Errorf("invalid policy response: %w", err)
-			}
 			changed := cmd.Flags().Changed
-			if changed("dispatch-mode") {
-				p.DispatchMode = dispatchMode
-			}
-			if changed("plan-approval") {
-				p.PlanApproval = planApproval
-			}
-			for flag, dst := range map[string]*int{
-				"max-running-orders": &p.MaxRunningOrders, "max-attempts": &p.MaxAttempts,
-				"max-unconfirmed-claims": &p.MaxUnconfirmedClaims, "lease-minutes": &p.LeaseMinutes,
-				"max-order-runtime-minutes": &p.MaxOrderRuntimeMinutes, "daily-order-cap": &p.DailyOrderCap,
-				"max-questions-per-order": &p.MaxQuestionsPerOrder, "question-reminder-hours": &p.QuestionReminderHours,
-			} {
-				if changed(flag) {
-					v, _ := cmd.Flags().GetInt(flag)
-					*dst = v
+			apply := func(p *automationPolicy) {
+				if changed("dispatch-mode") {
+					p.DispatchMode = dispatchMode
+				}
+				if changed("plan-approval") {
+					p.PlanApproval = planApproval
+				}
+				for flag, dst := range map[string]*int{
+					"max-running-orders": &p.MaxRunningOrders, "max-attempts": &p.MaxAttempts,
+					"max-unconfirmed-claims": &p.MaxUnconfirmedClaims, "lease-minutes": &p.LeaseMinutes,
+					"max-order-runtime-minutes": &p.MaxOrderRuntimeMinutes, "daily-order-cap": &p.DailyOrderCap,
+					"max-questions-per-order": &p.MaxQuestionsPerOrder, "question-reminder-hours": &p.QuestionReminderHours,
+				} {
+					if changed(flag) {
+						v, _ := cmd.Flags().GetInt(flag)
+						*dst = v
+					}
+				}
+				if changed("max-order-cost-usd") {
+					p.MaxOrderCostUSD = &maxCost
+				}
+				if clearMaxCost {
+					p.MaxOrderCostUSD = nil
+				}
+				switch {
+				case changed("allowed-key"):
+					p.AllowedAPIKeyIDs = allowedKeys
+				case changed("add-allowed-key") || changed("remove-allowed-key"):
+					p.AllowedAPIKeyIDs = editAllowedKeys(p.AllowedAPIKeyIDs, addKeys, removeKeys)
+				}
+				if p.AllowedAPIKeyIDs == nil {
+					p.AllowedAPIKeyIDs = []string{}
 				}
 			}
-			if changed("max-order-cost-usd") {
-				p.MaxOrderCostUSD = &maxCost
-			}
-			if clearMaxCost {
-				p.MaxOrderCostUSD = nil
-			}
-			switch {
-			case changed("allowed-key"):
-				p.AllowedAPIKeyIDs = allowedKeys
-			case changed("add-allowed-key") || changed("remove-allowed-key"):
-				p.AllowedAPIKeyIDs = editAllowedKeys(p.AllowedAPIKeyIDs, addKeys, removeKeys)
-			}
-			if p.AllowedAPIKeyIDs == nil {
-				p.AllowedAPIKeyIDs = []string{}
-			}
-			body := map[string]any{
-				"dispatchMode": p.DispatchMode, "planApproval": p.PlanApproval,
-				"maxRunningOrders": p.MaxRunningOrders, "maxAttempts": p.MaxAttempts,
-				"maxUnconfirmedClaims": p.MaxUnconfirmedClaims, "leaseMinutes": p.LeaseMinutes,
-				"maxOrderRuntimeMinutes": p.MaxOrderRuntimeMinutes, "maxOrderCostUsd": p.MaxOrderCostUSD,
-				"dailyOrderCap": p.DailyOrderCap, "allowedApiKeyIds": p.AllowedAPIKeyIDs,
-				"maxQuestionsPerOrder": p.MaxQuestionsPerOrder, "questionReminderHours": p.QuestionReminderHours,
-			}
-			b, err := workBody(body)
-			if err != nil {
-				return err
-			}
-			raw, err = f.request(cmd.Context(), http.MethodPut, path, b)
-			if err != nil {
-				return allowedKeySourceError(err, changed)
+			var raw []byte
+			attempt, versioned := 1, true
+			for {
+				read, err := f.request(cmd.Context(), http.MethodGet, path, nil)
+				if err != nil {
+					return err
+				}
+				var p automationPolicy
+				if err := json.Unmarshal(read, &p); err != nil {
+					return fmt.Errorf("invalid policy response: %w", err)
+				}
+				apply(&p)
+				body := map[string]any{
+					"dispatchMode": p.DispatchMode, "planApproval": p.PlanApproval,
+					"maxRunningOrders": p.MaxRunningOrders, "maxAttempts": p.MaxAttempts,
+					"maxUnconfirmedClaims": p.MaxUnconfirmedClaims, "leaseMinutes": p.LeaseMinutes,
+					"maxOrderRuntimeMinutes": p.MaxOrderRuntimeMinutes, "maxOrderCostUsd": p.MaxOrderCostUSD,
+					"dailyOrderCap": p.DailyOrderCap, "allowedApiKeyIds": p.AllowedAPIKeyIDs,
+					"maxQuestionsPerOrder": p.MaxQuestionsPerOrder, "questionReminderHours": p.QuestionReminderHours,
+				}
+				if versioned && p.UpdatedAt != "" {
+					body["expectedUpdatedAt"] = p.UpdatedAt
+				}
+				b, err := workBody(body)
+				if err != nil {
+					return err
+				}
+				raw, err = f.request(cmd.Context(), http.MethodPut, path, b)
+				if e, ok := apiErrorOf(err); ok && versioned && e.status == http.StatusBadRequest && e.code == "invalid_body" && strings.HasPrefix(e.text, policyVersionUnknown) {
+					versioned = false
+					if _, err := fmt.Fprintln(cmd.ErrOrStderr(), "note: this server does not check the policy version yet; writing without it, so a change someone else makes at the same moment is not detected"); err != nil {
+						return err
+					}
+					continue
+				}
+				if e, ok := apiErrorOf(err); ok && e.code == "policy_changed" {
+					if attempt < policyWriteAttempts {
+						attempt++
+						if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "note: the policy changed after it was read; reading it again (attempt %d of %d)\n", attempt, policyWriteAttempts); err != nil {
+							return err
+						}
+						continue
+					}
+					return fmt.Errorf("%w; the policy changed %d times while this command wrote it, run it again", err, policyWriteAttempts)
+				}
+				if err != nil {
+					return allowedKeySourceError(err, changed)
+				}
+				break
 			}
 			if asJSON {
 				return printJSON(f.Out, raw)
@@ -1490,7 +1525,7 @@ func newWorkPolicySetCmd(f *Factory) *cobra.Command {
 			if len(updated.AllowedAPIKeyIDs) > 0 {
 				allowed = strings.Join(updated.AllowedAPIKeyIDs, ", ")
 			}
-			_, err = fmt.Fprintf(f.Out, "Updated the automation policy of product %s\nAllowed agent keys: %s\n", sanitizeTerminal(product), sanitizeTerminal(allowed))
+			_, err := fmt.Fprintf(f.Out, "Updated the automation policy of product %s\nAllowed agent keys: %s\n", sanitizeTerminal(product), sanitizeTerminal(allowed))
 			return err
 		},
 	}

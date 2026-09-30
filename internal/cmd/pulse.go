@@ -225,6 +225,10 @@ func newPulseStartCmd(f *Factory) *cobra.Command {
 			if asJSON {
 				return printJSON(f.Out, raw)
 			}
+			if response.Status == pulseTrackingDisabledStatus && workOrder != "" {
+				_, err = fmt.Fprintln(f.Out, "No Pulse session was created: the agent key's creator turned tracking off or is no longer an active member.")
+				return err
+			}
 			if response.Status == pulseTrackingDisabledStatus {
 				_, err = fmt.Fprintln(f.Out, "Pulse tracking is disabled in Zensu; no session was created.")
 				return err

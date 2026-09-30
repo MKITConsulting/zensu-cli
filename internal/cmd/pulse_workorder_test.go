@@ -51,7 +51,7 @@ func TestPulseStart_WorkOrderTrackingDisabled(t *testing.T) {
 	if err := runCmd(t, NewPulseCmd(f), "start", "--work-order", woID); err != nil {
 		t.Fatalf("pulse start: %v", err)
 	}
-	if out.String() != "Pulse tracking is disabled in Zensu; no session was created.\n" {
+	if out.String() != "No Pulse session was created: the agent key's creator turned tracking off or is no longer an active member.\n" {
 		t.Fatalf("output = %q", out.String())
 	}
 }

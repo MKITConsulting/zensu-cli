@@ -170,7 +170,11 @@ cut off mid-body, 429 and 5xx with backoff, prints one stderr line per retry and
 failed polls in a row; TLS failures, refused redirects and an invalid API URL end it at once. An
 agent key claims only in products whose automation policy allows it:
 `zensu work policy set --product <product id> --add-allowed-key <key id>` adds one,
-`--remove-allowed-key` takes one off and `--allowed-key` replaces the list.
+`--remove-allowed-key` takes one off and `--allowed-key` replaces the list. The command writes
+the policy back with the version it read; when someone changed it in between, it reads the
+policy again and repeats the change. It makes at most three attempts and notes each repeat on
+stderr. A Zensu server from before this check refuses the version; the command then writes once
+without it and says on stderr that a simultaneous change is not detected.
 
 A typical `products` / `features` flow:
 

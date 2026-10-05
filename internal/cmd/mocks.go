@@ -228,7 +228,7 @@ func newMocksListCmd(f *Factory) *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			raw, err := f.request(cmd.Context(), http.MethodGet, mockCollectionPath(args[0])+"?limit=100", nil)
+			raw, err := f.listAll(cmd.Context(), mockCollectionPath(args[0]), nil, "mocks")
 			if err != nil {
 				return err
 			}
@@ -274,7 +274,7 @@ func newMocksGetCmd(f *Factory) *cobra.Command {
 				return err
 			}
 
-			listRaw, err := f.request(cmd.Context(), http.MethodGet, mockCollectionPath(featureID)+"?limit=100", nil)
+			listRaw, err := f.listAll(cmd.Context(), mockCollectionPath(featureID), nil, "mocks")
 			if err != nil {
 				return err
 			}

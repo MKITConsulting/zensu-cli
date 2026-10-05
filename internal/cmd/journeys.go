@@ -126,7 +126,7 @@ func loadJourneyStep(ctx context.Context, f *Factory, product, journey, step str
 	if err != nil {
 		return nil, err
 	}
-	raw, err := f.request(ctx, http.MethodGet, listPath, nil)
+	raw, err := f.listAll(ctx, listPath, nil, "journey steps")
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func newJourneysListCmd(f *Factory) *cobra.Command {
 			if product == "" {
 				return fmt.Errorf("--product is required")
 			}
-			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/products/"+product+"/journeys", nil)
+			raw, err := f.listAll(cmd.Context(), "/api/products/"+product+"/journeys", nil, "journeys")
 			if err != nil {
 				return err
 			}
@@ -547,7 +547,7 @@ func newJourneysStepsCmd(f *Factory) *cobra.Command {
 			if product == "" {
 				return fmt.Errorf("--product is required")
 			}
-			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/products/"+product+"/journeys/"+args[0]+"/steps", nil)
+			raw, err := f.listAll(cmd.Context(), "/api/products/"+product+"/journeys/"+args[0]+"/steps", nil, "journey steps")
 			if err != nil {
 				return err
 			}

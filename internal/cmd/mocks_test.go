@@ -117,6 +117,20 @@ func TestMocksGet_Metadata(t *testing.T) {
 	}
 }
 
+func TestMocksGet_FindsMockBeyondTheFirstPage(t *testing.T) {
+	srv := newPagedServer(t, "/api/features/f1/mocks", backendPages(listFixture(150), 100))
+	f, out := testFactory(srv.Server)
+	if err := runCmd(t, NewMocksCmd(f), "get", "f1", "id-140"); err != nil {
+		t.Fatalf("a mock on the second page must be found: %v", err)
+	}
+	for _, want := range []string{"id-140", "file-140.png"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("mocks get metadata missing %q in:\n%s", want, out.String())
+		}
+	}
+	assertPages(t, srv, []int{1, 2})
+}
+
 func TestMocksGet_Raw(t *testing.T) {
 	const htmlBody = "<!doctype html><html><body><h1>Login</h1></body></html>"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

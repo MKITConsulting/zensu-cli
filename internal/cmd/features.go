@@ -77,7 +77,7 @@ func newFeaturesListCmd(f *Factory) *cobra.Command {
 			if status != "" {
 				q.Set("status", status)
 			}
-			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/features?"+q.Encode(), nil)
+			raw, err := f.listAll(cmd.Context(), "/api/features", q, "features")
 			if err != nil {
 				return err
 			}

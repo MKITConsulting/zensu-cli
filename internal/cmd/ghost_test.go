@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -148,6 +149,47 @@ func TestGhostCandidates(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "cand1") {
 		t.Errorf("candidates output missing candidate id: %s", out.String())
+	}
+}
+
+func TestGhostCandidates_RequestsTheServerMaximum(t *testing.T) {
+	tests := []struct {
+		name        string
+		candidates  int
+		wantWarning bool
+	}{
+		{"fewer candidates than the server cap", 3, false},
+		{"a response that reaches the server cap", ghostCandidateLimit, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotLimit string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotLimit = r.URL.Query().Get("limit")
+				_ = json.NewEncoder(w).Encode(listFixture(tc.candidates))
+			}))
+			defer srv.Close()
+
+			f, out := testFactory(srv)
+			cmd := NewGhostCmd(f)
+			var stderr bytes.Buffer
+			cmd.SetErr(&stderr)
+			if err := runCmd(t, cmd, "candidates", "s1", "--product", "p1"); err != nil {
+				t.Fatalf("ghost candidates error: %v", err)
+			}
+			if gotLimit != "200" {
+				t.Errorf("limit: got %q, want the server maximum 200 instead of its default of 50", gotLimit)
+			}
+			if !strings.Contains(out.String(), `"id": "id-000"`) {
+				t.Errorf("candidates missing from stdout:\n%s", out.String())
+			}
+			if strings.Contains(out.String(), "warning") {
+				t.Errorf("the cap warning must not pollute the JSON on stdout:\n%s", out.String())
+			}
+			if got := strings.Contains(stderr.String(), "at most 200 candidates per scan"); got != tc.wantWarning {
+				t.Errorf("cap warning on stderr: got %t, want %t (stderr: %q)", got, tc.wantWarning, stderr.String())
+			}
+		})
 	}
 }
 

@@ -44,7 +44,7 @@ func newProductsListCmd(f *Factory) *cobra.Command {
 		Short:        "List products",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/products", nil)
+			raw, err := f.listAll(cmd.Context(), "/api/products", nil, "products")
 			if err != nil {
 				return err
 			}

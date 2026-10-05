@@ -61,6 +61,9 @@ zensu auth status   # authenticated? against which host?
    context. Analyze, recommend, and decide yourself — never expect the CLI to
    make product decisions.
 2. **Use `--json` whenever you parse output.** Every typed command supports it.
+   List commands return the complete list: `--json` prints
+   `{"data": [...], "total": N, "page": 1, "perPage": N}` with every item in
+   `data`, so read ids from `.data[]`.
 3. **Never guess ids.** Resolve product, component, and feature ids with
    `list`/`get` commands or ask the user.
 4. **Status changes go through the dedicated command** —
@@ -149,7 +152,7 @@ You analyze the repository yourself and feed the discovered candidates to Zensu:
 ```bash
 zensu ghost scan --product <id> --candidates '<json-array>' \
   [--components '<json-array>'] [--repo-url ...] [--branch ...] --json
-zensu ghost candidates <scan-id> --json        # ordered by confidence
+zensu ghost candidates <scan-id> --product <id>  # JSON, by confidence, at most 200
 # present candidates to the user, then:
 zensu ghost batch <scan-id> --product <id> \
   --approve-ids '["<uuid>", ...]' --reject-ids '["<uuid>", ...]' \
@@ -206,7 +209,7 @@ zensu doc claude-md --product <id> --variant full|minimal|ci-only   # CLAUDE.md 
 
 ```bash
 # ids for scripting
-zensu features list --product "$PRODUCT" --status testing --json | jq -r '.[].id'
+zensu features list --product "$PRODUCT" --status testing --json | jq -r '.data[].id'
 
 # raw API access when no typed command exists (prefer typed commands)
 curl -sH "Authorization: Bearer $(zensu auth token)" "$ZENSU_API_URL/api/..."

@@ -38,6 +38,12 @@ zensu auth logout
 Global flags on every command: `--api-url <url>`. Typed commands accept
 `--json` for raw JSON output.
 
+List commands follow the server's pagination and return every item. With
+`--json` they print one envelope for the whole list,
+`{"data": [...], "total": N, "page": 1, "perPage": N}`. A list whose pages
+overlap or change while it is read is retried once, then fails instead of
+printing a partial result.
+
 ## Command groups
 
 | Group | Manages |
@@ -149,7 +155,7 @@ attributes and recalculates the security score automatically.
 ```
 zensu ghost scan --product <id> --candidates '<json-array>' [--components '<json-array>']
     [--repo-url u] [--branch b] [--source api|mcp|web_ui]   # see --help for the candidate shape
-zensu ghost candidates <scan-id>                    # ordered by confidence
+zensu ghost candidates <scan-id> --product <id>     # JSON, by confidence, at most 200
 zensu ghost approve <scan-id> <candidate-id> --product <id>
 zensu ghost reject <scan-id> <candidate-id> --product <id> [--reason r]
 zensu ghost batch <scan-id> --product <id> [--approve-ids '<json-uuids>']
@@ -235,7 +241,7 @@ zensu mocks get <feature-id> <mock-id>              # metadata or raw content
 zensu wiki create --product <uuid> --title <t> --content <markdown>
     [--doc-type <type>] [--audience <a>] [--visibility public|private]
     [--entity-type feature|component|product --entity-id <uuid>]   # visibility defaults to private
-zensu wiki list [--product <uuid>] [--audience <a>] [--parent <uuid>]
+zensu wiki list [--product <uuid>] [--audience <a>] [--parent <uuid>]   # at most 50 pages (server limit)
 zensu wiki update <page-id> [--title t] [--content markdown] [--change-summary s]
     [--visibility public|private]
 
@@ -293,7 +299,7 @@ zensu doc gen-context <feature-id>                  # rich context for doc autho
 
 ```bash
 # all feature ids currently in testing
-zensu features list --product "$PRODUCT" --status testing --json | jq -r '.[].id'
+zensu features list --product "$PRODUCT" --status testing --json | jq -r '.data[].id'
 
 # component ids of a product
 zensu products get "$PRODUCT" --json | jq -r '.components[].id'

@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/spf13/cobra"
 )
+
+const ghostCandidateLimit = 200
 
 func NewGhostCmd(f *Factory) *cobra.Command {
 	cmd := &cobra.Command{
@@ -108,11 +111,18 @@ func newGhostCandidatesCmd(f *Factory) *cobra.Command {
 			if product == "" {
 				return fmt.Errorf("--product is required")
 			}
-			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/products/"+product+"/ghost/scans/"+args[0]+"/candidates", nil)
+			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/products/"+product+"/ghost/scans/"+args[0]+"/candidates?limit="+strconv.Itoa(ghostCandidateLimit), nil)
 			if err != nil {
 				return err
 			}
-			return printJSON(f.Out, raw)
+			if err := printJSON(f.Out, raw); err != nil {
+				return err
+			}
+			var candidates []json.RawMessage
+			if json.Unmarshal(raw, &candidates) == nil && len(candidates) >= ghostCandidateLimit {
+				_, err = fmt.Fprintf(cmd.ErrOrStderr(), "warning: the server returns at most %d candidates per scan; candidates below the %d highest-confidence ones are not listed\n", ghostCandidateLimit, ghostCandidateLimit)
+			}
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")

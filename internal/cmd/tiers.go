@@ -114,7 +114,7 @@ func newTiersListCmd(f *Factory) *cobra.Command {
 			if product == "" {
 				return fmt.Errorf("--product is required")
 			}
-			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/products/"+product+"/tiers", nil)
+			raw, err := f.listAll(cmd.Context(), "/api/products/"+product+"/tiers", nil, "tiers")
 			if err != nil {
 				return err
 			}

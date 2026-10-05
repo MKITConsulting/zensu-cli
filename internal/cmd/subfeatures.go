@@ -48,13 +48,11 @@ func newSubfeaturesListCmd(f *Factory) *cobra.Command {
 			if featureID == "" {
 				return fmt.Errorf("--feature is required")
 			}
-			path := "/api/features/" + featureID + "/subfeatures"
+			q := url.Values{}
 			if compact {
-				q := url.Values{}
 				q.Set("view", "compact")
-				path += "?" + q.Encode()
 			}
-			raw, err := f.request(cmd.Context(), http.MethodGet, path, nil)
+			raw, err := f.listAll(cmd.Context(), "/api/features/"+featureID+"/subfeatures", q, "sub-features")
 			if err != nil {
 				return err
 			}

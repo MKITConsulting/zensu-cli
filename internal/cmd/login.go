@@ -55,7 +55,8 @@ func (f *Factory) loginWithToken(ctx context.Context, httpClient *http.Client, c
 	if token == "" {
 		return fmt.Errorf("--with-token requires an API key value (or - to read from stdin)")
 	}
-	if err := auth.ValidateAPIKey(ctx, httpClient, apiURL, token); err != nil {
+	kind, err := auth.ValidateAPIKey(ctx, httpClient, apiURL, token)
+	if err != nil {
 		return fmt.Errorf("API key validation failed: %w", err)
 	}
 	cfg.APIURL = apiURL
@@ -63,6 +64,10 @@ func (f *Factory) loginWithToken(ctx context.Context, httpClient *http.Client, c
 	cfg.AccessToken, cfg.RefreshToken, cfg.ExpiresAt = "", "", time.Time{}
 	if err := cfg.Save(); err != nil {
 		return err
+	}
+	if kind == auth.APIKeyKindAgent {
+		fmt.Fprintf(f.Out, "Logged in to %s with an agent key; it serves only the worker verbs zensu work claim, confirm, release and usage, and claims only in products whose automation policy allows it: %s.\n", apiURL, allowAgentKeyHint)
+		return nil
 	}
 	fmt.Fprintf(f.Out, "Logged in to %s with API key.\n", apiURL)
 	return nil

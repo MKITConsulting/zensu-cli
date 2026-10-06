@@ -155,8 +155,10 @@ func postToken(ctx context.Context, httpClient *http.Client, tokenEndpoint strin
 			Error            string `json:"error"`
 			ErrorDescription string `json:"error_description"`
 		}
-		if json.Unmarshal(body, &oerr) == nil && oerr.Error != "" {
-			return TokenResponse{}, fmt.Errorf("token endpoint: %s: %s", oerr.Error, oerr.ErrorDescription)
+		if json.Unmarshal(body, &oerr) == nil {
+			if code := oauthErrorText(oerr.Error); code != "" {
+				return TokenResponse{}, fmt.Errorf("token endpoint: %s: %s", code, oauthErrorText(oerr.ErrorDescription))
+			}
 		}
 		return TokenResponse{}, fmt.Errorf("token endpoint returned %d", resp.StatusCode)
 	}
@@ -167,19 +169,43 @@ func postToken(ctx context.Context, httpClient *http.Client, tokenEndpoint strin
 	return tok, nil
 }
 
-func ValidateAPIKey(ctx context.Context, httpClient *http.Client, apiURL, apiKey string) error {
+func oauthErrorText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r > 0x7e {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+type APIKeyKind string
+
+const (
+	APIKeyKindUser  APIKeyKind = "user"
+	APIKeyKindAgent APIKeyKind = "agent"
+)
+
+func ValidateAPIKey(ctx context.Context, httpClient *http.Client, apiURL, apiKey string) (APIKeyKind, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(apiURL, "/")+"/api/products", nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("X-API-Key", apiKey)
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("api key rejected (status %d)", resp.StatusCode)
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return APIKeyKindUser, nil
 	}
-	return nil
+	if resp.StatusCode == http.StatusForbidden {
+		var body struct {
+			Code string `json:"code"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 4<<10)).Decode(&body) == nil && body.Code == "agent_key_not_allowed" {
+			return APIKeyKindAgent, nil
+		}
+	}
+	return "", fmt.Errorf("api key rejected (status %d)", resp.StatusCode)
 }

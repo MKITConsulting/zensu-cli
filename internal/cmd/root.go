@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -28,18 +29,46 @@ func trustedAuthHosts(raw string) []string {
 	return hosts
 }
 
+const sessionTokenEnv = "ZENSU_SESSION_TOKEN"
+
+func sessionTokenTarget(cfg *config.Config, apiURLFlag string) (string, string, error) {
+	token := os.Getenv(sessionTokenEnv)
+	if token == "" {
+		return "", "", nil
+	}
+	if !strings.HasPrefix(token, client.SessionTokenPrefix) {
+		return "", "", fmt.Errorf("%s must hold a work order session token (%s…)", sessionTokenEnv, client.SessionTokenPrefix)
+	}
+	envURL := os.Getenv("ZENSU_API_URL")
+	if apiURLFlag == "" && envURL == "" && cfg.APIURL == "" {
+		return "", "", fmt.Errorf("%s needs the host that issued it: set ZENSU_API_URL or pass --api-url; a session token is never sent to the built-in default %s", sessionTokenEnv, config.DefaultAPIURL)
+	}
+	return token, cfg.ResolveAPIURL(apiURLFlag, envURL), nil
+}
+
+func newClient(ctx context.Context, apiURLFlag string) (*client.Client, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, err
+	}
+	token, host, err := sessionTokenTarget(cfg, apiURLFlag)
+	if err != nil {
+		return nil, err
+	}
+	if token != "" {
+		return client.New(&config.Config{AccessToken: token}, host, ""), nil
+	}
+	apiURL := cfg.ResolveAPIURL(apiURLFlag, os.Getenv("ZENSU_API_URL"))
+	trusted := trustedAuthHosts(os.Getenv(trustedAuthHostsEnv))
+	eps := auth.DiscoverEndpoints(ctx, client.NewGuardedHTTPClient(discoveryTimeout), apiURL, trusted)
+	return client.New(cfg, apiURL, eps.Token), nil
+}
+
 func NewRootCmd() *cobra.Command {
 	var apiURLFlag string
 	f := &Factory{Out: os.Stdout}
 	f.NewClient = func(ctx context.Context) (*client.Client, error) {
-		cfg, err := config.Load()
-		if err != nil {
-			return nil, err
-		}
-		apiURL := cfg.ResolveAPIURL(apiURLFlag, os.Getenv("ZENSU_API_URL"))
-		trusted := trustedAuthHosts(os.Getenv(trustedAuthHostsEnv))
-		eps := auth.DiscoverEndpoints(ctx, client.NewGuardedHTTPClient(discoveryTimeout), apiURL, trusted)
-		return client.New(cfg, apiURL, eps.Token), nil
+		return newClient(ctx, apiURLFlag)
 	}
 
 	root := &cobra.Command{
@@ -68,6 +97,8 @@ func NewRootCmd() *cobra.Command {
 		NewDocCmd(f),
 		NewKnowledgeCmd(f),
 		NewPulseCmd(f),
+		NewWorkCmd(f),
+		NewPlanCmd(f),
 		NewMetaCmd(f),
 		NewOrgCmd(f),
 	)

@@ -134,6 +134,8 @@ and flags of each group.
 | `security` | Feature security classification, tests, reviews, and posture |
 | `ghost` | Ghost scans and feature candidates |
 | `pulse` | Development sessions |
+| `work` | Work orders for autonomous delivery: dispatch, claim, session reporting, questions, decisions |
+| `plan` | Work plans: push plan files, follow their status, approve, finalize, abandon |
 | `link` | Link tests, docs, and source files to a feature |
 | `knowledge` | Search and inspect the organization's knowledge pool |
 | `design` | Inspect a product's design system |
@@ -157,6 +159,22 @@ requires the response id to match the requested session. Pass changed paths with
 one `--changed-file <path>` per file so commas and surrounding whitespace remain
 part of the filename; the legacy comma-separated `--changed-files` flag remains
 available for compatibility.
+
+`zensu plan push <file>` drafts a work plan from a Markdown plan file. Before its first write it
+refuses a revision that is an open item of another live plan, naming the item, the revision and
+that plan (`zensu plan abandon <plan id>` frees it), and new features beyond the organization's
+feature allowance; `--dry-run` reports the same refusals. `task` links the work order of a
+one-item plan, and `scope_summary` belongs to new features and to `new_revision: true` items.
+`zensu plan status <plan id> --watch` retries timeouts, refused or reset connections, responses
+cut off mid-body, 429 and 5xx with backoff, prints one stderr line per retry and stops after five
+failed polls in a row; TLS failures, refused redirects and an invalid API URL end it at once. An
+agent key claims only in products whose automation policy allows it:
+`zensu work policy set --product <product id> --add-allowed-key <key id>` adds one,
+`--remove-allowed-key` takes one off and `--allowed-key` replaces the list. The command writes
+the policy back with the version it read; when someone changed it in between, it reads the
+policy again and repeats the change. It makes at most three attempts and notes each repeat on
+stderr. A Zensu server from before this check refuses the version; the command then writes once
+without it and says on stderr that a simultaneous change is not detected.
 
 A typical `products` / `features` flow:
 
@@ -244,6 +262,20 @@ hooks.
 ## Configuration precedence
 
 API base URL: `--api-url` flag → `ZENSU_API_URL` → stored host → `https://api.zensu.dev`.
+
+Work order sessions: `ZENSU_SESSION_TOKEN` holds the order-scoped `zst_…` token of a claim. When
+it is set, every command authenticates with it and ignores the stored login. The API base URL
+resolves as above but must be explicit: a session token is never sent to the built-in default
+host, so set `--api-url`, `ZENSU_API_URL` or a stored host. Inside a session `zensu auth token`
+refuses and `zensu auth status` reports the session.
+
+Human gates: drafting (`zensu plan push`, `zensu work create`) needs a signed-in person, and every
+decision needs the browser login of `zensu auth login`: `zensu work
+approve|requeue|cancel|confirm-merge|answer|overturn`, `zensu work policy set`, `zensu work
+repositories add|update|remove`, `zensu plan approve|finalize|abandon|confirm-merge` and
+`zensu plan followup accept|dismiss`. API keys, agent keys and MCP clients get `403`. A CLI login
+from before the release that added the `azp` claim is refused at decisions until you run
+`zensu auth login` again.
 
 OAuth endpoint discovery: the CLI reads `/.well-known/oauth-authorization-server` from the API
 host and, by default, honours the endpoints it names only when they sit on that same host —

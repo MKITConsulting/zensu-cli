@@ -141,7 +141,7 @@ zensu security threat-model <feature-id> --json     # STRIDE context data
 
 ```bash
 zensu security validate <feature-id> --json   # all security requirements met?
-zensu journeys health <journey-id> --json     # journey coverage healthy?
+zensu journeys health <journey-id> --product <id>   # JSON: journey coverage healthy?
 zensu security posture <product-id> --json    # aggregate view
 ```
 

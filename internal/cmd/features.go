@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 )
+
+var featureStatuses = []string{"planned", "in-progress", "testing", "released"}
 
 func slugify(s string) string {
 	const maxSlug = 200
@@ -72,14 +75,23 @@ func newFeaturesListCmd(f *Factory) *cobra.Command {
 			if product == "" {
 				return fmt.Errorf("--product is required")
 			}
+			wantStatus := strings.ToLower(strings.TrimSpace(status))
+			if wantStatus != "" && !slices.Contains(featureStatuses, wantStatus) {
+				return fmt.Errorf("--status must be one of %s; got %q", strings.Join(featureStatuses, ", "), status)
+			}
 			q := url.Values{}
 			q.Set("productId", product)
-			if status != "" {
-				q.Set("status", status)
+			if wantStatus != "" {
+				q.Set("status", wantStatus)
 			}
 			raw, err := f.listAll(cmd.Context(), "/api/features", q, "features")
 			if err != nil {
 				return err
+			}
+			if wantStatus != "" {
+				if raw, err = filterFeaturesByStatus(raw, wantStatus); err != nil {
+					return err
+				}
 			}
 			if asJSON {
 				return printJSON(f.Out, raw)
@@ -106,6 +118,24 @@ func newFeaturesListCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&status, "status", "", "filter by status (planned|in-progress|testing|released)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
+}
+
+func filterFeaturesByStatus(raw []byte, status string) ([]byte, error) {
+	items, _, ok := decodeListPage(raw)
+	if !ok {
+		return nil, fmt.Errorf("cannot apply --status: the server did not return a features list")
+	}
+	kept := []json.RawMessage{}
+	for _, item := range items {
+		var ft featureItem
+		if err := json.Unmarshal(item, &ft); err != nil {
+			return nil, fmt.Errorf("cannot apply --status: %w", err)
+		}
+		if ft.Status != nil && strings.EqualFold(*ft.Status, status) {
+			kept = append(kept, item)
+		}
+	}
+	return encodeMergedList(kept)
 }
 
 func newFeaturesGetCmd(f *Factory) *cobra.Command {

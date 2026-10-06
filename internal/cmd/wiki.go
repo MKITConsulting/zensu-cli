@@ -38,25 +38,22 @@ func newWikiListCmd(f *Factory) *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:          "list",
-		Short:        "List wiki pages with optional filters",
-		Long:         "List wiki pages with optional filters. Returns pages matching the specified criteria.",
+		Short:        "List a product's wiki pages",
+		Long:         "List a product's wiki pages, optionally filtered by audience or parent page.",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			q := url.Values{}
-			if product != "" {
-				q.Set("productId", product)
+			if product == "" {
+				return fmt.Errorf("--product is required")
 			}
+			q := url.Values{}
+			q.Set("productId", product)
 			if audience != "" {
 				q.Set("audience", audience)
 			}
 			if parent != "" {
 				q.Set("parentPageId", parent)
 			}
-			path := "/api/wiki/pages"
-			if len(q) > 0 {
-				path += "?" + q.Encode()
-			}
-			raw, err := f.request(cmd.Context(), http.MethodGet, path, nil)
+			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/wiki/pages?"+q.Encode(), nil)
 			if err != nil {
 				return err
 			}
@@ -75,7 +72,7 @@ func newWikiListCmd(f *Factory) *cobra.Command {
 			return tw.Flush()
 		},
 	}
-	cmd.Flags().StringVar(&product, "product", "", "filter by product UUID")
+	cmd.Flags().StringVar(&product, "product", "", "product UUID (required)")
 	cmd.Flags().StringVar(&audience, "audience", "", "filter by audience (end_user|developer|admin|internal)")
 	cmd.Flags().StringVar(&parent, "parent", "", "filter by parent page UUID to get child pages")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")

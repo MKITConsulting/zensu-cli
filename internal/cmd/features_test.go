@@ -38,21 +38,108 @@ func TestFeaturesList_Table(t *testing.T) {
 	}
 }
 
-func TestFeaturesList_StatusFilter(t *testing.T) {
-	var gotStatus string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotStatus = r.URL.Query().Get("status")
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}, "total": 0})
+func mixedStatusFeatures(n int) []map[string]any {
+	items := listFixture(n)
+	for i, item := range items {
+		item["status"] = featureStatuses[i%len(featureStatuses)]
+	}
+	return items
+}
+
+func TestFeaturesList_StatusFilterAppliesWhenTheServerIgnoresIt(t *testing.T) {
+	items := mixedStatusFeatures(150)
+	tests := []struct {
+		name       string
+		flag       string
+		wantStatus string
+	}{
+		{"testing", "testing", "testing"},
+		{"planned", "planned", "planned"},
+		{"case and surrounding space are ignored", " Released ", "released"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newPagedServer(t, "/api/features", backendPages(items, 100))
+			f, out := testFactory(srv.Server)
+			if err := runCmd(t, NewFeaturesCmd(f), "list", "--product", "p1", "--status", tc.flag, "--json"); err != nil {
+				t.Fatalf("features list --status error: %v", err)
+			}
+			for _, q := range srv.requestedQueries() {
+				if q.Get("status") != tc.wantStatus {
+					t.Errorf("page %s: status=%q, want %q so a server that filters can narrow the pages", q.Get("page"), q.Get("status"), tc.wantStatus)
+				}
+			}
+			var env struct {
+				Data    []map[string]any `json:"data"`
+				Total   int              `json:"total"`
+				Page    int              `json:"page"`
+				PerPage int              `json:"perPage"`
+			}
+			if err := json.Unmarshal(out.Bytes(), &env); err != nil {
+				t.Fatalf("decode envelope: %v\n%s", err, out.String())
+			}
+			want := 0
+			for _, item := range items {
+				if item["status"] == tc.wantStatus {
+					want++
+				}
+			}
+			if len(env.Data) != want || env.Total != want || env.Page != 1 || env.PerPage != want {
+				t.Errorf("envelope: got %d items, total %d, page %d, perPage %d; want %d items, total %d, page 1, perPage %d",
+					len(env.Data), env.Total, env.Page, env.PerPage, want, want, want)
+			}
+			for _, item := range env.Data {
+				if item["status"] != tc.wantStatus {
+					t.Errorf("%v has status %v, want only %s", item["id"], item["status"], tc.wantStatus)
+				}
+			}
+			assertPages(t, srv, []int{1, 2})
+		})
+	}
+}
+
+func TestFeaturesList_StatusFilterInTable(t *testing.T) {
+	items := mixedStatusFeatures(150)
+	srv := newPagedServer(t, "/api/features", backendPages(items, 100))
+	f, out := testFactory(srv.Server)
+	if err := runCmd(t, NewFeaturesCmd(f), "list", "--product", "p1", "--status", "in-progress"); err != nil {
+		t.Fatalf("features list --status error: %v", err)
+	}
+	got := out.String()
+	for _, item := range items {
+		slug := item["slug"].(string)
+		if shown := strings.Contains(got, slug); shown != (item["status"] == "in-progress") {
+			t.Errorf("%s (status %v): shown %t", slug, item["status"], shown)
+		}
+	}
+}
+
+func TestFeaturesList_RejectsUnknownStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("server must not be called for an unknown --status")
 	}))
 	defer srv.Close()
 
 	f, _ := testFactory(srv)
-	cmd := NewFeaturesCmd(f)
-	if err := runCmd(t, cmd, "list", "--product", "p1", "--status", "testing"); err != nil {
-		t.Fatalf("features list error: %v", err)
+	err := runCmd(t, NewFeaturesCmd(f), "list", "--product", "p1", "--status", "in_review")
+	if err == nil || !strings.Contains(err.Error(), "--status must be one of planned, in-progress, testing, released") {
+		t.Fatalf("an unknown status must be rejected with the valid values, got: %v", err)
 	}
-	if gotStatus != "testing" {
-		t.Errorf("status filter not sent: got %q", gotStatus)
+}
+
+func TestFeaturesList_StatusFilterNeedsAListResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"unexpected":true}`))
+	}))
+	defer srv.Close()
+
+	f, out := testFactory(srv)
+	err := runCmd(t, NewFeaturesCmd(f), "list", "--product", "p1", "--status", "testing", "--json")
+	if err == nil || !strings.Contains(err.Error(), "cannot apply --status") {
+		t.Fatalf("a response that is not a list cannot be filtered and must fail, got: %v", err)
+	}
+	if out.Len() != 0 {
+		t.Errorf("an unfiltered body must not be printed as if it were filtered, got:\n%s", out.String())
 	}
 }
 

@@ -21,7 +21,7 @@ func TestWikiList_Table(t *testing.T) {
 
 	f, out := testFactory(srv)
 	cmd := NewWikiCmd(f)
-	if err := runCmd(t, cmd, "list"); err != nil {
+	if err := runCmd(t, cmd, "list", "--product", "p1"); err != nil {
 		t.Fatalf("wiki list error: %v", err)
 	}
 	got := out.String()
@@ -29,6 +29,19 @@ func TestWikiList_Table(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("table missing %q in:\n%s", want, got)
 		}
+	}
+}
+
+func TestWikiList_RequiresProduct(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("server must not be called without --product, which it would reject")
+	}))
+	defer srv.Close()
+
+	f, _ := testFactory(srv)
+	err := runCmd(t, NewWikiCmd(f), "list", "--audience", "developer")
+	if err == nil || !strings.Contains(err.Error(), "--product is required") {
+		t.Fatalf("wiki list without --product must fail before the request, got: %v", err)
 	}
 }
 

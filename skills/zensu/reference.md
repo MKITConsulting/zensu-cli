@@ -206,18 +206,18 @@ zensu journeys create --product <id> --title <t> [--slug s] [--description d]
     [--persona p] [--priority critical|high|medium|low]
     [--type critical|happy_path|edge_case|error_path|onboarding] [--tier <uuid>]
 zensu journeys list --product <id>
-zensu journeys get <journey-id>
+zensu journeys get <journey-id> --product <id>
 zensu journeys step <journey-id> --product <id> --title <t> --step-order <int>
     [--description d] [--expected-result r] [--feature <uuid>] [--critical]
     [--interaction-type action|navigation|input|validation|output|wait]
-zensu journeys steps <journey-id>                   # list steps
+zensu journeys steps <journey-id> --product <id>    # list steps
 zensu journeys step-update <journey-id> <step-id> --product <id> [--title t] [--step-order <int>]
     [--description d] [--expected-result r] [--feature <uuid>] [--critical]
     [--interaction-type action|navigation|input|validation|output|wait]
     # read-modify-write, last writer wins; omitted flags are resent unchanged
 zensu journeys step-delete <journey-id> <step-id> --product <id>
     # remaining steps keep their order, so reorder afterwards if it must stay gap-free
-zensu journeys health <journey-id>                  # health analysis
+zensu journeys health <journey-id> --product <id>   # health analysis
 zensu journeys suggest --product <id>               # context to suggest journeys
 ```
 
@@ -241,7 +241,7 @@ zensu mocks get <feature-id> <mock-id>              # metadata or raw content
 zensu wiki create --product <uuid> --title <t> --content <markdown>
     [--doc-type <type>] [--audience <a>] [--visibility public|private]
     [--entity-type feature|component|product --entity-id <uuid>]   # visibility defaults to private
-zensu wiki list [--product <uuid>] [--audience <a>] [--parent <uuid>]   # at most 50 pages (server limit)
+zensu wiki list --product <uuid> [--audience <a>] [--parent <uuid>]   # at most 50 pages (server limit)
 zensu wiki update <page-id> [--title t] [--content markdown] [--change-summary s]
     [--visibility public|private]
 

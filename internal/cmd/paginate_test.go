@@ -434,19 +434,19 @@ func TestFeaturesList_PaginationEdgeCases(t *testing.T) {
 
 func TestFeaturesList_StopsAtThePageCap(t *testing.T) {
 	srv := newPagedServer(t, "/api/features", func(page, _ int) (int, any) {
-		if page > maxListPages {
-			t.Errorf("requested page %d, past the cap of %d pages", page, maxListPages)
+		if page > listMaxPages {
+			t.Errorf("requested page %d, past the cap of %d pages", page, listMaxPages)
 			return http.StatusOK, pageBody(nil, 0, page, 1)
 		}
 		return http.StatusOK, pageBody([]map[string]any{{"id": fmt.Sprintf("endless-%d", page)}}, 1_000_000, page, 1)
 	})
 	f, out := testFactory(srv.Server)
 	err := runCmd(t, NewFeaturesCmd(f), "list", "--product", "p1")
-	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("did not end after %d pages", maxListPages)) {
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("did not end after %d pages", listMaxPages)) {
 		t.Fatalf("an endless list must stop at the page cap with an error, got: %v", err)
 	}
-	if pages := srv.requestedPages(); len(pages) != maxListPages || pages[len(pages)-1] != maxListPages {
-		t.Errorf("want exactly %d page requests, got %d", maxListPages, len(pages))
+	if pages := srv.requestedPages(); len(pages) != listMaxPages || pages[len(pages)-1] != listMaxPages {
+		t.Errorf("want exactly %d page requests, got %d", listMaxPages, len(pages))
 	}
 	if out.Len() != 0 {
 		t.Errorf("a capped listing must not print a partial list, got %d bytes", out.Len())

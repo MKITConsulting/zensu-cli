@@ -15,7 +15,7 @@ import (
 
 const listPageSize = 100
 
-const maxListPages = 1000
+const listMaxPages = 1000
 
 const listReadAttempts = 2
 
@@ -48,8 +48,8 @@ func readAllPages(ctx context.Context, c *client.Client, path string, query url.
 	seen := map[string]bool{}
 	total := 0
 	for page := 1; ; page++ {
-		if page > maxListPages {
-			return nil, fmt.Errorf("the %s list did not end after %d pages (%d of %d items received); refusing to print a partial list", noun, maxListPages, len(items), total)
+		if page > listMaxPages {
+			return nil, fmt.Errorf("the %s list did not end after %d pages (%d of %d items received); refusing to print a partial list", noun, listMaxPages, len(items), total)
 		}
 		raw, err := readResponse(c.Do(ctx, http.MethodGet, pagePath(path, query, page), nil))
 		if err != nil {

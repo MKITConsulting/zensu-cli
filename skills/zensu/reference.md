@@ -22,18 +22,24 @@ The macOS binary is Developer-ID signed and notarized. Pin a version with
 zensu auth login                        # browser OAuth2 + PKCE
 zensu auth login --with-token zsk_xxx   # API key (CI / headless)
 echo "$ZENSU_API_KEY" | zensu auth login --with-token -
-zensu auth status                       # identity, host, token expiry
-zensu auth token                        # print token for scripting
+zensu auth status                       # identity, host, token expiry (or the work order session)
+zensu auth token                        # print token for scripting (refuses inside a work order session)
 zensu auth logout
 ```
 
 - Credentials: `hosts.json` under `$ZENSU_CONFIG_DIR`, else
   `$XDG_CONFIG_HOME/zensu`, else `~/.config/zensu` (mode `0600`).
-- Host resolution: `--api-url` flag > stored host > `ZENSU_API_URL` env >
+- Host resolution: `--api-url` flag > `ZENSU_API_URL` env > stored host >
   `https://api.zensu.dev`.
 - Self-hosted deployments discover OAuth endpoints via
   `/.well-known/oauth-authorization-server` (fallback
   `/oauth/authorize` + `/oauth/token`).
+- Work order sessions: `ZENSU_SESSION_TOKEN` (a `zst_…` token from a claim)
+  overrides any stored login for every command. It needs an explicit host
+  (`--api-url`, `ZENSU_API_URL` or a stored host); the built-in default host is
+  refused. Inside a session `auth token` refuses and `auth status` reports the
+  session instead of a login. A `401 invalid_session_token` or `409
+  stale_attempt` means stop, not log in.
 
 Global flags on every command: `--api-url <url>`. Typed commands accept
 `--json` for raw JSON output.
@@ -61,6 +67,8 @@ still short, the command fails instead of printing a partial result. With
 | `security` | Classification, security tests, reviews, score, posture |
 | `ghost` | Ghost scans and feature candidates (brownfield import) |
 | `pulse` | Development sessions |
+| `work` | Work orders: dispatch, claim, session reporting, questions, human decisions, policy, repositories |
+| `plan` | Work plans: push plan files, follow status, approve, finalize, abandon, follow-ups |
 | `link` | Link tests, docs, and source files to a feature |
 | `knowledge` | Organization knowledge pool search |
 | `design` | Product design-system context |
@@ -175,12 +183,151 @@ on the very first scan of an empty product.
 
 ```
 zensu pulse start --head-sha <sha> [--branch b] [--product uuid] [--project /abs/path]
+zensu pulse start --work-order <id> [--head-sha sha] [--branch b]   # inside a work order session
 zensu pulse end <session-id> [--changed-files "a.ts,b.go"]
 zensu pulse summary <session-id>
 ```
 
 Sessions are idempotent per HEAD SHA — `start` with the same SHA continues the
-existing session.
+existing session. With `--work-order` the session authenticates with
+`ZENSU_SESSION_TOKEN`, is idempotent per attempt, lands in the Pulse journal of
+the agent key's creator and honors that person's tracking opt-out
+(`{"status":"tracking_disabled"}`, also the answer when the key's creator is no
+longer an active member). Zensu ends it when the attempt ends.
+
+### work
+
+Human decisions need the browser login (`zensu auth login`); API keys and MCP
+clients get `403 interactive_user_required`, agent keys `403
+agent_key_not_allowed`. Drafting (`work create`, `plan push`) needs a signed-in
+person too. Worker verbs need an agent key (scope `agent` only) and refuse a
+session token. Session verbs need `ZENSU_SESSION_TOKEN`. A claim returns
+nothing until the product's automation policy allows the agent key
+(`zensu work policy set --product <product id> --add-allowed-key <key id>`).
+`--add-allowed-key` and `--remove-allowed-key` change the key list the command
+just read and may be combined; `--allowed-key` replaces the whole list and
+combines with neither. In text mode `policy set` prints the resulting
+`Allowed agent keys:` (or `none`). The server drops stored keys that are no
+longer active and refuses newly named keys that are not active agent keys
+(`422 invalid_agent_keys`); the error names the flag that supplied them.
+`policy set` writes the policy back with the version it read; when someone
+changed the policy in between (`409 policy_changed`), it reads the policy again
+and repeats the change. It makes at most three attempts and notes each repeat on
+stderr. A server from before this check refuses the version
+(`400 invalid_body`); the command then writes once without it and says on stderr
+that a simultaneous change is not detected.
+
+```
+# humans (browser login; read commands also work with an API key)
+zensu work create --product <id> --feature <KEY-N|uuid> --repository <url> [--base-branch main] [--harness claude]
+zensu work list [--product id] [--plan id] [--feature KEY-N|uuid] [--status s] [--page n] [--per-page n]
+zensu work get <work-order-id> --json
+zensu work events <work-order-id>
+zensu work approve <work-order-id>
+zensu work requeue <work-order-id>
+zensu work cancel <work-order-id> [--confirm-pr-closed]
+zensu work confirm-merge <work-order-id> --head-sha <full-sha> [--merge-sha <sha>]
+zensu work answer <question-id> --answer "..." [--rationale "..."] [--plan-wide]
+zensu work overturn <question-id> --answer "..." [--rationale "..."]
+zensu work questions --plan <plan-id> [--order id] [--status open|awaiting_human|answered] [--scope package|plan]
+zensu work policy get --product <id>
+zensu work policy set --product <id> [--plan-approval required|auto] [--max-running-orders n] [--lease-minutes n] [--max-order-cost-usd n | --clear-max-order-cost] [--allowed-key <key-id>... | --add-allowed-key <key-id>... --remove-allowed-key <key-id>...]
+zensu work repositories list --product <id>
+zensu work repositories add --product <id> --repository https://github.com/acme/app [--risk-path 'backend/internal/auth/**']
+zensu work repositories update <repository-id> --product <id> (--risk-path '...'... | --clear)
+zensu work repositories remove <repository-id> --product <id>
+
+# workers (agent key)
+zensu work claim --session-id <sid> --repository <url>... [--kind implement] [--wait 0-50] --json   # prints the session token
+zensu work confirm <work-order-id> --session-id <sid> --attempt <n>
+zensu work release <work-order-id> --session-id <sid> --attempt <n> --outcome success|failure|rate_limited|runtime_cap|interrupted [--not-before <rfc3339>]   # --not-before only and always with rate_limited
+zensu work usage <work-order-id> --session-id <sid> --attempt <n> [--cost-usd 1.2] [--turns 40] [--input-tokens n] [--output-tokens n]
+
+# sessions (ZENSU_SESSION_TOKEN)
+zensu work heartbeat <work-order-id>
+zensu work event <work-order-id> --stage planning|implementing|pr_open|reviewing|validating|ready_for_merge [--pr-url u] [--pr-number n] [--branch b] [--head <full-sha>] [--client-event-id id]
+zensu work event <work-order-id> --artifact plan|report|evidence|pr|other (--url u | --path p) [--summary "..."]
+zensu work event <work-order-id> --blocked plan_approval|worker_error --reason "..."
+zensu work ask <work-order-id> --category clarification|technical_choice|product_decision|scope|risk|external --question "..." [--option a --option b] (--blocking | --default-option a) [--requirement AC-001]
+zensu work followup <work-order-id> --title "..." --rationale "..." --severity low|medium|high|critical [--path p]...
+```
+
+When the product requires a plan approval (the default), a session moves to
+`--stage planning`, attaches the plan with `--artifact plan --url <link>`,
+blocks with `--blocked plan_approval --reason "..."` (which ends the session)
+and stops. A person runs `zensu work approve <work-order-id>`; the order is
+queued again and the next claim implements. `--stage implementing` before that
+answers `409 plan_approval_required`. A stage event carries no `--detail`.
+
+Events and questions carry a client event id; pass `--client-event-id` to make
+retries idempotent. A `409 stale_attempt` means the lease belongs to another
+attempt, and a `401 invalid_session_token` means the session has ended — stop
+without further forge writes and never log in. `--session-id` is 8 to 128
+characters of letters, digits, `.`, `_`, `:` and `-`; ID flags take UUIDs, and
+feature keys may be written in any case (`zen-42`). Only metadata and short prose are
+accepted (`422 content_not_allowed` for code, commands, logs or diffs).
+
+### plan
+
+```
+zensu plan push .zensu/plans/checkout.md [--product id] [--dry-run] [--json]
+zensu plan status <plan-id> [--watch] [--interval 10s]
+zensu plan list --product <id> [--status draft|decomposing|graph_proposed|open|integrating|held|verifying|final_pr_open|merged|abandoned]
+zensu plan approve <plan-id>
+zensu plan finalize <plan-id> [--pr-url u --pr-number n --head-sha <full-sha>]
+zensu plan abandon <plan-id> [--confirm-pr-closed]
+zensu plan confirm-merge <plan-id>
+zensu plan followups <plan-id>
+zensu plan followup accept <plan-id> <followup-id>
+zensu plan followup dismiss <plan-id> <followup-id>
+```
+
+A plan file is Markdown with a YAML front matter (`product`, `repository`,
+`base_branch`, `name`, `items`); each item names `feature` (KEY-N or UUID),
+`revision` (UUID), or `title` + `component` for a new feature, plus
+`requirements` (`AC-001`, `FR-001`, `IF-001`, optionally `{id, tags, text}`) and
+`paths` (clean relative file paths without wildcards, at most 100 per item).
+`new_revision: true` with `scope_summary` plans a new revision of a shipped
+feature. `scope_summary` belongs only to a `title` item or to a `feature` item
+with `new_revision: true`; on a `revision` item or on a `feature` item without
+`new_revision` the file is refused. `task` (a task UUID) links the work order of
+a one-item plan, so a plan with several items and a `task` is refused before
+any request. Requirement texts come from the `## Requirements` table (cells
+split on unescaped `|`, fenced code is skipped) or from `text`; they become the
+description and criteria of a new feature or revision, and for an existing
+feature the push notes that they are ignored, because a plan records only
+requirement IDs and tags. Requirement IDs must be unique across the plan. The
+push is idempotent on the SHA-256 of the file's text (a BOM and CRLF line
+endings do not change it), and the recorded source path is relative to the
+root of the repository that holds the file.
+
+Before its first write the push checks everything Zensu would refuse later: the
+repository is registered for the product, the task exists, every feature and
+revision belongs to the product and is a dispatchable top-level feature, a
+reused slug is a top-level feature in the item's component with an open
+revision, components belong to the product, descriptions fit 10000 characters
+and no two items target the same feature. It also reads the product's live
+plans (every status but `merged` and `abandoned`) and refuses a target revision
+— the active revision of a feature item or of a reused feature, or a `revision`
+item — that is an open item of one of them: a revision sits in one live plan at
+a time. The error names the item, the revision and the holding plan; run
+`zensu plan abandon <plan-id>` first. A live plan pushed from the same source
+path with other content is named as well, in the error or as a note, because
+the push then re-pushes an edited file. New features and new revisions cannot
+conflict. When the push creates features, it reads `GET /api/billing/usage`
+and refuses when they would exceed the organization's feature allowance
+(`-1` is unlimited; a `403` or `404` skips the check, the server still enforces
+it). `--dry-run` runs the same checks, reports the same refusals and writes
+nothing. With `--json` every mode prints one document:
+`{"dry_run", "already_pushed", "notes", "request" (dry run only), "plan"}`.
+`plan status --watch` retries a poll that times out, meets a refused or reset
+connection, loses the response mid-body or gets `429` or a `5xx`, with backoff,
+and prints one line per retry to stderr (`poll 2 of 5 failed: …; retrying in
+20s`); five failed polls in a row end the watch. Any other error ends it at the
+first poll, among them TLS and certificate failures, a refused cross-host
+redirect and an invalid API URL. `plan followups` lists each follow-up with its
+`STATE` (open, accepted, dismissed). See `zensu plan push --help` for a full
+example.
 
 ### tiers / roadmap / journeys
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -79,15 +80,38 @@ func maxResponseBytes() int64 {
 	return defaultResponseBytes
 }
 
+type apiStatusError struct {
+	status int
+	code   string
+	text   string
+}
+
+func (e *apiStatusError) Error() string { return e.text }
+
+func apiErrorOf(err error) (*apiStatusError, bool) {
+	var e *apiStatusError
+	if errors.As(err, &e) {
+		return e, true
+	}
+	return nil, false
+}
+
 func apiError(status int, raw []byte) error {
 	var e struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	}
 	if json.Unmarshal(raw, &e) == nil && e.Message != "" {
-		return fmt.Errorf("%s (status %d)", sanitizeTerminal(excerpt(e.Message)), status)
+		return &apiStatusError{status: status, code: e.Code, text: fmt.Sprintf("%s (status %d)", sanitizeTerminal(excerpt(e.Message)), status)}
 	}
-	return fmt.Errorf("request failed (status %d): %s", status, sanitizeTerminal(strings.TrimSpace(excerpt(string(raw)))))
+	return &apiStatusError{status: status, code: e.Code, text: fmt.Sprintf("request failed (status %d): %s", status, sanitizeTerminal(strings.TrimSpace(excerpt(string(raw)))))}
+}
+
+func ErrorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return sanitizeMultiline(err.Error())
 }
 
 const maxErrorExcerpt = 4 << 10

@@ -3,14 +3,17 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MKITConsulting/zensu-cli/internal/client"
+	"github.com/MKITConsulting/zensu-cli/internal/config"
 )
 
 func TestPrintJSON_FallsBackToRawBytes(t *testing.T) {
@@ -158,6 +161,44 @@ func TestAPIError_SanitizesServerText(t *testing.T) {
 	}
 	if !strings.Contains(rawFallback.Error(), "exploded") {
 		t.Errorf("the raw body text must survive: %q", rawFallback.Error())
+	}
+}
+
+func TestErrorText_KeepsTerminalControlSequencesOffThePrintedError(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"no error", nil, ""},
+		{"escape sequences", errors.New("token endpoint: invalid_grant: \x1b]0;pwned\x07x\xe2\x80\xae\xc2\x9b"), "token endpoint: invalid_grant: ]0;pwnedx"},
+		{"carriage return", errors.New("done\roverwritten"), "doneoverwritten"},
+		{"line structure of a suggestion", errors.New("unknown command \"plam\" for \"zensu\"\n\nDid you mean this?\n\tplan\n"), "unknown command \"plam\" for \"zensu\"\n\nDid you mean this?\n plan\n"},
+	}
+	for _, tc := range cases {
+		if got := ErrorText(tc.err); got != tc.want {
+			t.Errorf("%s: ErrorText = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestErrorText_PrintsARefusedRefreshWithoutEscapeBytes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/oauth/token" {
+			t.Errorf("unexpected request %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_grant", "error_description": "\x1b]0;pwned\x07x"})
+	}))
+	defer srv.Close()
+	f := &Factory{Out: &bytes.Buffer{}, NewClient: func(context.Context) (*client.Client, error) {
+		cfg := &config.Config{AccessToken: "expired", RefreshToken: "r1", ExpiresAt: time.Now().Add(-time.Hour)}
+		return client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client())), nil
+	}}
+	_, err := f.request(context.Background(), http.MethodGet, "/api/products", nil)
+	if got := ErrorText(err); got != "refreshing session: token endpoint: invalid_grant: ]0;pwnedx" {
+		t.Fatalf("printed error = %q", got)
 	}
 }
 

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -148,6 +149,44 @@ func TestGhostCandidates(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "cand1") {
 		t.Errorf("candidates output missing candidate id: %s", out.String())
+	}
+}
+
+func TestGhostCandidates_RequestsEveryCandidateOfTheScan(t *testing.T) {
+	tests := []struct {
+		name       string
+		candidates int
+	}{
+		{"a few candidates", 3},
+		{"a full scan of 200 candidates", ghostCandidateLimit},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotLimit string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotLimit = r.URL.Query().Get("limit")
+				_ = json.NewEncoder(w).Encode(listFixture(tc.candidates))
+			}))
+			defer srv.Close()
+
+			f, out := testFactory(srv)
+			cmd := NewGhostCmd(f)
+			var stderr bytes.Buffer
+			cmd.SetErr(&stderr)
+			if err := runCmd(t, cmd, "candidates", "s1", "--product", "p1"); err != nil {
+				t.Fatalf("ghost candidates error: %v", err)
+			}
+			if gotLimit != "200" {
+				t.Errorf("limit: got %q, want 200, the most a scan can hold, instead of the server default of 50", gotLimit)
+			}
+			var got []map[string]any
+			if err := json.Unmarshal(out.Bytes(), &got); err != nil || len(got) != tc.candidates {
+				t.Errorf("want all %d candidates as a JSON array on stdout, got %d (decode error %v)", tc.candidates, len(got), err)
+			}
+			if stderr.Len() != 0 {
+				t.Errorf("a scan holds at most 200 candidates, so a full response is complete and needs no warning, got stderr %q", stderr.String())
+			}
+		})
 	}
 }
 

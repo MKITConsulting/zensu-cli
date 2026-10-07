@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/spf13/cobra"
 )
+
+const ghostCandidateLimit = 200
 
 func NewGhostCmd(f *Factory) *cobra.Command {
 	cmd := &cobra.Command{
@@ -108,7 +111,7 @@ func newGhostCandidatesCmd(f *Factory) *cobra.Command {
 			if product == "" {
 				return fmt.Errorf("--product is required")
 			}
-			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/products/"+product+"/ghost/scans/"+args[0]+"/candidates", nil)
+			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/products/"+product+"/ghost/scans/"+args[0]+"/candidates?limit="+strconv.Itoa(ghostCandidateLimit), nil)
 			if err != nil {
 				return err
 			}

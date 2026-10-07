@@ -193,6 +193,24 @@ zensu features status <feature-id> testing
 `--slug` is derived from `--title` when omitted. Add `--json` to typed commands
 for raw output.
 
+The paginated list commands (`products list`, `features list`,
+`subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
+`roadmap list`, `mocks list`) read every page, 100 items per request, so the
+table and the `--json` output are not cut off after the first page. With
+`--json` they print one envelope for the whole list,
+`{"data": [...], "total": N, "page": 1, "perPage": N}`, with all N items in
+`data`. `features list --status` filters on the status shown in the STATUS
+column. The CLI compares the number of items it received with the server's
+total. If it received fewer, because pages overlapped or shifted while they
+were read, it reads the list once more; if the second read is still short, the
+command fails instead of printing a partial list. A change made while the list
+is read can still go unnoticed, for example when one item is deleted and
+another one is added at the same time. With `--json`, the other list commands
+print the server's plain JSON array. `ghost candidates` requests up to 200
+candidates, the most a scan can hold, instead of the server default of 50.
+`wiki list` currently returns at most 50 pages per query and warns on stderr
+when it reaches that limit.
+
 ## Shell completion
 
 `zensu` generates completion scripts via `zensu completion <bash|zsh|fish|powershell>`.

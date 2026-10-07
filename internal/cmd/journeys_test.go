@@ -686,6 +686,45 @@ func TestJourneysStepUpdate_ErrorsWhenStepNotInJourney(t *testing.T) {
 	}
 }
 
+func TestJourneysStepUpdate_FindsStepBeyondTheFirstPage(t *testing.T) {
+	steps := make([]map[string]any, 150)
+	for i := range steps {
+		steps[i] = decoyStep(fmt.Sprintf("s%03d", i), i+1)
+	}
+	pages := backendPages(steps, 100)
+	var gotPages []string
+	var putPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			q := r.URL.Query()
+			gotPages = append(gotPages, q.Get("page"))
+			page, perPage := 0, 0
+			_, _ = fmt.Sscan(q.Get("page"), &page)
+			_, _ = fmt.Sscan(q.Get("per_page"), &perPage)
+			_, body := pages(page, perPage)
+			_ = json.NewEncoder(w).Encode(body)
+			return
+		}
+		putPath = r.URL.Path
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "s140", "step_order": 141, "title": "Renamed", "feature_id": nil, "is_critical": false})
+	}))
+	defer srv.Close()
+
+	f, out := testFactory(srv)
+	if err := runCmd(t, NewJourneysCmd(f), "step-update", "j1", "s140", "--product", "p1", "--title", "Renamed"); err != nil {
+		t.Fatalf("a step on the second page must be found: %v", err)
+	}
+	if strings.Join(gotPages, ",") != "1,2" {
+		t.Errorf("the step lookup must read every page, read pages %v", gotPages)
+	}
+	if putPath != "/api/products/p1/journeys/j1/steps/s140" {
+		t.Errorf("PUT path: got %q", putPath)
+	}
+	if !strings.Contains(out.String(), `Updated step 141 "Renamed"`) {
+		t.Errorf("unexpected output: %s", out.String())
+	}
+}
+
 func TestJourneysStepUpdate_AcceptsCaseInsensitiveStepID(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {

@@ -48,13 +48,11 @@ func newSubfeaturesListCmd(f *Factory) *cobra.Command {
 			if featureID == "" {
 				return fmt.Errorf("--feature is required")
 			}
-			path := "/api/features/" + featureID + "/subfeatures"
+			q := url.Values{}
 			if compact {
-				q := url.Values{}
 				q.Set("view", "compact")
-				path += "?" + q.Encode()
 			}
-			raw, err := f.request(cmd.Context(), http.MethodGet, path, nil)
+			raw, err := f.listAll(cmd.Context(), "/api/features/"+featureID+"/subfeatures", q, "sub-features")
 			if err != nil {
 				return err
 			}
@@ -81,7 +79,7 @@ func newSubfeaturesListCmd(f *Factory) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&feature, "feature", "", "parent feature ID (required; or pass as positional arg)")
 	cmd.Flags().BoolVar(&compact, "compact", false, "compact view (id, slug, title, status, priority, componentId only)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	cmd.Flags().BoolVar(&asJSON, "json", false, listJSONUsage)
 	return cmd
 }
 

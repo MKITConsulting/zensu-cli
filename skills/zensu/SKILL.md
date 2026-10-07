@@ -65,6 +65,11 @@ zensu auth status   # authenticated? against which host?
    context. Analyze, recommend, and decide yourself — never expect the CLI to
    make product decisions.
 2. **Use `--json` whenever you parse output.** Every typed command supports it.
+   The paginated list commands (`products list`, `features list`,
+   `subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
+   `roadmap list`, `mocks list`) read every page and print one envelope,
+   `{"data": [...], "total": N, "page": 1, "perPage": N}`, so read their ids
+   from `.data[]`. The other list commands print a plain JSON array.
 3. **Never guess ids.** Resolve product, component, and feature ids with
    `list`/`get` commands or ask the user.
 4. **Status changes go through the dedicated command** —
@@ -147,7 +152,7 @@ zensu security threat-model <feature-id> --json     # STRIDE context data
 
 ```bash
 zensu security validate <feature-id> --json   # all security requirements met?
-zensu journeys health <journey-id> --json     # journey coverage healthy?
+zensu journeys health <journey-id> --product <id>   # JSON: journey coverage healthy?
 zensu security posture <product-id> --json    # aggregate view
 ```
 
@@ -158,7 +163,7 @@ You analyze the repository yourself and feed the discovered candidates to Zensu:
 ```bash
 zensu ghost scan --product <id> --candidates '<json-array>' \
   [--components '<json-array>'] [--repo-url ...] [--branch ...] --json
-zensu ghost candidates <scan-id> --json        # ordered by confidence
+zensu ghost candidates <scan-id> --product <id>  # JSON array, by confidence
 # present candidates to the user, then:
 zensu ghost batch <scan-id> --product <id> \
   --approve-ids '["<uuid>", ...]' --reject-ids '["<uuid>", ...]' \
@@ -253,7 +258,7 @@ zensu work approve <work-order-id>            # human; requeues the order for a 
 
 ```bash
 # ids for scripting
-zensu features list --product "$PRODUCT" --status testing --json | jq -r '.[].id'
+zensu features list --product "$PRODUCT" --status testing --json | jq -r '.data[].id'
 
 # raw API access when no typed command exists (prefer typed commands;
 # never inside a work order session, where `auth token` refuses)

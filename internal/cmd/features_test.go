@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -38,21 +39,172 @@ func TestFeaturesList_Table(t *testing.T) {
 	}
 }
 
-func TestFeaturesList_StatusFilter(t *testing.T) {
-	var gotStatus string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotStatus = r.URL.Query().Get("status")
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}, "total": 0})
+func mixedStatusFeatures(n int) []map[string]any {
+	stageOfStatus := map[string]string{"in-progress": "in_development", "testing": "in_review", "released": "shipped"}
+	stagesShownAsPlanned := []string{"planned", "superseded", ""}
+	items := listFixture(n)
+	for i, item := range items {
+		status := featureStatuses[i%len(featureStatuses)]
+		item["status"] = status
+		if stage, ok := stageOfStatus[status]; ok {
+			item["stage"] = stage
+		} else {
+			item["stage"] = stagesShownAsPlanned[(i/len(featureStatuses))%len(stagesShownAsPlanned)]
+		}
+	}
+	return items
+}
+
+func assertStatusEnvelope(t *testing.T, raw []byte, items []map[string]any, wantStatus string) {
+	t.Helper()
+	var env struct {
+		Data    []map[string]any `json:"data"`
+		Total   int              `json:"total"`
+		Page    int              `json:"page"`
+		PerPage int              `json:"perPage"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatalf("decode envelope: %v\n%s", err, raw)
+	}
+	want := 0
+	for _, item := range items {
+		if item["status"] == wantStatus {
+			want++
+		}
+	}
+	if len(env.Data) != want || env.Total != want || env.Page != 1 || env.PerPage != want {
+		t.Errorf("envelope: got %d items, total %d, page %d, perPage %d; want %d items, total %d, page 1, perPage %d",
+			len(env.Data), env.Total, env.Page, env.PerPage, want, want, want)
+	}
+	for _, item := range env.Data {
+		if item["status"] != wantStatus {
+			t.Errorf("%v has status %v, want only %s", item["id"], item["status"], wantStatus)
+		}
+	}
+}
+
+func TestFeaturesList_StatusFilterIsExactWhenTheServerDoesNotFilter(t *testing.T) {
+	items := mixedStatusFeatures(150)
+	tests := []struct {
+		name       string
+		flag       string
+		wantStatus string
+		wantStage  string
+	}{
+		{"testing narrows by stage in_review", "testing", "testing", "in_review"},
+		{"in-progress narrows by stage in_development", "in-progress", "in-progress", "in_development"},
+		{"planned sends no stage, because other stages also show as planned", "planned", "planned", ""},
+		{"case and surrounding space are ignored", " Released ", "released", "shipped"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newPagedServer(t, "/api/features", backendPages(items, 100))
+			f, out := testFactory(srv.Server)
+			if err := runCmd(t, NewFeaturesCmd(f), "list", "--product", "p1", "--status", tc.flag, "--json"); err != nil {
+				t.Fatalf("features list --status error: %v", err)
+			}
+			for _, q := range srv.requestedQueries() {
+				if q.Has("status") {
+					t.Errorf("page %s sent status=%q, which the server ignores", q.Get("page"), q.Get("status"))
+				}
+				if q.Get("stage") != tc.wantStage {
+					t.Errorf("page %s: stage=%q, want %q", q.Get("page"), q.Get("stage"), tc.wantStage)
+				}
+			}
+			assertStatusEnvelope(t, out.Bytes(), items, tc.wantStatus)
+			assertPages(t, srv, []int{1, 2})
+		})
+	}
+}
+
+func TestFeaturesList_StatusFilterLetsTheServerNarrowThePages(t *testing.T) {
+	items := mixedStatusFeatures(150)
+	tests := []struct {
+		flag      string
+		wantPages string
+	}{
+		{"testing", "1"},
+		{"in-progress", "1"},
+		{"released", "1"},
+		{"planned", "1,2"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.flag, func(t *testing.T) {
+			var gotPages []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				q := r.URL.Query()
+				matching := items
+				if stage := q.Get("stage"); stage != "" {
+					matching = nil
+					for _, item := range items {
+						if item["stage"] == stage {
+							matching = append(matching, item)
+						}
+					}
+				}
+				gotPages = append(gotPages, q.Get("page"))
+				page, perPage := 0, 0
+				_, _ = fmt.Sscan(q.Get("page"), &page)
+				_, _ = fmt.Sscan(q.Get("per_page"), &perPage)
+				_, body := backendPages(matching, 100)(page, perPage)
+				_ = json.NewEncoder(w).Encode(body)
+			}))
+			defer srv.Close()
+
+			f, out := testFactory(srv)
+			if err := runCmd(t, NewFeaturesCmd(f), "list", "--product", "p1", "--status", tc.flag, "--json"); err != nil {
+				t.Fatalf("features list --status error: %v", err)
+			}
+			assertStatusEnvelope(t, out.Bytes(), items, tc.flag)
+			if got := strings.Join(gotPages, ","); got != tc.wantPages {
+				t.Errorf("requested pages %s, want %s", got, tc.wantPages)
+			}
+		})
+	}
+}
+
+func TestFeaturesList_StatusFilterInTable(t *testing.T) {
+	items := mixedStatusFeatures(150)
+	srv := newPagedServer(t, "/api/features", backendPages(items, 100))
+	f, out := testFactory(srv.Server)
+	if err := runCmd(t, NewFeaturesCmd(f), "list", "--product", "p1", "--status", "in-progress"); err != nil {
+		t.Fatalf("features list --status error: %v", err)
+	}
+	got := out.String()
+	for _, item := range items {
+		slug := item["slug"].(string)
+		if shown := strings.Contains(got, slug); shown != (item["status"] == "in-progress") {
+			t.Errorf("%s (status %v): shown %t", slug, item["status"], shown)
+		}
+	}
+}
+
+func TestFeaturesList_RejectsUnknownStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("server must not be called for an unknown --status")
 	}))
 	defer srv.Close()
 
 	f, _ := testFactory(srv)
-	cmd := NewFeaturesCmd(f)
-	if err := runCmd(t, cmd, "list", "--product", "p1", "--status", "testing"); err != nil {
-		t.Fatalf("features list error: %v", err)
+	err := runCmd(t, NewFeaturesCmd(f), "list", "--product", "p1", "--status", "in_review")
+	if err == nil || !strings.Contains(err.Error(), "--status must be one of planned, in-progress, testing, released") {
+		t.Fatalf("an unknown status must be rejected with the valid values, got: %v", err)
 	}
-	if gotStatus != "testing" {
-		t.Errorf("status filter not sent: got %q", gotStatus)
+}
+
+func TestFeaturesList_StatusFilterNeedsAListResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"unexpected":true}`))
+	}))
+	defer srv.Close()
+
+	f, out := testFactory(srv)
+	err := runCmd(t, NewFeaturesCmd(f), "list", "--product", "p1", "--status", "testing", "--json")
+	if err == nil || !strings.Contains(err.Error(), "cannot apply --status") {
+		t.Fatalf("a response that is not a list cannot be filtered and must fail, got: %v", err)
+	}
+	if out.Len() != 0 {
+		t.Errorf("an unfiltered body must not be printed as if it were filtered, got:\n%s", out.String())
 	}
 }
 

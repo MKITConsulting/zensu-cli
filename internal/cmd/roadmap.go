@@ -55,7 +55,7 @@ func newRoadmapListCmd(f *Factory) *cobra.Command {
 			if product == "" {
 				return fmt.Errorf("--product is required")
 			}
-			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/products/"+product+"/roadmaps", nil)
+			raw, err := f.listAll(cmd.Context(), "/api/products/"+product+"/roadmaps", nil, "roadmaps")
 			if err != nil {
 				return err
 			}
@@ -77,7 +77,7 @@ func newRoadmapListCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	cmd.Flags().BoolVar(&asJSON, "json", false, listJSONUsage)
 	return cmd
 }
 

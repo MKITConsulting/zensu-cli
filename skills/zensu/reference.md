@@ -44,6 +44,15 @@ zensu auth logout
 Global flags on every command: `--api-url <url>`. Typed commands accept
 `--json` for raw JSON output.
 
+The paginated list commands (`products list`, `features list`,
+`subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
+`roadmap list`, `mocks list`) read every page. With `--json` they print one
+envelope for the whole list, `{"data": [...], "total": N, "page": 1, "perPage": N}`.
+If fewer items arrive than the server's total, because pages overlapped or
+shifted while they were read, the list is read once more; if the second read is
+still short, the command fails instead of printing a partial result. With
+`--json`, the other list commands print the server's plain JSON array.
+
 ## Command groups
 
 | Group | Manages |
@@ -157,7 +166,7 @@ attributes and recalculates the security score automatically.
 ```
 zensu ghost scan --product <id> --candidates '<json-array>' [--components '<json-array>']
     [--repo-url u] [--branch b] [--source api|mcp|web_ui]   # see --help for the candidate shape
-zensu ghost candidates <scan-id>                    # ordered by confidence
+zensu ghost candidates <scan-id> --product <id>     # JSON array, by confidence
 zensu ghost approve <scan-id> <candidate-id> --product <id>
 zensu ghost reject <scan-id> <candidate-id> --product <id> [--reason r]
 zensu ghost batch <scan-id> --product <id> [--approve-ids '<json-uuids>']
@@ -347,18 +356,18 @@ zensu journeys create --product <id> --title <t> [--slug s] [--description d]
     [--persona p] [--priority critical|high|medium|low]
     [--type critical|happy_path|edge_case|error_path|onboarding] [--tier <uuid>]
 zensu journeys list --product <id>
-zensu journeys get <journey-id>
+zensu journeys get <journey-id> --product <id>
 zensu journeys step <journey-id> --product <id> --title <t> --step-order <int>
     [--description d] [--expected-result r] [--feature <uuid>] [--critical]
     [--interaction-type action|navigation|input|validation|output|wait]
-zensu journeys steps <journey-id>                   # list steps
+zensu journeys steps <journey-id> --product <id>    # list steps
 zensu journeys step-update <journey-id> <step-id> --product <id> [--title t] [--step-order <int>]
     [--description d] [--expected-result r] [--feature <uuid>] [--critical]
     [--interaction-type action|navigation|input|validation|output|wait]
     # read-modify-write, last writer wins; omitted flags are resent unchanged
 zensu journeys step-delete <journey-id> <step-id> --product <id>
     # remaining steps keep their order, so reorder afterwards if it must stay gap-free
-zensu journeys health <journey-id>                  # health analysis
+zensu journeys health <journey-id> --product <id>   # health analysis
 zensu journeys suggest --product <id>               # context to suggest journeys
 ```
 
@@ -382,7 +391,7 @@ zensu mocks get <feature-id> <mock-id>              # metadata or raw content
 zensu wiki create --product <uuid> --title <t> --content <markdown>
     [--doc-type <type>] [--audience <a>] [--visibility public|private]
     [--entity-type feature|component|product --entity-id <uuid>]   # visibility defaults to private
-zensu wiki list [--product <uuid>] [--audience <a>] [--parent <uuid>]
+zensu wiki list --product <uuid> [--audience <a>] [--parent <uuid>]   # at most 50 pages; warns at the limit
 zensu wiki update <page-id> [--title t] [--content markdown] [--change-summary s]
     [--visibility public|private]
 
@@ -440,7 +449,7 @@ zensu doc gen-context <feature-id>                  # rich context for doc autho
 
 ```bash
 # all feature ids currently in testing
-zensu features list --product "$PRODUCT" --status testing --json | jq -r '.[].id'
+zensu features list --product "$PRODUCT" --status testing --json | jq -r '.data[].id'
 
 # component ids of a product
 zensu products get "$PRODUCT" --json | jq -r '.components[].id'

@@ -19,6 +19,8 @@ const maxListPages = 1000
 
 const listReadAttempts = 2
 
+const listJSONUsage = "output all pages as one JSON envelope: data, total, page, perPage"
+
 var errIncompleteList = errors.New("incomplete list")
 
 type mergedList struct {
@@ -83,7 +85,7 @@ func readAllPages(ctx context.Context, c *client.Client, path string, query url.
 		}
 	}
 	if len(items) < total {
-		return nil, fmt.Errorf("%w: received %d of %d %s because the server's pages overlapped or changed while they were read; run the command again", errIncompleteList, len(items), total, noun)
+		return nil, fmt.Errorf("%w: received %d of %d %s because the server's pages overlapped or changed while they were read; run the command again, and if it fails the same way, the server's pages or total are inconsistent", errIncompleteList, len(items), total, noun)
 	}
 	return encodeMergedList(items)
 }

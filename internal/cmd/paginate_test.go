@@ -337,6 +337,23 @@ func TestFeaturesList_PaginationEdgeCases(t *testing.T) {
 			wantPages: []int{1, 2, 1, 2},
 		},
 		{
+			name: "a smaller total on a later page cannot hide a skipped item",
+			respond: func() pageResponder {
+				items := listFixture(150)
+				return func(page, _ int) (int, any) {
+					switch page {
+					case 1:
+						return http.StatusOK, pageBody(items[:100], 150, 1, 100)
+					case 2:
+						return http.StatusOK, pageBody(items[101:150], 149, 2, 100)
+					}
+					return http.StatusOK, pageBody(nil, 0, page, 100)
+				}
+			},
+			wantErr:   []string{"incomplete list", "received 149 of 150 features"},
+			wantPages: []int{1, 2, 3, 1, 2, 3},
+		},
+		{
 			name: "a transient overlap is healed by the retry",
 			respond: func() pageResponder {
 				consistent := backendPages(listFixture(150), 100)
@@ -417,6 +434,10 @@ func TestFeaturesList_PaginationEdgeCases(t *testing.T) {
 
 func TestFeaturesList_StopsAtThePageCap(t *testing.T) {
 	srv := newPagedServer(t, "/api/features", func(page, _ int) (int, any) {
+		if page > maxListPages {
+			t.Errorf("requested page %d, past the cap of %d pages", page, maxListPages)
+			return http.StatusOK, pageBody(nil, 0, page, 1)
+		}
 		return http.StatusOK, pageBody([]map[string]any{{"id": fmt.Sprintf("endless-%d", page)}}, 1_000_000, page, 1)
 	})
 	f, out := testFactory(srv.Server)

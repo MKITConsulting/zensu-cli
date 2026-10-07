@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const wikiPageLimit = 50
+
 type wikiPageItem struct {
 	ID        string `json:"id"`
 	ProductID string `json:"productId"`
@@ -57,19 +59,23 @@ func newWikiListCmd(f *Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if asJSON {
-				return printJSON(f.Out, raw)
-			}
 			var pages []wikiPageItem
-			if err := json.Unmarshal(raw, &pages); err != nil {
-				return printJSON(f.Out, raw)
+			decoded := json.Unmarshal(raw, &pages) == nil
+			if asJSON || !decoded {
+				err = printJSON(f.Out, raw)
+			} else {
+				tw := tabwriter.NewWriter(f.Out, 0, 2, 2, ' ', 0)
+				fmt.Fprintln(tw, "ID\tSLUG\tTITLE\tAUDIENCE")
+				for _, p := range pages {
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.ID, p.Slug, p.Title, p.Audience)
+				}
+				err = tw.Flush()
 			}
-			tw := tabwriter.NewWriter(f.Out, 0, 2, 2, ' ', 0)
-			fmt.Fprintln(tw, "ID\tSLUG\tTITLE\tAUDIENCE")
-			for _, p := range pages {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.ID, p.Slug, p.Title, p.Audience)
+			if err != nil || !decoded || len(pages) != wikiPageLimit {
+				return err
 			}
-			return tw.Flush()
+			_, err = fmt.Fprintf(cmd.ErrOrStderr(), "warning: the server returns at most %d wiki pages per query, so pages after the first %d may be missing; narrow the query with --parent or --audience\n", wikiPageLimit, wikiPageLimit)
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product UUID (required)")

@@ -79,7 +79,7 @@ func newSubfeaturesListCmd(f *Factory) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&feature, "feature", "", "parent feature ID (required; or pass as positional arg)")
 	cmd.Flags().BoolVar(&compact, "compact", false, "compact view (id, slug, title, status, priority, componentId only)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	cmd.Flags().BoolVar(&asJSON, "json", false, listJSONUsage)
 	return cmd
 }
 

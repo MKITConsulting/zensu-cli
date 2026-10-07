@@ -38,11 +38,14 @@ zensu auth logout
 Global flags on every command: `--api-url <url>`. Typed commands accept
 `--json` for raw JSON output.
 
-List commands follow the server's pagination and return every item. With
-`--json` they print one envelope for the whole list,
-`{"data": [...], "total": N, "page": 1, "perPage": N}`. A list whose pages
-overlap or change while it is read is retried once, then fails instead of
-printing a partial result.
+The paginated list commands (`products list`, `features list`,
+`subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
+`roadmap list`, `mocks list`) read every page. With `--json` they print one
+envelope for the whole list, `{"data": [...], "total": N, "page": 1, "perPage": N}`.
+If fewer items arrive than the server's total, because pages overlapped or
+shifted while they were read, the list is read once more; if the second read is
+still short, the command fails instead of printing a partial result. With
+`--json`, the other list commands print the server's plain JSON array.
 
 ## Command groups
 
@@ -155,7 +158,7 @@ attributes and recalculates the security score automatically.
 ```
 zensu ghost scan --product <id> --candidates '<json-array>' [--components '<json-array>']
     [--repo-url u] [--branch b] [--source api|mcp|web_ui]   # see --help for the candidate shape
-zensu ghost candidates <scan-id> --product <id>     # JSON, by confidence, at most 200
+zensu ghost candidates <scan-id> --product <id>     # JSON array, by confidence
 zensu ghost approve <scan-id> <candidate-id> --product <id>
 zensu ghost reject <scan-id> <candidate-id> --product <id> [--reason r]
 zensu ghost batch <scan-id> --product <id> [--approve-ids '<json-uuids>']
@@ -241,7 +244,7 @@ zensu mocks get <feature-id> <mock-id>              # metadata or raw content
 zensu wiki create --product <uuid> --title <t> --content <markdown>
     [--doc-type <type>] [--audience <a>] [--visibility public|private]
     [--entity-type feature|component|product --entity-id <uuid>]   # visibility defaults to private
-zensu wiki list --product <uuid> [--audience <a>] [--parent <uuid>]   # at most 50 pages (server limit)
+zensu wiki list --product <uuid> [--audience <a>] [--parent <uuid>]   # at most 50 pages; warns at the limit
 zensu wiki update <page-id> [--title t] [--content markdown] [--change-summary s]
     [--visibility public|private]
 

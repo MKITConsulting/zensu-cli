@@ -61,9 +61,11 @@ zensu auth status   # authenticated? against which host?
    context. Analyze, recommend, and decide yourself — never expect the CLI to
    make product decisions.
 2. **Use `--json` whenever you parse output.** Every typed command supports it.
-   List commands return the complete list: `--json` prints
-   `{"data": [...], "total": N, "page": 1, "perPage": N}` with every item in
-   `data`, so read ids from `.data[]`.
+   The paginated list commands (`products list`, `features list`,
+   `subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
+   `roadmap list`, `mocks list`) read every page and print one envelope,
+   `{"data": [...], "total": N, "page": 1, "perPage": N}`, so read their ids
+   from `.data[]`. The other list commands print a plain JSON array.
 3. **Never guess ids.** Resolve product, component, and feature ids with
    `list`/`get` commands or ask the user.
 4. **Status changes go through the dedicated command** —
@@ -152,7 +154,7 @@ You analyze the repository yourself and feed the discovered candidates to Zensu:
 ```bash
 zensu ghost scan --product <id> --candidates '<json-array>' \
   [--components '<json-array>'] [--repo-url ...] [--branch ...] --json
-zensu ghost candidates <scan-id> --product <id>  # JSON, by confidence, at most 200
+zensu ghost candidates <scan-id> --product <id>  # JSON array, by confidence
 # present candidates to the user, then:
 zensu ghost batch <scan-id> --product <id> \
   --approve-ids '["<uuid>", ...]' --reject-ids '["<uuid>", ...]' \

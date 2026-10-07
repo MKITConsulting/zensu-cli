@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -39,23 +40,61 @@ func TestFeaturesList_Table(t *testing.T) {
 }
 
 func mixedStatusFeatures(n int) []map[string]any {
+	stageOfStatus := map[string]string{"in-progress": "in_development", "testing": "in_review", "released": "shipped"}
+	stagesShownAsPlanned := []string{"planned", "superseded", ""}
 	items := listFixture(n)
 	for i, item := range items {
-		item["status"] = featureStatuses[i%len(featureStatuses)]
+		status := featureStatuses[i%len(featureStatuses)]
+		item["status"] = status
+		if stage, ok := stageOfStatus[status]; ok {
+			item["stage"] = stage
+		} else {
+			item["stage"] = stagesShownAsPlanned[(i/len(featureStatuses))%len(stagesShownAsPlanned)]
+		}
 	}
 	return items
 }
 
-func TestFeaturesList_StatusFilterAppliesWhenTheServerIgnoresIt(t *testing.T) {
+func assertStatusEnvelope(t *testing.T, raw []byte, items []map[string]any, wantStatus string) {
+	t.Helper()
+	var env struct {
+		Data    []map[string]any `json:"data"`
+		Total   int              `json:"total"`
+		Page    int              `json:"page"`
+		PerPage int              `json:"perPage"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatalf("decode envelope: %v\n%s", err, raw)
+	}
+	want := 0
+	for _, item := range items {
+		if item["status"] == wantStatus {
+			want++
+		}
+	}
+	if len(env.Data) != want || env.Total != want || env.Page != 1 || env.PerPage != want {
+		t.Errorf("envelope: got %d items, total %d, page %d, perPage %d; want %d items, total %d, page 1, perPage %d",
+			len(env.Data), env.Total, env.Page, env.PerPage, want, want, want)
+	}
+	for _, item := range env.Data {
+		if item["status"] != wantStatus {
+			t.Errorf("%v has status %v, want only %s", item["id"], item["status"], wantStatus)
+		}
+	}
+}
+
+func TestFeaturesList_StatusFilterIsExactWhenTheServerDoesNotFilter(t *testing.T) {
 	items := mixedStatusFeatures(150)
 	tests := []struct {
 		name       string
 		flag       string
 		wantStatus string
+		wantStage  string
 	}{
-		{"testing", "testing", "testing"},
-		{"planned", "planned", "planned"},
-		{"case and surrounding space are ignored", " Released ", "released"},
+		{"testing narrows by stage in_review", "testing", "testing", "in_review"},
+		{"in-progress narrows by stage in_development", "in-progress", "in-progress", "in_development"},
+		{"planned sends no stage, because other stages also show as planned", "planned", "planned", ""},
+		{"case and surrounding space are ignored", " Released ", "released", "shipped"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -65,35 +104,61 @@ func TestFeaturesList_StatusFilterAppliesWhenTheServerIgnoresIt(t *testing.T) {
 				t.Fatalf("features list --status error: %v", err)
 			}
 			for _, q := range srv.requestedQueries() {
-				if q.Get("status") != tc.wantStatus {
-					t.Errorf("page %s: status=%q, want %q so a server that filters can narrow the pages", q.Get("page"), q.Get("status"), tc.wantStatus)
+				if q.Has("status") {
+					t.Errorf("page %s sent status=%q, which the server ignores", q.Get("page"), q.Get("status"))
+				}
+				if q.Get("stage") != tc.wantStage {
+					t.Errorf("page %s: stage=%q, want %q", q.Get("page"), q.Get("stage"), tc.wantStage)
 				}
 			}
-			var env struct {
-				Data    []map[string]any `json:"data"`
-				Total   int              `json:"total"`
-				Page    int              `json:"page"`
-				PerPage int              `json:"perPage"`
-			}
-			if err := json.Unmarshal(out.Bytes(), &env); err != nil {
-				t.Fatalf("decode envelope: %v\n%s", err, out.String())
-			}
-			want := 0
-			for _, item := range items {
-				if item["status"] == tc.wantStatus {
-					want++
-				}
-			}
-			if len(env.Data) != want || env.Total != want || env.Page != 1 || env.PerPage != want {
-				t.Errorf("envelope: got %d items, total %d, page %d, perPage %d; want %d items, total %d, page 1, perPage %d",
-					len(env.Data), env.Total, env.Page, env.PerPage, want, want, want)
-			}
-			for _, item := range env.Data {
-				if item["status"] != tc.wantStatus {
-					t.Errorf("%v has status %v, want only %s", item["id"], item["status"], tc.wantStatus)
-				}
-			}
+			assertStatusEnvelope(t, out.Bytes(), items, tc.wantStatus)
 			assertPages(t, srv, []int{1, 2})
+		})
+	}
+}
+
+func TestFeaturesList_StatusFilterLetsTheServerNarrowThePages(t *testing.T) {
+	items := mixedStatusFeatures(150)
+	tests := []struct {
+		flag      string
+		wantPages string
+	}{
+		{"testing", "1"},
+		{"in-progress", "1"},
+		{"released", "1"},
+		{"planned", "1,2"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.flag, func(t *testing.T) {
+			var gotPages []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				q := r.URL.Query()
+				matching := items
+				if stage := q.Get("stage"); stage != "" {
+					matching = nil
+					for _, item := range items {
+						if item["stage"] == stage {
+							matching = append(matching, item)
+						}
+					}
+				}
+				gotPages = append(gotPages, q.Get("page"))
+				page, perPage := 0, 0
+				_, _ = fmt.Sscan(q.Get("page"), &page)
+				_, _ = fmt.Sscan(q.Get("per_page"), &perPage)
+				_, body := backendPages(matching, 100)(page, perPage)
+				_ = json.NewEncoder(w).Encode(body)
+			}))
+			defer srv.Close()
+
+			f, out := testFactory(srv)
+			if err := runCmd(t, NewFeaturesCmd(f), "list", "--product", "p1", "--status", tc.flag, "--json"); err != nil {
+				t.Fatalf("features list --status error: %v", err)
+			}
+			assertStatusEnvelope(t, out.Bytes(), items, tc.flag)
+			if got := strings.Join(gotPages, ","); got != tc.wantPages {
+				t.Errorf("requested pages %s, want %s", got, tc.wantPages)
+			}
 		})
 	}
 }

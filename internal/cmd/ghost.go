@@ -115,14 +115,7 @@ func newGhostCandidatesCmd(f *Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := printJSON(f.Out, raw); err != nil {
-				return err
-			}
-			var candidates []json.RawMessage
-			if json.Unmarshal(raw, &candidates) == nil && len(candidates) >= ghostCandidateLimit {
-				_, err = fmt.Fprintf(cmd.ErrOrStderr(), "warning: the server returns at most %d candidates per scan; candidates below the %d highest-confidence ones are not listed\n", ghostCandidateLimit, ghostCandidateLimit)
-			}
-			return err
+			return printJSON(f.Out, raw)
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")

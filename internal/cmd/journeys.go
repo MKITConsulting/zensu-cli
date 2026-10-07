@@ -221,7 +221,7 @@ func newJourneysListCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	cmd.Flags().BoolVar(&asJSON, "json", false, listJSONUsage)
 	return cmd
 }
 
@@ -569,7 +569,7 @@ func newJourneysStepsCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	cmd.Flags().BoolVar(&asJSON, "json", false, listJSONUsage)
 	return cmd
 }
 

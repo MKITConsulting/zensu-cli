@@ -69,7 +69,7 @@ func newProductsListCmd(f *Factory) *cobra.Command {
 			return tw.Flush()
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	cmd.Flags().BoolVar(&asJSON, "json", false, listJSONUsage)
 	return cmd
 }
 

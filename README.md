@@ -175,17 +175,23 @@ zensu features status <feature-id> testing
 `--slug` is derived from `--title` when omitted. Add `--json` to typed commands
 for raw output.
 
-List commands (`products list`, `features list`, `subfeatures list`,
-`journeys list`, `journeys steps`, `tiers list`, `roadmap list`, `mocks list`)
-follow the server's pagination, 100 items per request, so the table and the
-`--json` output always hold the complete list. With `--json` they print one
-envelope for the whole list, `{"data": [...], "total": N, "page": 1, "perPage": N}`,
-with all N items in `data`. If the server's pages overlap or change while they
-are read, the CLI reads the list once more; if it is still inconsistent, the
-command fails and prints nothing instead of a partial list. Two lists have a
-server-side cap that the CLI cannot page past: `ghost candidates` returns at most
-the 200 highest-confidence candidates and warns on stderr when it reaches that
-cap, and `wiki list` currently returns at most 50 pages per query.
+The paginated list commands (`products list`, `features list`,
+`subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
+`roadmap list`, `mocks list`) read every page, 100 items per request, so the
+table and the `--json` output are not cut off after the first page. With
+`--json` they print one envelope for the whole list,
+`{"data": [...], "total": N, "page": 1, "perPage": N}`, with all N items in
+`data`. `features list --status` filters on the status shown in the STATUS
+column. The CLI compares the number of items it received with the server's
+total. If it received fewer, because pages overlapped or shifted while they
+were read, it reads the list once more; if the second read is still short, the
+command fails instead of printing a partial list. A change made while the list
+is read can still go unnoticed, for example when one item is deleted and
+another one is added at the same time. With `--json`, the other list commands
+print the server's plain JSON array. `ghost candidates` requests up to 200
+candidates, the most a scan can hold, instead of the server default of 50.
+`wiki list` currently returns at most 50 pages per query and warns on stderr
+when it reaches that limit.
 
 ## Shell completion
 

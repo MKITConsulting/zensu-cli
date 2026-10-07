@@ -152,14 +152,13 @@ func TestGhostCandidates(t *testing.T) {
 	}
 }
 
-func TestGhostCandidates_RequestsTheServerMaximum(t *testing.T) {
+func TestGhostCandidates_RequestsEveryCandidateOfTheScan(t *testing.T) {
 	tests := []struct {
-		name        string
-		candidates  int
-		wantWarning bool
+		name       string
+		candidates int
 	}{
-		{"fewer candidates than the server cap", 3, false},
-		{"a response that reaches the server cap", ghostCandidateLimit, true},
+		{"a few candidates", 3},
+		{"a full scan of 200 candidates", ghostCandidateLimit},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -178,16 +177,14 @@ func TestGhostCandidates_RequestsTheServerMaximum(t *testing.T) {
 				t.Fatalf("ghost candidates error: %v", err)
 			}
 			if gotLimit != "200" {
-				t.Errorf("limit: got %q, want the server maximum 200 instead of its default of 50", gotLimit)
+				t.Errorf("limit: got %q, want 200, the most a scan can hold, instead of the server default of 50", gotLimit)
 			}
-			if !strings.Contains(out.String(), `"id": "id-000"`) {
-				t.Errorf("candidates missing from stdout:\n%s", out.String())
+			var got []map[string]any
+			if err := json.Unmarshal(out.Bytes(), &got); err != nil || len(got) != tc.candidates {
+				t.Errorf("want all %d candidates as a JSON array on stdout, got %d (decode error %v)", tc.candidates, len(got), err)
 			}
-			if strings.Contains(out.String(), "warning") {
-				t.Errorf("the cap warning must not pollute the JSON on stdout:\n%s", out.String())
-			}
-			if got := strings.Contains(stderr.String(), "at most 200 candidates per scan"); got != tc.wantWarning {
-				t.Errorf("cap warning on stderr: got %t, want %t (stderr: %q)", got, tc.wantWarning, stderr.String())
+			if stderr.Len() != 0 {
+				t.Errorf("a scan holds at most 200 candidates, so a full response is complete and needs no warning, got stderr %q", stderr.String())
 			}
 		})
 	}

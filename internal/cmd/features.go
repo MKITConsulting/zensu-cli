@@ -14,6 +14,12 @@ import (
 
 var featureStatuses = []string{"planned", "in-progress", "testing", "released"}
 
+var featureStatusStages = map[string]string{
+	"in-progress": "in_development",
+	"testing":     "in_review",
+	"released":    "shipped",
+}
+
 func slugify(s string) string {
 	const maxSlug = 200
 	var b strings.Builder
@@ -81,8 +87,8 @@ func newFeaturesListCmd(f *Factory) *cobra.Command {
 			}
 			q := url.Values{}
 			q.Set("productId", product)
-			if wantStatus != "" {
-				q.Set("status", wantStatus)
+			if stage, ok := featureStatusStages[wantStatus]; ok {
+				q.Set("stage", stage)
 			}
 			raw, err := f.listAll(cmd.Context(), "/api/features", q, "features")
 			if err != nil {
@@ -116,7 +122,7 @@ func newFeaturesListCmd(f *Factory) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
 	cmd.Flags().StringVar(&status, "status", "", "filter by status (planned|in-progress|testing|released)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	cmd.Flags().BoolVar(&asJSON, "json", false, listJSONUsage)
 	return cmd
 }
 

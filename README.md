@@ -104,6 +104,13 @@ Credentials are stored in `hosts.json` under the config dir (resolved as
 `$ZENSU_CONFIG_DIR`, else `$XDG_CONFIG_HOME/zensu`, else `~/.config/zensu`) with
 `0600` permissions.
 
+Every write to `hosts.json` — a token refresh, `auth login`, `auth logout` and the identity
+backfill of `auth status` — holds the lock file `hosts.json.lock` beside it. Parallel zensu
+processes, such as several agents or sessions, therefore rotate the refresh token once and adopt
+the stored result. Presenting an already rotated refresh token again makes the server revoke the
+whole token family, which would sign out every process. A process whose stored login was signed
+out or moved to another host in the meantime stops with an error instead of writing it back.
+
 ### Self-hosted
 
 Point the CLI at any Zensu deployment:
@@ -115,7 +122,8 @@ export ZENSU_API_URL=https://zensu.internal.example.com
 ```
 
 OAuth endpoints are discovered via `/.well-known/oauth-authorization-server`
-(falling back to `/oauth/authorize` + `/oauth/token`).
+(falling back to `/oauth/authorize` + `/oauth/token`), only when a login or a token refresh
+needs them.
 
 ## Commands
 

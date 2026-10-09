@@ -62,6 +62,9 @@ func TestDefaultSaver_WritesIntoIsolatedConfigDir(t *testing.T) {
 
 	before := time.Now()
 	cfg := &config.Config{AccessToken: "stale", RefreshToken: "r1", ExpiresAt: before.Add(-time.Minute)}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("seeding the stored login: %v", err)
+	}
 	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
 	resp, err := c.Do(context.Background(), http.MethodGet, "/api/products", nil)
 	if err != nil {
@@ -73,7 +76,7 @@ func TestDefaultSaver_WritesIntoIsolatedConfigDir(t *testing.T) {
 		t.Fatalf("refresh did not run: in-memory access token is %q", cfg.AccessToken)
 	}
 
-	stored := testutil.SoleEntry(t, dir)
+	stored := testutil.CredentialStoreEntry(t, dir)
 	raw, err := os.ReadFile(stored)
 	if err != nil {
 		t.Fatalf("reading %s: %v", stored, err)

@@ -427,7 +427,10 @@ func TestDo_SurfacesRefreshFailureAfter401(t *testing.T) {
 	defer srv.Close()
 
 	cfg := &config.Config{AccessToken: "stale", RefreshToken: "r1"}
-	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token",
+		client.WithHTTPClient(srv.Client()),
+		client.WithSaver(func(*config.Config) error { return nil }),
+	)
 	_, err := c.Do(context.Background(), http.MethodGet, "/api/products", nil)
 	if err == nil {
 		t.Fatal("Do should error when the post-401 refresh fails")
@@ -513,7 +516,10 @@ func TestDoWithContentType_RetriesOn401KeepingContentTypeAndBody(t *testing.T) {
 	defer srv.Close()
 
 	cfg := &config.Config{AccessToken: "stale", RefreshToken: "r1"}
-	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client()))
+	c := client.New(cfg, srv.URL, srv.URL+"/oauth/token",
+		client.WithHTTPClient(srv.Client()),
+		client.WithSaver(func(*config.Config) error { return nil }),
+	)
 	resp, err := c.DoWithContentType(context.Background(), http.MethodPost, "/api/features/f1/mocks", boundaryType, []byte("payload"))
 	if err != nil {
 		t.Fatalf("DoWithContentType error: %v", err)

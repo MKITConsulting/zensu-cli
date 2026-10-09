@@ -112,7 +112,7 @@ func (c *Config) Save() error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, filepath.Join(dir, configFileName))
+	return replaceFile(tmpName, filepath.Join(dir, configFileName))
 }
 
 func (c *Config) ResolveAPIURL(flag, env string) string {

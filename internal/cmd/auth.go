@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"github.com/MKITConsulting/zensu-cli/internal/auth"
 	"github.com/MKITConsulting/zensu-cli/internal/config"
 )
+
+const identityBackfillWait = 500 * time.Millisecond
 
 func NewAuthCmd(f *Factory) *cobra.Command {
 	cmd := &cobra.Command{
@@ -56,7 +59,15 @@ func newAuthStatusCmd(f *Factory) *cobra.Command {
 					if email, org := auth.IdentityFromToken(cfg.AccessToken); email != "" {
 						cfg.SetIdentity(email, org)
 						who = email
-						_ = cfg.Save()
+						backfillCtx, cancel := context.WithTimeout(cmd.Context(), identityBackfillWait)
+						_ = config.UpdateStored(backfillCtx, func(stored *config.Config) bool {
+							if stored.AccessToken != cfg.AccessToken {
+								return false
+							}
+							stored.SetIdentity(email, org)
+							return true
+						})
+						cancel()
 					} else {
 						who = "(unknown user)"
 					}
@@ -113,14 +124,16 @@ func newAuthLogoutCmd(f *Factory) *cobra.Command {
 		Use:          "logout",
 		Short:        "Log out and remove stored credentials",
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := config.Load()
 			if err != nil {
 				return err
 			}
 			host := cfg.ResolveAPIURL("", "")
-			cleared := &config.Config{APIURL: cfg.APIURL}
-			if err := cleared.Save(); err != nil {
+			if err := config.UpdateStored(cmd.Context(), func(stored *config.Config) bool {
+				*stored = config.Config{APIURL: stored.APIURL}
+				return true
+			}); err != nil {
 				return err
 			}
 			fmt.Fprintf(f.Out, "Logged out of %s\n", host)

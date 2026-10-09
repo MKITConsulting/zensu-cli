@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -22,6 +23,8 @@ const (
 	defaultUploadTimeout = 5 * time.Minute
 )
 
+var ErrStoredLoginChanged = errors.New("the stored zensu login changed while this command ran — run it again, or `zensu auth login` if you signed out")
+
 const jsonContentType = "application/json"
 
 type APIError struct {
@@ -38,13 +41,20 @@ func (e *APIError) Error() string {
 }
 
 type Client struct {
-	BaseURL       string
-	TokenURL      string
-	HTTPClient    *http.Client
-	UploadTimeout time.Duration
-	cfg           *config.Config
-	now           func() time.Time
-	save          func(*config.Config) error
+	BaseURL         string
+	TokenURL        string
+	HTTPClient      *http.Client
+	UploadTimeout   time.Duration
+	cfg             *config.Config
+	now             func() time.Time
+	store           sessionStore
+	resolveTokenURL func(context.Context) string
+}
+
+type sessionStore struct {
+	Load func() (*config.Config, error)
+	Save func(*config.Config) error
+	Lock func(context.Context) (func(), error)
 }
 
 const maxRedirects = 10
@@ -104,7 +114,13 @@ func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.HTTPClie
 
 func WithClock(now func() time.Time) Option { return func(c *Client) { c.now = now } }
 
-func WithSaver(save func(*config.Config) error) Option { return func(c *Client) { c.save = save } }
+func WithSaver(save func(*config.Config) error) Option {
+	return func(c *Client) { c.store = sessionStore{Save: save} }
+}
+
+func WithTokenURLResolver(resolve func(context.Context) string) Option {
+	return func(c *Client) { c.resolveTokenURL = resolve }
+}
 
 func WithUploadTimeout(d time.Duration) Option { return func(c *Client) { c.UploadTimeout = d } }
 
@@ -116,7 +132,11 @@ func New(cfg *config.Config, baseURL, tokenURL string, opts ...Option) *Client {
 		UploadTimeout: defaultUploadTimeout,
 		cfg:           cfg,
 		now:           time.Now,
-		save:          func(cf *config.Config) error { return cf.Save() },
+		store: sessionStore{
+			Load: config.Load,
+			Save: func(cf *config.Config) error { return cf.Save() },
+			Lock: config.LockSession,
+		},
 	}
 	for _, o := range opts {
 		o(c)
@@ -225,7 +245,29 @@ func (c *Client) refresh(ctx context.Context) error {
 	if c.cfg.RefreshToken == "" {
 		return fmt.Errorf("session expired and no refresh token available — run `zensu auth login`")
 	}
-	tok, err := auth.RefreshToken(ctx, c.HTTPClient, c.TokenURL, c.cfg.RefreshToken)
+	if c.store.Lock != nil {
+		lockCtx, cancel := context.WithTimeout(ctx, config.SessionLockWait)
+		unlock, err := c.store.Lock(lockCtx)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("refreshing session: %w", err)
+		}
+		defer unlock()
+	}
+	if c.store.Load != nil {
+		stored, err := c.store.Load()
+		if err != nil {
+			return fmt.Errorf("refreshing session: reading the stored login: %w", err)
+		}
+		adopted, err := c.adoptStoredSession(stored)
+		if err != nil {
+			return err
+		}
+		if adopted && !c.tokenExpired() {
+			return nil
+		}
+	}
+	tok, err := auth.RefreshToken(ctx, c.HTTPClient, c.tokenURL(ctx), c.cfg.RefreshToken)
 	if err != nil {
 		return fmt.Errorf("refreshing session: %w", err)
 	}
@@ -239,7 +281,29 @@ func (c *Client) refresh(ctx context.Context) error {
 	if email, org := auth.IdentityFromToken(tok.AccessToken); email != "" {
 		c.cfg.SetIdentity(email, org)
 	}
-	return c.save(c.cfg)
+	return c.store.Save(c.cfg)
+}
+
+func (c *Client) adoptStoredSession(stored *config.Config) (bool, error) {
+	if stored.AccessToken == c.cfg.AccessToken && stored.RefreshToken == c.cfg.RefreshToken {
+		return false, nil
+	}
+	if stored.RefreshToken == "" || stored.APIURL != c.cfg.APIURL || stored.APIKey != c.cfg.APIKey {
+		return false, ErrStoredLoginChanged
+	}
+	c.cfg.AccessToken = stored.AccessToken
+	c.cfg.RefreshToken = stored.RefreshToken
+	c.cfg.ExpiresAt = stored.ExpiresAt
+	c.cfg.User = stored.User
+	c.cfg.Org = stored.Org
+	return true, nil
+}
+
+func (c *Client) tokenURL(ctx context.Context) string {
+	if c.TokenURL == "" && c.resolveTokenURL != nil {
+		c.TokenURL = c.resolveTokenURL(ctx)
+	}
+	return c.TokenURL
 }
 
 func (c *Client) send(ctx context.Context, method, path, contentType string, body []byte) (*http.Response, error) {

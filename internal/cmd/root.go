@@ -60,8 +60,9 @@ func newClient(ctx context.Context, apiURLFlag string) (*client.Client, error) {
 	}
 	apiURL := cfg.ResolveAPIURL(apiURLFlag, os.Getenv("ZENSU_API_URL"))
 	trusted := trustedAuthHosts(os.Getenv(trustedAuthHostsEnv))
-	eps := auth.DiscoverEndpoints(ctx, client.NewGuardedHTTPClient(discoveryTimeout), apiURL, trusted)
-	return client.New(cfg, apiURL, eps.Token), nil
+	return client.New(cfg, apiURL, "", client.WithTokenURLResolver(func(ctx context.Context) string {
+		return auth.DiscoverEndpoints(ctx, client.NewGuardedHTTPClient(discoveryTimeout), apiURL, trusted).Token
+	})), nil
 }
 
 func NewRootCmd() *cobra.Command {

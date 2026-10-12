@@ -798,12 +798,109 @@ func TestPlanDecisions(t *testing.T) {
 	if !strings.Contains(out2.String(), "abandoned") {
 		t.Fatalf("abandon output = %s", out2.String())
 	}
+	head := strings.Repeat("c", 40)
 	f3, out3 := testFactory(srv)
-	if err := runCmd(t, NewPlanCmd(f3), "confirm-merge", plPlan, "--json"); err != nil {
+	if err := runCmd(t, NewPlanCmd(f3), "confirm-merge", plPlan, "--head-sha", head, "--json"); err != nil {
 		t.Fatalf("confirm-merge: %v", err)
+	}
+	if raw := api.only(t, "POST", "/api/work-plans/"+plPlan+"/confirm-merge").Raw; raw != `{"headSha":"`+head+`"}` {
+		t.Fatalf("confirm-merge body = %s, want only the head SHA", raw)
 	}
 	if !strings.Contains(out3.String(), `"status": "merged"`) {
 		t.Fatalf("confirm-merge output = %s", out3.String())
+	}
+}
+
+func TestPlanConfirmMerge_RequiresTheHeadSHA(t *testing.T) {
+	srv, api := newFakeAPI(t, nil)
+	f, out := testFactory(srv)
+	if err := runCmd(t, NewPlanCmd(f), "confirm-merge", plPlan); err == nil || err.Error() != "--head-sha is required" {
+		t.Fatalf("error = %v", err)
+	}
+	if len(api.calls()) != 0 || out.Len() != 0 {
+		t.Fatalf("calls %v, output %q, want neither without the head SHA", api.summary(), out.String())
+	}
+}
+
+func TestPlanConfirmMerge_NamesTheFinalizeCommandOnAHeadMismatch(t *testing.T) {
+	message := "the merged head differs from the final PR head the plan recorded; record the final PR again with the head that was merged"
+	for _, tc := range []struct {
+		name, reply, want string
+		status            int
+	}{
+		{"head mismatch", `{"code":"head_mismatch","message":"` + message + `"}`, message + " (status 409, code head_mismatch); zensu plan finalize " + plPlan + " --pr-url <url> --pr-number <n> --head-sha <full-sha> records the final PR again", 409},
+		{"another conflict", `{"code":"final_pr_not_open","message":"record the final PR before confirming its merge"}`, "record the final PR before confirming its merge (status 409, code final_pr_not_open)", 409},
+		{"missing head", `{"code":"head_required","message":"confirm the merge with the head SHA of the final PR that was merged"}`, "confirm the merge with the head SHA of the final PR that was merged (status 422, code head_required)", 422},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+				"POST /api/work-plans/" + plPlan + "/confirm-merge": reply(tc.status, tc.reply),
+			})
+			f, out := testFactory(srv)
+			err := runCmd(t, NewPlanCmd(f), "confirm-merge", plPlan, "--head-sha", strings.Repeat("d", 40))
+			if err == nil || err.Error() != tc.want {
+				t.Fatalf("error = %v\nwant    %s", err, tc.want)
+			}
+			if api.count("POST", "/api/work-plans/"+plPlan+"/confirm-merge") != 1 || out.Len() != 0 {
+				t.Fatalf("calls %v, output %q", api.summary(), out.String())
+			}
+		})
+	}
+}
+
+func TestPlanConfirmMerge_ConfirmsWithoutTheHeadOnAServerThatDoesNotKnowIt(t *testing.T) {
+	head := strings.Repeat("e", 64)
+	srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+		"POST /api/work-plans/" + plPlan + "/confirm-merge": func(r recordedRequest) fakeReply {
+			if r.Raw != "" {
+				return fakeReply{Status: 400, Body: `{"code":"invalid_body","message":"unknown field \"headSha\""}`}
+			}
+			return fakeReply{Status: 200, Body: planDetail("merged")}
+		},
+	})
+	f, out := testFactory(srv)
+	plan, notes := NewPlanCmd(f), &bytes.Buffer{}
+	plan.SetErr(notes)
+	if err := runCmd(t, plan, "confirm-merge", plPlan, "--head-sha", head); err != nil {
+		t.Fatalf("confirm-merge against a server without the head check: %v", err)
+	}
+	calls := api.calls()
+	if len(calls) != 2 || calls[0].Raw != `{"headSha":"`+head+`"}` || calls[1].Raw != "" {
+		t.Fatalf("calls = %v, want the head first and one repeat without a body", calls)
+	}
+	if notes.String() != "note: this server does not check the merged head of a plan yet; confirming the merge without it\n" {
+		t.Fatalf("stderr = %q, want the note that the head was not checked", notes.String())
+	}
+	if !strings.Contains(out.String(), `"Checkout": merged`) {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestPlanConfirmMerge_KeepsEveryOtherBodyRefusal(t *testing.T) {
+	for _, tc := range []struct {
+		name, code, message string
+		status              int
+	}{
+		{"another unknown field", "invalid_body", `unknown field \"mergeSha\"`, 400},
+		{"a longer field that starts like the head", "invalid_body", `unknown field \"headShaFull\"`, 400},
+		{"the same words under another code", "invalid_sha", `unknown field \"headSha\"`, 400},
+		{"the same words under another status", "invalid_body", `unknown field \"headSha\"`, 422},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+				"POST /api/work-plans/" + plPlan + "/confirm-merge": reply(tc.status, `{"code":"`+tc.code+`","message":"`+tc.message+`"}`),
+			})
+			f, _ := testFactory(srv)
+			plan, notes := NewPlanCmd(f), &bytes.Buffer{}
+			plan.SetErr(notes)
+			err := runCmd(t, plan, "confirm-merge", plPlan, "--head-sha", strings.Repeat("f", 40))
+			if err == nil || !strings.Contains(err.Error(), "code "+tc.code+")") {
+				t.Fatalf("error = %v, want the server's refusal", err)
+			}
+			if api.count("POST", "/api/work-plans/"+plPlan+"/confirm-merge") != 1 || strings.Contains(notes.String(), "note:") {
+				t.Fatalf("calls = %v stderr %q, want one request and no fallback", api.summary(), notes.String())
+			}
+		})
 	}
 }
 

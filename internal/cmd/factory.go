@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -84,9 +85,19 @@ type apiStatusError struct {
 	status int
 	code   string
 	text   string
+	plain  string
 }
 
 func (e *apiStatusError) Error() string { return e.text }
+
+var printableCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+
+func (e *apiStatusError) printableCode() string {
+	if printableCodePattern.MatchString(e.code) {
+		return e.code
+	}
+	return ""
+}
 
 func apiErrorOf(err error) (*apiStatusError, bool) {
 	var e *apiStatusError
@@ -96,15 +107,33 @@ func apiErrorOf(err error) (*apiStatusError, bool) {
 	return nil, false
 }
 
+func statusSuffix(status int, code string) string {
+	if code == "" {
+		return fmt.Sprintf("(status %d)", status)
+	}
+	return fmt.Sprintf("(status %d, code %s)", status, code)
+}
+
 func apiError(status int, raw []byte) error {
-	var e struct {
+	var body struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	}
-	if json.Unmarshal(raw, &e) == nil && e.Message != "" {
-		return &apiStatusError{status: status, code: e.Code, text: fmt.Sprintf("%s (status %d)", sanitizeTerminal(excerpt(e.Message)), status)}
+	decoded := json.Unmarshal(raw, &body) == nil
+	e := &apiStatusError{status: status, code: body.Code}
+	suffix := statusSuffix(status, e.printableCode())
+	if decoded && body.Message != "" {
+		e.plain = sanitizeTerminal(excerpt(body.Message))
+		e.text = e.plain + " " + suffix
+		return e
 	}
-	return &apiStatusError{status: status, code: e.Code, text: fmt.Sprintf("request failed (status %d): %s", status, sanitizeTerminal(strings.TrimSpace(excerpt(string(raw)))))}
+	detail := sanitizeTerminal(strings.TrimSpace(excerpt(string(raw))))
+	e.text = "request failed " + suffix + ": " + detail
+	e.plain = "request failed"
+	if detail != "" {
+		e.plain += ": " + detail
+	}
+	return e
 }
 
 func ErrorText(err error) string {

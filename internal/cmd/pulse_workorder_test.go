@@ -91,7 +91,7 @@ func TestPulseStart_WorkOrderSurfacesStaleAttempt(t *testing.T) {
 	})
 	f, _ := workSessionFactory(srv)
 	err := runCmd(t, NewPulseCmd(f), "start", "--work-order", woID)
-	if err == nil || !strings.Contains(err.Error(), "(status 409)") {
+	if err == nil || !strings.Contains(err.Error(), "(status 409, code stale_attempt)") {
 		t.Fatalf("error = %v", err)
 	}
 }

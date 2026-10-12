@@ -69,7 +69,11 @@ zensu auth status   # authenticated? against which host?
    `subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
    `roadmap list`, `mocks list`) read every page and print one envelope,
    `{"data": [...], "total": N, "page": 1, "perPage": N}`, so read their ids
-   from `.data[]`. The other list commands print a plain JSON array.
+   from `.data[]`. The other list commands print a plain JSON array. A failed
+   command exits `1`; with `--json` the last stderr line is one JSON object,
+   `{"error":{"status":409,"code":"stale_attempt","message":"..."}}`, so branch
+   on its `code`. `code` is absent when the API sent none, and a network, flag
+   or validation error carries only `message`.
 3. **Never guess ids.** Resolve product, component, and feature ids with
    `list`/`get` commands or ask the user.
 4. **Status changes go through the dedicated command** —

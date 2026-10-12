@@ -96,7 +96,7 @@ func TestPlanPush_RefusesBeforeAnyWrite(t *testing.T) {
 			name:  "unknown task",
 			file:  strings.Replace(plHead, "name: P\n", "name: P\ntask: "+plTask+"\n", 1) + "  - feature: ZEN-42\n---\n",
 			extra: routeSet("GET /api/tasks/"+plTask, reply(404, `{"code":"not_found","message":"task not found"}`)),
-			want:  "front matter: task " + plTask + ": task not found (status 404)",
+			want:  "front matter: task " + plTask + ": task not found (status 404, code not_found)",
 			calls: calls("GET /api/tasks/" + plTask),
 		},
 		{
@@ -423,8 +423,8 @@ func TestPlanPush_JSONEnvelopeInEveryMode(t *testing.T) {
 func TestPlanPush_AlreadyPushedJSONNeedsThePlan(t *testing.T) {
 	listed := map[string]any{"data": []any{map[string]any{"id": plPlan, "status": "open", "source_ref": map[string]any{"content_hash": hashOf(validPlanFile)}}}, "total": 1, "perPage": 100}
 	cases := map[string]fakeReply{
-		"no plan (status 404)":         {Status: 404, Body: `{"code":"not_found","message":"no plan"}`},
-		"invalid work plan response: ": {Status: 200, Body: `[]`},
+		"no plan (status 404, code not_found)": {Status: 404, Body: `{"code":"not_found","message":"no plan"}`},
+		"invalid work plan response: ":         {Status: 200, Body: `[]`},
 	}
 	for want, detail := range cases {
 		t.Run(want, func(t *testing.T) {
@@ -451,7 +451,7 @@ func TestPlanPush_KeepsServerControlSequencesOffTheTerminal(t *testing.T) {
 	}))
 	f, out := loginFactory(srv)
 	err := runCmd(t, NewPlanCmd(f), "push", writePlanFile(t, validPlanFile))
-	want := `item 3: create feature "Refund webhook": feature with this slug already exists (status 409); created before the failure: revision v2[31m of ZEN-7; pushing the plan again reuses them`
+	want := `item 3: create feature "Refund webhook": feature with this slug already exists (status 409, code conflict); created before the failure: revision v2[31m of ZEN-7; pushing the plan again reuses them`
 	if err == nil || err.Error() != want {
 		t.Fatalf("error = %v", err)
 	}
@@ -875,7 +875,7 @@ func TestPlanPush_ReadsTheAllowanceOnlyForNewFeatures(t *testing.T) {
 	}
 	f2, _ := loginFactory(srv)
 	err := runCmd(t, NewPlanCmd(f2), "push", writePlanFile(t, plHead+"  - title: Refund audit\n    component: "+plComponent+"\n---\n"))
-	if err == nil || err.Error() != "feature allowance: boom (status 500)" {
+	if err == nil || err.Error() != "feature allowance: boom (status 500, code internal)" {
 		t.Fatalf("error = %v", err)
 	}
 	if api.count("GET", "/api/billing/usage") != 1 || api.count("POST", "/api/features") != 0 {

@@ -104,7 +104,7 @@ func TestWorkPolicySet_GivesUpWhenThePolicyKeepsChanging(t *testing.T) {
 	work, notes := NewWorkCmd(f), &bytes.Buffer{}
 	work.SetErr(notes)
 	err := runCmd(t, work, "policy", "set", "--product", woProduct, "--max-attempts", "4")
-	want := "the automation policy changed after it was read; read it again and repeat the change (status 409); the policy changed 3 times while this command wrote it, run it again"
+	want := "the automation policy changed after it was read; read it again and repeat the change (status 409, code policy_changed); the policy changed 3 times while this command wrote it, run it again"
 	if err == nil || err.Error() != want {
 		t.Fatalf("error = %v\nwant    %s", err, want)
 	}
@@ -173,7 +173,7 @@ func TestWorkPolicySet_KeepsEveryOtherBodyRefusal(t *testing.T) {
 			work, notes := NewWorkCmd(f), &bytes.Buffer{}
 			work.SetErr(notes)
 			err := runCmd(t, work, "policy", "set", "--product", woProduct, "--max-attempts", "4")
-			if err == nil || !strings.Contains(err.Error(), "(status "+strconv.Itoa(tc.status)+")") {
+			if err == nil || !strings.Contains(err.Error(), "(status "+strconv.Itoa(tc.status)+", code "+tc.code+")") {
 				t.Fatalf("error = %v, want the server's refusal", err)
 			}
 			if api.count("PUT", "/api/products/"+woProduct+"/automation-policy") != 1 || strings.Contains(notes.String(), "note:") {

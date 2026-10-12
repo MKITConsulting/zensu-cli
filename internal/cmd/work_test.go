@@ -256,7 +256,7 @@ func TestWorkCreate_ResolveFailureStopsBeforeTheWrite(t *testing.T) {
 	})
 	f, _ := testFactory(srv)
 	err := runCmd(t, NewWorkCmd(f), "create", "--product", woProduct, "--feature", "ZEN-9", "--repository", "r")
-	if err == nil || !strings.Contains(err.Error(), "resolve ZEN-9: no feature ZEN-9 (status 404)") {
+	if err == nil || !strings.Contains(err.Error(), "resolve ZEN-9: no feature ZEN-9 (status 404, code not_found)") {
 		t.Fatalf("error = %v", err)
 	}
 	if api.count("POST", "/api/products/"+woProduct+"/work-orders") != 0 {
@@ -422,7 +422,7 @@ func TestWorkHumanDecisions_SurfaceTheInteractiveLoginRefusal(t *testing.T) {
 	})
 	f, out := testFactory(srv)
 	err := runCmd(t, NewWorkCmd(f), "approve", woID)
-	if err == nil || err.Error() != "this decision needs a signed-in person; API keys cannot make it (status 403)" {
+	if err == nil || err.Error() != "this decision needs a signed-in person; API keys cannot make it (status 403, code interactive_user_required)" {
 		t.Fatalf("error = %v", err)
 	}
 	if out.Len() != 0 {
@@ -642,7 +642,7 @@ func TestWorkClaim_DoesNotRetryAServerError(t *testing.T) {
 	})
 	f, _ := testFactory(srv)
 	err := runCmd(t, NewWorkCmd(f), "claim", "--session-id", woSessionID, "--repository", "https://github.com/acme/app")
-	if err == nil || err.Error() != "the server is shutting down; retry after the advertised delay (status 503)" {
+	if err == nil || err.Error() != "the server is shutting down; retry after the advertised delay (status 503, code draining)" {
 		t.Fatalf("error = %v", err)
 	}
 	if n := api.count("POST", "/api/work-orders/claim"); n != 1 {
@@ -821,7 +821,7 @@ func TestWorkHeartbeat_StaleAttemptIsAnError(t *testing.T) {
 	})
 	f, _ := workSessionFactory(srv)
 	err := runCmd(t, NewWorkCmd(f), "heartbeat", woID)
-	if err == nil || !strings.Contains(err.Error(), "stop without further forge writes (status 409)") {
+	if err == nil || !strings.Contains(err.Error(), "stop without further forge writes (status 409, code stale_attempt)") {
 		t.Fatalf("error = %v", err)
 	}
 }
@@ -1302,10 +1302,10 @@ func TestWorkPolicySet_NamesTheFlagThatSuppliedRefusedKeys(t *testing.T) {
 		reply string
 		want  string
 	}{
-		{"add", []string{"--add-allowed-key", woAgentKey2}, refused, message + " (status 422); the refused keys came from --add-allowed-key"},
-		{"replace", []string{"--allowed-key", woAgentKey2}, refused, message + " (status 422); the refused keys came from --allowed-key"},
-		{"no key flag", []string{"--max-attempts", "4"}, refused, message + " (status 422)"},
-		{"another refusal", []string{"--add-allowed-key", woAgentKey2}, `{"code":"invalid_policy","message":"at most 100 allowed agent keys"}`, "at most 100 allowed agent keys (status 422)"},
+		{"add", []string{"--add-allowed-key", woAgentKey2}, refused, message + " (status 422, code invalid_agent_keys); the refused keys came from --add-allowed-key"},
+		{"replace", []string{"--allowed-key", woAgentKey2}, refused, message + " (status 422, code invalid_agent_keys); the refused keys came from --allowed-key"},
+		{"no key flag", []string{"--max-attempts", "4"}, refused, message + " (status 422, code invalid_agent_keys)"},
+		{"another refusal", []string{"--add-allowed-key", woAgentKey2}, `{"code":"invalid_policy","message":"at most 100 allowed agent keys"}`, "at most 100 allowed agent keys (status 422, code invalid_policy)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{

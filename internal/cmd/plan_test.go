@@ -214,7 +214,7 @@ func TestPlanPush_LooksUpEveryItemBeforeItWrites(t *testing.T) {
 	f, _ := loginFactory(srv)
 	content := plHead + "  - title: Refund webhook\n    component: " + plComponent + "\n  - feature: ZEN-7\n    new_revision: true\n    scope_summary: S\n  - feature: ZEN-99\n---\n"
 	err := runCmd(t, NewPlanCmd(f), "push", writePlanFile(t, content))
-	if err == nil || err.Error() != "item 3: feature ZEN-99: no feature (status 404)" {
+	if err == nil || err.Error() != "item 3: feature ZEN-99: no feature (status 404, code not_found)" {
 		t.Fatalf("error = %v", err)
 	}
 	assertNoWrites(t, api)
@@ -247,7 +247,7 @@ func TestPlanPush_ReportsWhatItCreatedWhenThePlanFails(t *testing.T) {
 	}))
 	f, _ := loginFactory(srv)
 	err := runCmd(t, NewPlanCmd(f), "push", writePlanFile(t, validPlanFile))
-	want := `item 1 repeats a revision of the plan (status 422); created before the failure: revision v2 of ZEN-7, feature "Refund webhook" (` + plNewFeat + `); pushing the plan again reuses them`
+	want := `item 1 repeats a revision of the plan (status 422, code duplicate_item); created before the failure: revision v2 of ZEN-7, feature "Refund webhook" (` + plNewFeat + `); pushing the plan again reuses them`
 	if err == nil || err.Error() != want {
 		t.Fatalf("error = %v", err)
 	}
@@ -262,7 +262,7 @@ func TestPlanPush_ReportsEarlierWritesWhenALaterWriteFails(t *testing.T) {
 	}))
 	f, _ := loginFactory(srv)
 	err := runCmd(t, NewPlanCmd(f), "push", writePlanFile(t, validPlanFile))
-	want := `item 3: create feature "Refund webhook": feature with this slug already exists (status 409); created before the failure: revision v2 of ZEN-7; pushing the plan again reuses them`
+	want := `item 3: create feature "Refund webhook": feature with this slug already exists (status 409, code conflict); created before the failure: revision v2 of ZEN-7; pushing the plan again reuses them`
 	if err == nil || err.Error() != want {
 		t.Fatalf("error = %v", err)
 	}
@@ -500,7 +500,7 @@ func TestPlanPush_Errors(t *testing.T) {
 		t.Fatalf("invalid input sent requests: %v", api.summary())
 	}
 	f4, _ := loginFactory(srv)
-	if err := runCmd(t, NewPlanCmd(f4), "push", writePlanFile(t, validPlanFile)); err == nil || err.Error() != "item 2: create a revision of ZEN-7: previous revision must be released or superseded before creating a new one (status 400)" {
+	if err := runCmd(t, NewPlanCmd(f4), "push", writePlanFile(t, validPlanFile)); err == nil || err.Error() != "item 2: create a revision of ZEN-7: previous revision must be released or superseded before creating a new one (status 400, code bad_request)" {
 		t.Fatalf("error = %v", err)
 	}
 	if api.count("POST", "/api/products/"+plProduct+"/work-plans") != 0 {
@@ -813,7 +813,7 @@ func TestPlanDecisions_InteractiveLoginRefusalAndInvalidResponse(t *testing.T) {
 		"POST /api/work-plans/" + plPlan + "/abandon": reply(200, `[]`),
 	})
 	f, _ := testFactory(srv)
-	if err := runCmd(t, NewPlanCmd(f), "approve", plPlan); err == nil || !strings.Contains(err.Error(), "API keys cannot make it (status 403)") {
+	if err := runCmd(t, NewPlanCmd(f), "approve", plPlan); err == nil || !strings.Contains(err.Error(), "API keys cannot make it (status 403, code interactive_user_required)") {
 		t.Fatalf("error = %v", err)
 	}
 	f2, _ := testFactory(srv)

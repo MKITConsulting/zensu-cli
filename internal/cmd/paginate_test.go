@@ -289,7 +289,7 @@ func TestFeaturesList_PaginationEdgeCases(t *testing.T) {
 					return pages(page, perPage)
 				}
 			},
-			wantErr:   []string{"reading page 2 of the features list", "database unavailable (status 500)"},
+			wantErr:   []string{"reading page 2 of the features list", "database unavailable (status 500, code internal_error)"},
 			wantPages: []int{1, 2},
 		},
 		{
@@ -477,7 +477,7 @@ func TestListCommands_FirstPageErrorIsUnchanged(t *testing.T) {
 	})
 	f, _ := testFactory(srv.Server)
 	err := runCmd(t, NewFeaturesCmd(f), "list", "--product", "p1")
-	if err == nil || err.Error() != "token expired (status 401)" {
+	if err == nil || err.Error() != "token expired (status 401, code unauthorized)" {
 		t.Fatalf("a first-page error must reach the user unwrapped, got: %v", err)
 	}
 	assertPages(t, srv, []int{1})

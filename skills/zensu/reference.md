@@ -53,6 +53,29 @@ shifted while they were read, the list is read once more; if the second read is
 still short, the command fails instead of printing a partial result. With
 `--json`, the other list commands print the server's plain JSON array.
 
+## Errors
+
+A failed command exits `1` and writes `error: <message>` to stderr. An API
+refusal ends the message with its status and error code,
+`error: <message> (status 409, code stale_attempt)`, or with `(status 409)` when
+the API sent no code. A response without a JSON message prints
+`error: request failed (status 502): <body excerpt>` under the same suffix rule.
+A code is printed only when it matches `^[a-z][a-z0-9_]{0,63}$`; any other value
+counts as absent. With `--json`, stderr ends with exactly one more line after the
+`error:` line:
+
+```
+error: the order is held by another attempt or its lease expired; stop without further forge writes (status 409, code stale_attempt)
+{"error":{"status":409,"code":"stale_attempt","message":"the order is held by another attempt or its lease expired; stop without further forge writes"}}
+```
+
+`message` is the error text without the status suffix. `status` and `code` are
+left out when absent, so a network, flag or validation error carries only
+`message`. The line follows the `--json` flag, not a command's default output:
+`work get` prints JSON by default but adds the line only with `--json`. Branch on
+`code` from this last line. The update notice never appears when stderr is not a
+terminal.
+
 ## Command groups
 
 | Group | Manages |

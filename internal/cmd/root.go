@@ -79,6 +79,7 @@ func NewRootCmd() *cobra.Command {
 		Version:       version.String(),
 	}
 	root.SetVersionTemplate("{{.Version}}\n")
+	root.SetFlagErrorFunc(markFlagParseError)
 	root.PersistentFlags().StringVar(&apiURLFlag, "api-url", "", "Zensu API base URL (overrides stored host and ZENSU_API_URL)")
 	root.AddCommand(
 		NewAuthCmd(f),

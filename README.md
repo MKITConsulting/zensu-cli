@@ -211,6 +211,43 @@ candidates, the most a scan can hold, instead of the server default of 50.
 `wiki list` currently returns at most 50 pages per query and warns on stderr
 when it reaches that limit.
 
+## Errors
+
+A failed command exits with status `1` and reports the failure on stderr. Scripts and agent
+harnesses can rely on the format below.
+
+The first line is `error: <message>`. When the Zensu API refuses a request, the message ends
+with the HTTP status and the API's error code:
+
+```text
+error: the order is held by another attempt or its lease expired; stop without further forge writes (status 409, code stale_attempt)
+```
+
+- Without a code the suffix is `(status 409)`. The CLI prints a code only when it matches
+  `^[a-z][a-z0-9_]{0,63}$` and treats any other value as absent.
+- A response without a JSON `message` prints `error: request failed (status 502): <body excerpt>`,
+  under the same suffix rule: `error: request failed (status 409, code stale_attempt): <body excerpt>`.
+- A command can add context around the API's message, for example
+  `error: item 3: create feature "Checkout": feature with this slug already exists (status 409, code conflict); created before the failure: …`.
+- The message can span several lines.
+
+With `--json`, stderr ends with exactly one more line, written after the `error:` line:
+
+```text
+{"error":{"status":409,"code":"stale_attempt","message":"the order is held by another attempt or its lease expired; stop without further forge writes"}}
+```
+
+`message` is the error text without the status suffix, including any context the command added.
+`status` and `code` are left out when they are absent, so a network, flag or validation error
+carries only `message`. The line follows the `--json` flag, not a command's default output:
+`zensu work get` prints JSON by default but adds the JSON error line only with `--json`. A flag
+error gets the line too when `--json` is on the command line, even after the flag that failed.
+Prefer this line for machine reading, because the message in the `error:` line comes from the
+server.
+
+The update notice (see [Updates](#updates)) never appears when stderr is not a terminal. In a
+terminal it is printed before the `error:` line, so the JSON line always stays last.
+
 ## Shell completion
 
 `zensu` generates completion scripts via `zensu completion <bash|zsh|fish|powershell>`.

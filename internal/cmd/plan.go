@@ -1077,6 +1077,10 @@ func planDecision(f *Factory, cmd *cobra.Command, id, action string, payload map
 	if err != nil {
 		return err
 	}
+	return printPlanDecision(f, raw, asJSON)
+}
+
+func printPlanDecision(f *Factory, raw []byte, asJSON bool) error {
 	if asJSON {
 		return printJSON(f.Out, raw)
 	}
@@ -1119,17 +1123,41 @@ func newPlanAbandonCmd(f *Factory) *cobra.Command {
 	return cmd
 }
 
+const planHeadUnknown = `unknown field "headSha"`
+
 func newPlanConfirmMergeCmd(f *Factory) *cobra.Command {
+	var headSHA string
 	var asJSON bool
 	cmd := &cobra.Command{
-		Use:          "confirm-merge <plan-id>",
-		Short:        "Confirm that the plan's final PR was merged (manual merge mode)",
+		Use:   "confirm-merge <plan-id>",
+		Short: "Confirm that the plan's final PR was merged (manual merge mode)",
+		Long: "Confirm that the plan's final PR was merged (manual merge mode). --head-sha names the merged head of the final PR and must match the head the plan recorded; " +
+			"when the final PR moved on, record it again with `zensu plan finalize <plan-id> --pr-url <url> --pr-number <n> --head-sha <full-sha>` first. " +
+			"A server from before this check refuses the head; the command then confirms once without it and says so on stderr.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return planDecision(f, cmd, args[0], "confirm-merge", nil, asJSON)
+			if headSHA == "" {
+				return fmt.Errorf("--head-sha is required")
+			}
+			path := planPath(args[0], "confirm-merge")
+			raw, err := f.postJSON(cmd.Context(), path, map[string]any{"headSha": headSHA})
+			if e, ok := apiErrorOf(err); ok && e.status == http.StatusBadRequest && e.code == "invalid_body" && strings.HasPrefix(e.text, planHeadUnknown) {
+				if _, err := fmt.Fprintln(cmd.ErrOrStderr(), "note: this server does not check the merged head of a plan yet; confirming the merge without it"); err != nil {
+					return err
+				}
+				raw, err = f.postJSON(cmd.Context(), path, nil)
+			}
+			if e, ok := apiErrorOf(err); ok && e.code == "head_mismatch" {
+				return fmt.Errorf("%w; zensu plan finalize %s --pr-url <url> --pr-number <n> --head-sha <full-sha> records the final PR again", err, sanitizeTerminal(args[0]))
+			}
+			if err != nil {
+				return err
+			}
+			return printPlanDecision(f, raw, asJSON)
 		},
 	}
+	cmd.Flags().StringVar(&headSHA, "head-sha", "", "full SHA of the merged head of the final PR (required)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
 }

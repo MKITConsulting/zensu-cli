@@ -232,7 +232,10 @@ just read and may be combined; `--allowed-key` replaces the whole list and
 combines with neither. In text mode `policy set` prints the resulting
 `Allowed agent keys:` (or `none`). The server drops stored keys that are no
 longer active and refuses newly named keys that are not active agent keys
-(`422 invalid_agent_keys`); the error names the flag that supplied them.
+(`422 invalid_agent_keys`); the error names the flag that supplied them. Only
+an admin or owner may change the allowed keys: when a member's key flags change
+the list, the server answers `403 agent_keys_admin_only` and the error says that
+an admin or owner must change the keys.
 `policy set` writes the policy back with the version it read; when someone
 changed the policy in between (`409 policy_changed`), it reads the policy again
 and repeats the change. It makes at most three attempts and notes each repeat on
@@ -243,13 +246,14 @@ that a simultaneous change is not detected.
 ```
 # humans (browser login; read commands also work with an API key)
 zensu work create --product <id> --feature <KEY-N|uuid> --repository <url> [--base-branch main] [--harness claude]
-zensu work list [--product id] [--plan id] [--feature KEY-N|uuid] [--status s] [--page n] [--per-page n]
+zensu work list [--product id] [--plan id] [--feature KEY-N|uuid] [--status s[,s]...]... [--sort created|queue|blocked] [--page n] [--per-page n]
 zensu work get <work-order-id> --json
-zensu work events <work-order-id>
+zensu work events <work-order-id> [--page n] [--per-page n]                         # oldest first
+zensu work events <work-order-id> --newest-first [--before <seq>] [--per-page n]    # the last line names the next --before
 zensu work approve <work-order-id>
 zensu work requeue <work-order-id>
 zensu work cancel <work-order-id> [--confirm-pr-closed]
-zensu work confirm-merge <work-order-id> --head-sha <full-sha> [--merge-sha <sha>]
+zensu work confirm-merge <work-order-id> --head-sha <full-sha> [--merge-sha <sha>] [--acknowledge-head-mismatch]
 zensu work answer <question-id> --answer "..." [--rationale "..."] [--plan-wide]
 zensu work overturn <question-id> --answer "..." [--rationale "..."]
 zensu work questions --plan <plan-id> [--order id] [--status open|awaiting_human|answered] [--scope package|plan]
@@ -282,6 +286,17 @@ and stops. A person runs `zensu work approve <work-order-id>`; the order is
 queued again and the next claim implements. `--stage implementing` before that
 answers `409 plan_approval_required`. A stage event carries no `--detail`.
 
+`work list --status` takes several statuses, repeated or comma-separated;
+`--sort queue` lists in claim order and `--sort blocked` by the time the orders
+blocked (`400 invalid_status`, `400 invalid_sort` for unknown values).
+`work events` lists oldest first, in the order the server stored the events;
+`--newest-first` pages backwards with `--before <seq>` and fails on a server
+that does not support that order yet. `work confirm-merge` refuses a head other
+than the one the order recorded (`409 head_mismatch`).
+`--acknowledge-head-mismatch` confirms the merge at that head anyway and records
+the decision on the order; pass it only when the user decides so, never as a
+retry.
+
 Events and questions carry a client event id; pass `--client-event-id` to make
 retries idempotent. A `409 stale_attempt` means the lease belongs to another
 attempt, and a `401 invalid_session_token` means the session has ended — stop
@@ -299,11 +314,18 @@ zensu plan list --product <id> [--status draft|decomposing|graph_proposed|open|i
 zensu plan approve <plan-id>
 zensu plan finalize <plan-id> [--pr-url u --pr-number n --head-sha <full-sha>]
 zensu plan abandon <plan-id> [--confirm-pr-closed]
-zensu plan confirm-merge <plan-id>
+zensu plan confirm-merge <plan-id> --head-sha <full-sha>
 zensu plan followups <plan-id>
 zensu plan followup accept <plan-id> <followup-id>
 zensu plan followup dismiss <plan-id> <followup-id>
 ```
+
+`plan confirm-merge` needs `--head-sha`, the merged head of the final PR. It
+must match the head `plan finalize` recorded (`409 head_mismatch`); when the
+final PR moved on, record it again with `plan finalize <plan-id> --pr-url u
+--pr-number n --head-sha <full-sha>` and then confirm the merge. A server from
+before this check refuses the head (`400 invalid_body`); the command then
+confirms once without it and says so on stderr.
 
 A plan file is Markdown with a YAML front matter (`product`, `repository`,
 `base_branch`, `name`, `items`); each item names `feature` (KEY-N or UUID),

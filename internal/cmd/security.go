@@ -184,7 +184,7 @@ func newSecurityAddTestCmd(f *Factory) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&testType, "type", "", "test type (auth-bypass|injection|access-control|rate-limit|input-validation|data-exposure|header-security|dependency-scan|csrf|xss|ssrf) (required)")
 	cmd.Flags().StringVar(&filePath, "file", "", "path to the security test file (required)")
-	cmd.Flags().StringVar(&lastRunStatus, "last-run-status", "", "last run status (passed|failed|skipped)")
+	cmd.Flags().StringVar(&lastRunStatus, "last-run-status", "", "last run status (passed|failed|skipped|error)")
 	cmd.Flags().StringVar(&owaspID, "owasp-id", "", "OWASP Top 10 ID (e.g. A01:2021)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd

@@ -166,7 +166,7 @@ zensu subfeatures promote [feature-id] <subfeature-id>   # promote to top-level 
 
 ```
 zensu link test <feature-id> --file <path> --test-type unit|integration|e2e|security|performance|accessibility
-    [--function name] [--last-run-status passed|failed|skipped]
+    [--function name] [--last-run-status passed|failed|skipped|error]
 zensu link docs <feature-id> --doc-type <type> [--audience <a>] [--file path]
     [--external-url url] [--content markdown]       # --content creates/updates the linked wiki page
 zensu link source <feature-id> --file path[:type[:language]]   # repeatable
@@ -184,7 +184,7 @@ zensu security classify <feature-id> [--classification public|internal|confident
     [--threat-model-status not-required|pending|completed]
 zensu security add-test <feature-id> --file <path>
     --type auth-bypass|injection|access-control|rate-limit|input-validation|data-exposure|header-security|dependency-scan|csrf|xss|ssrf
-    [--owasp-id A01:2021] [--last-run-status passed|failed|skipped]
+    [--owasp-id A01:2021] [--last-run-status passed|failed|skipped|error]
 zensu security review <feature-id> --reviewer <who> --status approved|rejected|conditional
     [--type manual|automated|external] [--findings f] [--conditions c]
 zensu security score <feature-id>                   # score + release-gate state
@@ -491,7 +491,7 @@ zensu doc gen-context <feature-id> --doc-type <type>   # rich context for doc au
 | Feature scope (bootstrap) | `public_facing` `internal_only` |
 | Test type (`link test`) | `unit` `integration` `e2e` `security` `performance` `accessibility` |
 | Security test type (`security add-test`) | `auth-bypass` `injection` `access-control` `rate-limit` `input-validation` `data-exposure` `header-security` `dependency-scan` `csrf` `xss` `ssrf` |
-| Last run status | `passed` `failed` `skipped` |
+| Last run status | `passed` `failed` `skipped` `error` |
 | Doc type | `user_facing` `api_reference` `tutorial` `adr` `release_notes` `internal` `migration_guide` `overview` |
 | Audience | `end_user` `developer` `admin` `internal` |
 | Security classification | `public` `internal` `confidential` `restricted` |

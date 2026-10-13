@@ -68,7 +68,7 @@ func newLinkTestCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&testType, "test-type", "", "test type: unit|integration|e2e|security|performance|accessibility (required)")
 	cmd.Flags().StringVar(&filePath, "file", "", "path to the test file (required)")
 	cmd.Flags().StringVar(&functionName, "function", "", "specific test function name")
-	cmd.Flags().StringVar(&lastRunStatus, "last-run-status", "", "last run status: passed|failed|skipped")
+	cmd.Flags().StringVar(&lastRunStatus, "last-run-status", "", "last run status: passed|failed|skipped|error")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
 }

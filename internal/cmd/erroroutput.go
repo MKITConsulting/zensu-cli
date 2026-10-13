@@ -21,6 +21,13 @@ func markFlagParseError(_ *cobra.Command, err error) error {
 	return &flagParseError{err: err}
 }
 
+const defaultJSONUsage = "output raw JSON (the default for this command)"
+
+func jsonByDefault(cmd *cobra.Command) *cobra.Command {
+	cmd.Flags().Bool("json", false, defaultJSONUsage)
+	return cmd
+}
+
 type errorLine struct {
 	Error errorDetail `json:"error"`
 }

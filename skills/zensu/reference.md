@@ -41,8 +41,16 @@ zensu auth logout
   session instead of a login. A `401 invalid_session_token` or `409
   stale_attempt` means stop, not log in.
 
-Global flags on every command: `--api-url <url>`. Typed commands accept
-`--json` for raw JSON output.
+Global flags on every command: `--api-url <url>`.
+
+Every command that returns data accepts `--json` for raw JSON output. Commands
+that print JSON anyway, such as `features get`, `products get`, `security score`
+or `work get`, accept it too: their output stays the same, and a failure adds
+the JSON error line (see [Errors](#errors)). Only the `auth`, `meta` and
+`completion` commands and the commands whose API call returns no data have no
+`--json`: `roadmap add-feature`, `roadmap remove-feature`, `roadmap delete`,
+`roadmap milestone-delete`, `journeys step-delete` and
+`work repositories remove` print one confirmation line.
 
 The paginated list commands (`products list`, `features list`,
 `subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
@@ -72,7 +80,8 @@ error: the order is held by another attempt or its lease expired; stop without f
 `message` is the error text without the status suffix. `status` and `code` are
 left out when absent, so a network, flag or validation error carries only
 `message`. The line follows the `--json` flag, not a command's default output:
-`work get` prints JSON by default but adds the line only with `--json`. Branch on
+commands that print JSON by default, such as `work get` or `features get`, add
+the line only with `--json`. Branch on
 `code` from this last line. The update notice never appears when stderr is not a
 terminal.
 
@@ -114,7 +123,7 @@ zensu products import <product-id> --repo-url <url> [--repo-type github|gitlab|b
 zensu products vision-create --title <t> --content <markdown>
     [--product <uuid>] [--source studio|import|claude-code]   # omit --product for greenfield visions
 zensu products vision-get <vision-id>
-zensu products bootstrap-apply <vision-id>          # payload: {"components":[{name,slug,description}],
+zensu products bootstrap-apply <vision-id> --result '<json>'   # payload: {"components":[{name,slug,description}],
                                                     #   "features":[{title,slug,description,component,
                                                     #   priority,estimatedEffort,securityClassification,
                                                     #   securityReasoning,featureScope,subfeatures}]}
@@ -128,7 +137,7 @@ zensu features list --product <id> [--status planned|in-progress|testing|release
 zensu features get <feature-id> [--json]
 zensu features create --product <id> --component <id> --title <t> [--slug s] [--status s] [--json]
 zensu features update <feature-id> [--title t] [--description d] [--priority low|medium|high|critical]
-zensu features status <feature-id> <new-status>     # dedicated transition command
+zensu features status <feature-id> <new-status> [--json]   # dedicated transition command; --json prints the updated feature
 zensu features history <feature-id> [--json]
 zensu features revision <feature-id> --scope-summary <s> [--scope-details d]
     [--estimated-effort S|M|L|XL] [--coverage-target 0-100] [--docs-required]
@@ -431,7 +440,7 @@ zensu mocks create <feature-id> <file> [--title t] [--alt-text a]
     # body is assembled in memory. Responses have their own bound, ZENSU_MAX_RESPONSE_BYTES
     # (64 MiB default), applied to every response a subcommand reads.
 zensu mocks list <feature-id>
-zensu mocks get <feature-id> <mock-id>              # metadata or raw content
+zensu mocks get <feature-id> <mock-id> [--json | --raw]   # metadata (a JSON record with --json) or raw content
 
 zensu wiki create --product <uuid> --title <t> --content <markdown>
     [--doc-type <type>] [--audience <a>] [--visibility public|private]
@@ -458,8 +467,8 @@ zensu meta scaffold-agent [--cli claude-code|kiro|cursor|copilot|all]
 
 ```
 zensu doc claude-md --product <id> --variant full|minimal|ci-only
-zensu doc claude-md-context <product-id>            # aggregate behind the template
-zensu doc gen-context <feature-id>                  # rich context for doc authoring
+zensu doc claude-md-context --product <id>          # aggregate behind the template
+zensu doc gen-context <feature-id> --doc-type <type>   # rich context for doc authoring
 ```
 
 `claude-md` variants: `full` (active feature development), `minimal`

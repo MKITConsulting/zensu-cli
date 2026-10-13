@@ -93,7 +93,7 @@ func newKnowledgeSearchCmd(f *Factory) *cobra.Command {
 }
 
 func newKnowledgeGetCmd(f *Factory) *cobra.Command {
-	return &cobra.Command{
+	return jsonByDefault(&cobra.Command{
 		Use:   "get <item-id>",
 		Short: "Fetch a full knowledge item by id",
 		Long: "Fetch a full knowledge item by id, including its complete content, excerpt, trust level, and " +
@@ -107,7 +107,7 @@ func newKnowledgeGetCmd(f *Factory) *cobra.Command {
 			}
 			return printJSON(f.Out, raw)
 		},
-	}
+	})
 }
 
 func newKnowledgeSourcesCmd(f *Factory) *cobra.Command {

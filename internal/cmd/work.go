@@ -420,8 +420,7 @@ func newWorkListCmd(f *Factory) *cobra.Command {
 }
 
 func newWorkGetCmd(f *Factory) *cobra.Command {
-	var asJSON bool
-	cmd := &cobra.Command{
+	return jsonByDefault(&cobra.Command{
 		Use:          "get <work-order-id>",
 		Short:        "Show a work order with its spec, plan, policy, questions and lane",
 		Long:         "Show a work order. Inside a session (ZENSU_SESSION_TOKEN) only the session's own order is readable.",
@@ -434,9 +433,7 @@ func newWorkGetCmd(f *Factory) *cobra.Command {
 			}
 			return printJSON(f.Out, raw)
 		},
-	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON (the default for this command)")
-	return cmd
+	})
 }
 
 type workEventView struct {
@@ -1406,7 +1403,7 @@ func newWorkPolicyGetCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	return cmd
+	return jsonByDefault(cmd)
 }
 
 type automationPolicy struct {

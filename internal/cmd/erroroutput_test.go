@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -191,6 +193,90 @@ func TestWriteError_FollowsTheJSONFlagNotTheDefaultOutput(t *testing.T) {
 			WriteError(stderr, ran, tc.args, err)
 			if stderr.String() != tc.want {
 				t.Fatalf("stderr = %q\nwant     %q", stderr.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestJSONByDefaultCommands_AcceptJSONWhichOnlyAddsTheErrorLine(t *testing.T) {
+	groups := map[string]func(*Factory) *cobra.Command{
+		"doc":       NewDocCmd,
+		"features":  NewFeaturesCmd,
+		"ghost":     NewGhostCmd,
+		"journeys":  NewJourneysCmd,
+		"knowledge": NewKnowledgeCmd,
+		"products":  NewProductsCmd,
+		"pulse":     NewPulseCmd,
+		"roadmap":   NewRoadmapCmd,
+		"security":  NewSecurityCmd,
+		"tiers":     NewTiersCmd,
+		"work":      NewWorkCmd,
+	}
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"path":"` + r.URL.Path + `"}`))
+	}))
+	defer ok.Close()
+	refused := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"code":"not_found","message":"no such record"}`))
+	}))
+	defer refused.Close()
+	run := func(srv *httptest.Server, args []string) (string, string, error) {
+		f, out := testFactory(srv)
+		group := groups[args[0]](f)
+		group.SetArgs(args[1:])
+		group.SetOut(&bytes.Buffer{})
+		group.SetErr(&bytes.Buffer{})
+		ran, err := group.ExecuteC()
+		stderr := &bytes.Buffer{}
+		WriteError(stderr, ran, args[1:], err)
+		return out.String(), stderr.String(), err
+	}
+	const errorLine = "error: no such record (status 404, code not_found)\n"
+	const jsonErrorLine = `{"error":{"status":404,"code":"not_found","message":"no such record"}}` + "\n"
+
+	for _, args := range [][]string{
+		{"doc", "claude-md-context", "--product", "p1"},
+		{"doc", "gen-context", "f1", "--doc-type", "overview"},
+		{"features", "get", "f1"},
+		{"features", "history", "f1"},
+		{"ghost", "candidates", "s1", "--product", "p1"},
+		{"journeys", "get", "j1", "--product", "p1"},
+		{"journeys", "health", "j1", "--product", "p1"},
+		{"journeys", "suggest", "--product", "p1"},
+		{"knowledge", "get", "k1"},
+		{"products", "get", "p1"},
+		{"products", "vision-get", "v1"},
+		{"pulse", "summary", pulseTestSessionID},
+		{"roadmap", "get", "r1"},
+		{"security", "analyze", "f1"},
+		{"security", "posture", "p1"},
+		{"security", "score", "f1"},
+		{"security", "suggest-tests", "f1"},
+		{"security", "threat-model", "f1"},
+		{"security", "validate", "f1"},
+		{"tiers", "matrix", "--product", "p1"},
+		{"work", "get", woID},
+		{"work", "policy", "get", "--product", woProduct},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			withJSON := append(append([]string{}, args...), "--json")
+			plain, _, err := run(ok, args)
+			if err != nil {
+				t.Fatalf("without --json: %v", err)
+			}
+			got, _, err := run(ok, withJSON)
+			if err != nil {
+				t.Fatalf("with --json: %v", err)
+			}
+			if got != plain || !json.Valid([]byte(plain)) {
+				t.Fatalf("--json must keep the JSON output unchanged:\nwith    %q\nwithout %q", got, plain)
+			}
+			if _, stderr, _ := run(refused, args); stderr != errorLine {
+				t.Errorf("stderr without --json = %q, want %q", stderr, errorLine)
+			}
+			if _, stderr, _ := run(refused, withJSON); stderr != errorLine+jsonErrorLine {
+				t.Errorf("stderr with --json = %q, want %q", stderr, errorLine+jsonErrorLine)
 			}
 		})
 	}

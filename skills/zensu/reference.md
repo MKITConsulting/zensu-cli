@@ -54,8 +54,8 @@ the JSON error line (see [Errors](#errors)). Only the `auth`, `meta` and
 
 The paginated list commands (`products list`, `features list`,
 `subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
-`roadmap list`, `mocks list`) read every page. With `--json` they print one
-envelope for the whole list, `{"data": [...], "total": N, "page": 1, "perPage": N}`.
+`roadmap list`, `mocks list`, `wiki list`) read every page. With `--json` they
+print one envelope for the whole list, `{"data": [...], "total": N, "page": 1, "perPage": N}`.
 If fewer items arrive than the server's total, because pages overlapped or
 shifted while they were read, the list is read once more; if the second read is
 still short, the command fails instead of printing a partial result. With
@@ -451,7 +451,7 @@ zensu mocks get <feature-id> <mock-id> [--json | --raw]   # metadata (a JSON rec
 zensu wiki create --product <uuid> --title <t> --content <markdown>
     [--doc-type <type>] [--audience <a>] [--visibility public|private]
     [--entity-type feature|component|product --entity-id <uuid>]   # visibility defaults to private
-zensu wiki list --product <uuid> [--audience <a>] [--parent <uuid>]   # at most 50 pages; warns at the limit
+zensu wiki list --product <uuid> [--audience <a>] [--parent <uuid>]   # every page; an older server caps at 50 and the CLI warns
 zensu wiki update <page-id> [--title t] [--content markdown] [--change-summary s]
     [--visibility public|private]
 

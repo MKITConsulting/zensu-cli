@@ -74,7 +74,7 @@ func newProductsListCmd(f *Factory) *cobra.Command {
 }
 
 func newProductsGetCmd(f *Factory) *cobra.Command {
-	return &cobra.Command{
+	return jsonByDefault(&cobra.Command{
 		Use:          "get <product-id>",
 		Short:        "Get a product by ID",
 		Args:         cobra.ExactArgs(1),
@@ -86,7 +86,7 @@ func newProductsGetCmd(f *Factory) *cobra.Command {
 			}
 			return printJSON(f.Out, raw)
 		},
-	}
+	})
 }
 
 func normalizeProductType(t string) string {
@@ -203,7 +203,7 @@ func newProductsVisionCreateCmd(f *Factory) *cobra.Command {
 }
 
 func newProductsVisionGetCmd(f *Factory) *cobra.Command {
-	return &cobra.Command{
+	return jsonByDefault(&cobra.Command{
 		Use:          "vision-get <vision-id>",
 		Short:        "Get a product vision by ID",
 		Args:         cobra.ExactArgs(1),
@@ -215,7 +215,7 @@ func newProductsVisionGetCmd(f *Factory) *cobra.Command {
 			}
 			return printJSON(f.Out, raw)
 		},
-	}
+	})
 }
 
 type bootstrapResult struct {

@@ -190,8 +190,11 @@ zensu features update <feature-id> --title "New title" [--description ... --prio
 zensu features status <feature-id> testing
 ```
 
-`--slug` is derived from `--title` when omitted. Add `--json` to typed commands
-for raw output.
+`--slug` is derived from `--title` when omitted. Every command that returns data
+accepts `--json` for raw JSON output; on commands that print JSON anyway, such as
+`zensu features get`, it only adds the JSON error line described under
+[Errors](#errors). The `auth`, `meta` and `completion` commands and the commands
+whose API call returns no data, such as `zensu roadmap delete`, have no `--json`.
 
 The paginated list commands (`products list`, `features list`,
 `subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
@@ -240,7 +243,8 @@ With `--json`, stderr ends with exactly one more line, written after the `error:
 `message` is the error text without the status suffix, including any context the command added.
 `status` and `code` are left out when they are absent, so a network, flag or validation error
 carries only `message`. The line follows the `--json` flag, not a command's default output:
-`zensu work get` prints JSON by default but adds the JSON error line only with `--json`. A flag
+commands that print JSON by default, such as `zensu work get` and `zensu features get`, add the
+JSON error line only with `--json`. A flag
 error gets the line too when `--json` is on the command line, even after the flag that failed.
 Prefer this line for machine reading, because the message in the `error:` line comes from the
 server.

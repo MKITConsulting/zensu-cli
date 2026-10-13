@@ -163,7 +163,7 @@ func newTiersMatrixCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	return cmd
+	return jsonByDefault(cmd)
 }
 
 func newTiersSetFeatureCmd(f *Factory) *cobra.Command {

@@ -75,7 +75,7 @@ func newDocClaudeMdContextCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	return cmd
+	return jsonByDefault(cmd)
 }
 
 func newDocGenContextCmd(f *Factory) *cobra.Command {
@@ -108,5 +108,5 @@ func newDocGenContextCmd(f *Factory) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&feature, "feature", "", "feature ID (alternative to the positional argument)")
 	cmd.Flags().StringVar(&docType, "doc-type", "", "documentation type: user_facing|api_reference|tutorial|adr|release_notes|internal|migration_guide|overview (required)")
-	return cmd
+	return jsonByDefault(cmd)
 }

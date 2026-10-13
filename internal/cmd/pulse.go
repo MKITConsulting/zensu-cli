@@ -314,7 +314,7 @@ func newPulseEndCmd(f *Factory) *cobra.Command {
 }
 
 func newPulseSummaryCmd(f *Factory) *cobra.Command {
-	return &cobra.Command{
+	return jsonByDefault(&cobra.Command{
 		Use:          "summary <session-id>",
 		Short:        "Get a summary of a development session",
 		Long:         "Get a summary of a development session including all tool calls made during the session.",
@@ -327,5 +327,5 @@ func newPulseSummaryCmd(f *Factory) *cobra.Command {
 			}
 			return printJSON(f.Out, raw)
 		},
-	}
+	})
 }

@@ -64,13 +64,20 @@ zensu auth status   # authenticated? against which host?
 1. **The CLI provides data; you do the reasoning.** Commands return structured
    context. Analyze, recommend, and decide yourself — never expect the CLI to
    make product decisions.
-2. **Use `--json` whenever you parse output.** Every typed command supports it.
-   The paginated list commands (`products list`, `features list`,
-   `subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
-   `roadmap list`, `mocks list`) read every page and print one envelope,
-   `{"data": [...], "total": N, "page": 1, "perPage": N}`, so read their ids
-   from `.data[]`. The other list commands print a plain JSON array. A failed
-   command exits `1`; with `--json` the last stderr line is one JSON object,
+2. **Use `--json` whenever you parse output.** Every command that returns data
+   accepts it. Commands that print JSON anyway, such as `features get` and
+   `security score`, accept it too; there it changes only the error output
+   described below. Only the `auth`, `meta` and `completion` commands and the
+   commands whose API call returns no data (`roadmap add-feature`,
+   `roadmap remove-feature`, `roadmap delete`, `roadmap milestone-delete`,
+   `journeys step-delete`, `work repositories remove`) have no `--json`; those
+   print one confirmation line. The paginated list commands (`products list`,
+   `features list`, `subfeatures list`, `journeys list`, `journeys steps`,
+   `tiers list`, `roadmap list`, `mocks list`) read every page and print one
+   envelope, `{"data": [...], "total": N, "page": 1, "perPage": N}`, so read
+   their ids from `.data[]`. The other list commands print a plain JSON
+   array. A failed command exits `1`; with `--json` the last stderr line is
+   one JSON object,
    `{"error":{"status":409,"code":"stale_attempt","message":"..."}}`, so branch
    on its `code`. `code` is absent when the API sent none, and a network, flag
    or validation error carries only `message`.
@@ -184,16 +191,16 @@ Omit it only on the very first scan of an empty product.
 
 ```bash
 zensu products create --name "My Product" --type public|internal|hybrid --json
-zensu products vision-create ...               # store the vision
-zensu products bootstrap-apply <vision-id> --json   # structured components+features payload
-zensu products bootstrap-step ...              # mark post-bootstrap steps done
+zensu products vision-create --title "..." --content "<markdown>"   # store the vision
+zensu products bootstrap-apply <vision-id> --result '<json>' --json   # structured components+features payload
+zensu products bootstrap-step <vision-id> <step>   # mark post-bootstrap steps done
 ```
 
-`bootstrap-apply` takes a JSON payload of components and features (with
-priority `critical|high|medium|low`, effort `S|M|L|XL`, security
-classification, scope, and optional subfeatures) — you derive that payload from
-the vision by your own analysis. See `zensu products bootstrap-apply --help`
-for the documented shape.
+`bootstrap-apply` takes a JSON payload of components and features in
+`--result` (with priority `critical|high|medium|low`, effort `S|M|L|XL`,
+security classification, scope, and optional subfeatures) — you derive that
+payload from the vision by your own analysis. See
+`zensu products bootstrap-apply --help` for the documented shape.
 
 ### Development-session tracking (pulse)
 
@@ -211,7 +218,7 @@ continues the session.
 ### Documentation
 
 ```bash
-zensu doc gen-context <feature-id> --json      # aggregated doc-writing context
+zensu doc gen-context <feature-id> --doc-type user_facing --json   # aggregated doc-writing context
 # READ THE ACTUAL SOURCE FILES before writing — never document from metadata alone
 zensu link docs <feature-id> --doc-type user_facing --audience end_user \
   --content "<markdown>"                       # creates/updates the linked wiki page

@@ -119,7 +119,7 @@ func newGhostCandidatesCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	return cmd
+	return jsonByDefault(cmd)
 }
 
 func newGhostApproveCmd(f *Factory) *cobra.Command {

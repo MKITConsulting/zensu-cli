@@ -152,6 +152,45 @@ func TestMocksGet_Raw(t *testing.T) {
 	}
 }
 
+func TestMocksGet_JSONPrintsTheMetadataRecord(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/features/f1/mocks" {
+			t.Errorf("--json should read the list endpoint, got %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":[` +
+			`{"id":"m1","mock_type":"image","file_name":"hero.png"},` +
+			`{"id":"m2","mock_type":"html","title":"Login","file_name":"login.html","mime_type":"text/html","file_size_bytes":128,"created_by":"u1"}` +
+			`],"total":2}`))
+	}))
+	defer srv.Close()
+
+	f, out := testFactory(srv)
+	if err := runCmd(t, NewMocksCmd(f), "get", "f1", "m2", "--json"); err != nil {
+		t.Fatalf("mocks get --json error: %v", err)
+	}
+	want := "{\n  \"id\": \"m2\",\n  \"mock_type\": \"html\",\n  \"title\": \"Login\",\n  \"file_name\": \"login.html\",\n" +
+		"  \"mime_type\": \"text/html\",\n  \"file_size_bytes\": 128,\n  \"created_by\": \"u1\"\n}\n"
+	if got := out.String(); got != want {
+		t.Errorf("mocks get --json should print the record as the API sent it:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestMocksGet_JSONAndRawAreExclusive(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		t.Errorf("conflicting flags must fail before any request, got %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	f, out := testFactory(srv)
+	err := runCmd(t, NewMocksCmd(f), "get", "f1", "m2", "--json", "--raw")
+	if err == nil || !strings.Contains(err.Error(), "none of the others can be") {
+		t.Fatalf("--json with --raw should be refused, got %v", err)
+	}
+	if out.Len() != 0 {
+		t.Errorf("a refused invocation must print nothing, got %q", out.String())
+	}
+}
+
 func TestMocksGet_NotFound(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{

@@ -254,13 +254,14 @@ func newMocksListCmd(f *Factory) *cobra.Command {
 }
 
 func newMocksGetCmd(f *Factory) *cobra.Command {
-	var raw bool
+	var raw, asJSON bool
 	cmd := &cobra.Command{
 		Use:   "get <feature-id> <mock-id>",
 		Short: "Get a mock's metadata or raw content",
 		Long: "Get a single mock. By default prints the mock's metadata (type, title, file name, content type, " +
-			"size). With --raw, prints the mock's raw content to stdout instead — for HTML mocks this is the " +
-			"assembled markup, which lets you load the mock into your working context.",
+			"size); with --json, the mock's metadata record as raw JSON. With --raw, prints the mock's raw content " +
+			"to stdout instead — for HTML mocks this is the assembled markup, which lets you load the mock into " +
+			"your working context.",
 		Args:         cobra.ExactArgs(2),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -279,14 +280,21 @@ func newMocksGetCmd(f *Factory) *cobra.Command {
 				return err
 			}
 			var env struct {
-				Data []featureMock `json:"data"`
+				Data []json.RawMessage `json:"data"`
 			}
 			if err := json.Unmarshal(listRaw, &env); err != nil {
 				return err
 			}
-			for _, m := range env.Data {
+			for _, item := range env.Data {
+				var m featureMock
+				if err := json.Unmarshal(item, &m); err != nil {
+					return err
+				}
 				if m.ID != mockID {
 					continue
+				}
+				if asJSON {
+					return printJSON(f.Out, item)
 				}
 				fmt.Fprintf(f.Out, "ID:           %s\n", sanitizeTerminal(m.ID))
 				fmt.Fprintf(f.Out, "Type:         %s\n", sanitizeTerminal(m.MockType))
@@ -300,6 +308,8 @@ func newMocksGetCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&raw, "raw", false, "print the mock's raw content to stdout instead of metadata")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output the mock's metadata as raw JSON")
+	cmd.MarkFlagsMutuallyExclusive("json", "raw")
 	return cmd
 }
 

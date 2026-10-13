@@ -15,7 +15,7 @@ func TestSubfeaturesList_Table(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{
-				{"id": "s1", "slug": "login-form", "title": "Login Form", "status": "planned"},
+				{"id": "s1", "slug": "login-form", "number": 7, "title": "Login Form", "priority": "high", "stage": "in_development", "total_count": 1},
 			},
 			"total": 1,
 		})
@@ -28,7 +28,7 @@ func TestSubfeaturesList_Table(t *testing.T) {
 		t.Fatalf("subfeatures list error: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{"ZEN", "TITLE", "STATUS", "login-form", "Login Form", "planned"} {
+	for _, want := range []string{"ZEN", "TITLE", "PRIORITY", "login-form", "Login Form", "high"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("table missing %q in:\n%s", want, got)
 		}
@@ -57,17 +57,33 @@ func TestSubfeaturesList_CompactView(t *testing.T) {
 	var gotView string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotView = r.URL.Query().Get("view")
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}, "total": 0})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{
+					"id": "s1", "slug": "login-form", "number": 7, "title": "Login Form", "priority": "high",
+					"component_id": "c1", "added_in_revision": nil, "removed_in_revision": nil, "stage": "in_development",
+					"parent_gate": nil, "parent_security_score": nil, "parent_coverage_actual_percent": nil,
+					"parent_security_classification": nil, "added_in_version": nil, "removed_in_version": nil, "total_count": 1,
+				},
+			},
+			"total": 1,
+		})
 	}))
 	defer srv.Close()
 
-	f, _ := testFactory(srv)
+	f, out := testFactory(srv)
 	cmd := NewSubfeaturesCmd(f)
 	if err := runCmd(t, cmd, "list", "--feature", "feat1", "--compact"); err != nil {
 		t.Fatalf("subfeatures list error: %v", err)
 	}
 	if gotView != "compact" {
 		t.Errorf("compact view query not sent: got %q", gotView)
+	}
+	got := out.String()
+	for _, want := range []string{"ZEN", "TITLE", "PRIORITY", "login-form", "Login Form", "high"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("compact table missing %q in:\n%s", want, got)
+		}
 	}
 }
 

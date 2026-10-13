@@ -152,9 +152,15 @@ zensu features deprecate <feature-id> [--reason r] [--replacement <uuid>] [--rem
 ```
 zensu subfeatures add <feature-id> --title <t> [--slug s] [--description d]
     [--priority critical|high|medium|low] [--status s] [--assignee a]   # status defaults to planned
-zensu subfeatures list <feature-id> [--compact]     # compact: id, slug, title, status, priority only
+zensu subfeatures list <feature-id> [--compact]     # compact: fewer fields per row, listed below
 zensu subfeatures promote [feature-id] <subfeature-id>   # promote to top-level feature
 ```
+
+`--compact` rows carry only `id`, `slug`, `number`, `title`, `priority`,
+`component_id`, `added_in_revision`, `removed_in_revision`, `stage`,
+`parent_gate`, `parent_security_score`, `parent_coverage_actual_percent`,
+`parent_security_classification`, `added_in_version`, `removed_in_version` and
+`total_count`. They carry no `status`, and `stage` is the parent feature's stage.
 
 ### link
 

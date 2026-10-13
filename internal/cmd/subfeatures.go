@@ -10,6 +10,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type subfeatureItem struct {
+	Slug     string  `json:"slug"`
+	Title    string  `json:"title"`
+	Priority *string `json:"priority"`
+}
+
 func subfeatureFeatureID(flagValue string, args []string) (string, []string) {
 	if flagValue != "" {
 		return flagValue, args
@@ -60,25 +66,21 @@ func newSubfeaturesListCmd(f *Factory) *cobra.Command {
 				return printJSON(f.Out, raw)
 			}
 			var env struct {
-				Data []featureItem `json:"data"`
+				Data []subfeatureItem `json:"data"`
 			}
 			if err := json.Unmarshal(raw, &env); err != nil {
 				return err
 			}
 			tw := tabwriter.NewWriter(f.Out, 0, 2, 2, ' ', 0)
-			fmt.Fprintln(tw, "ZEN\tTITLE\tSTATUS")
-			for _, ft := range env.Data {
-				st := ""
-				if ft.Status != nil {
-					st = *ft.Status
-				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\n", ft.Slug, ft.Title, st)
+			fmt.Fprintln(tw, "ZEN\tTITLE\tPRIORITY")
+			for _, sf := range env.Data {
+				fmt.Fprintf(tw, "%s\t%s\t%s\n", sf.Slug, sf.Title, strValue(sf.Priority))
 			}
 			return tw.Flush()
 		},
 	}
 	cmd.Flags().StringVar(&feature, "feature", "", "parent feature ID (required; or pass as positional arg)")
-	cmd.Flags().BoolVar(&compact, "compact", false, "compact view (id, slug, title, status, priority, componentId only)")
+	cmd.Flags().BoolVar(&compact, "compact", false, "compact view; rows carry only id, slug, number, title, priority, component_id, added_in_revision, removed_in_revision, stage (the parent feature's), parent_gate, parent_security_score, parent_coverage_actual_percent, parent_security_classification, added_in_version, removed_in_version, total_count")
 	cmd.Flags().BoolVar(&asJSON, "json", false, listJSONUsage)
 	return cmd
 }

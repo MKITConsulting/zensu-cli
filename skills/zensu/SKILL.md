@@ -251,8 +251,8 @@ and to `feature` items with `new_revision: true`, and `task` to a one-item plan.
 `plan status --watch` retries timeouts, refused or reset connections, responses
 cut off mid-body, 429 and 5xx with backoff and prints one stderr line per retry;
 TLS failures, refused redirects and an invalid API URL end it at once. An agent
-key claims only in products whose policy allows it; the user runs
-`zensu work policy set --product <product id> --add-allowed-key <key id>`.
+key claims only in products whose policy allows it; a user with the admin or
+owner role runs `zensu work policy set --product <product id> --add-allowed-key <key id>`.
 
 When the product requires a plan approval (the default), a session plans
 before it implements; `implementing` before the approval answers `409

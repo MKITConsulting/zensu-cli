@@ -174,7 +174,26 @@ agent key claims only in products whose automation policy allows it:
 the policy back with the version it read; when someone changed it in between, it reads the
 policy again and repeats the change. It makes at most three attempts and notes each repeat on
 stderr. A Zensu server from before this check refuses the version; the command then writes once
-without it and says on stderr that a simultaneous change is not detected.
+without it and says on stderr that a simultaneous change is not detected. Only an admin or owner
+may change the allowed keys: when a member's key flags change the list, the server answers
+`403 agent_keys_admin_only` and the error says that an admin or owner must change the keys.
+
+`zensu work list` takes `--status` more than once or as a comma-separated list
+(`--status blocked,queued`) and `--sort created|queue|blocked`; `queue` is the claim order and
+`blocked` orders by the time an order blocked. `zensu work events <order id>` lists the events
+oldest first, in the order the server stored them. With `--newest-first` it lists the newest
+events first, `--per-page` at a time, and its last line names the `--before <seq>` value that
+shows the next older slice. A server that does not support this order yet makes the command
+fail instead of showing the events oldest first.
+
+Both merge confirmations name the merged head. `zensu work confirm-merge <order id> --head-sha
+<sha>` must match the head the order recorded, or the server answers `409 head_mismatch`; the
+error points to `--acknowledge-head-mismatch`, which confirms the merge at the other head and
+records that decision on the order. `zensu plan confirm-merge <plan id> --head-sha <sha>` must
+match the final PR head the plan recorded. When the final PR moved on, record it again with
+`zensu plan finalize <plan id> --pr-url <url> --pr-number <n> --head-sha <sha>` and then
+confirm the merge. A Zensu server from before the plan head check refuses the head; the command
+then confirms once without it and says so on stderr.
 
 A typical `products` / `features` flow:
 

@@ -217,9 +217,9 @@ whose API call returns no data, such as `zensu roadmap delete`, have no `--json`
 
 The paginated list commands (`products list`, `features list`,
 `subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
-`roadmap list`, `mocks list`) read every page, 100 items per request, so the
-table and the `--json` output are not cut off after the first page. With
-`--json` they print one envelope for the whole list,
+`roadmap list`, `mocks list`, `wiki list`) read every page, 100 items per
+request, so the table and the `--json` output are not cut off after the first
+page. With `--json` they print one envelope for the whole list,
 `{"data": [...], "total": N, "page": 1, "perPage": N}`, with all N items in
 `data`. `features list --status` filters on the status shown in the STATUS
 column. The CLI compares the number of items it received with the server's
@@ -234,8 +234,10 @@ plain JSON array, ordered by confidence. An older server answers
 `ghost candidates` with a plain JSON array instead of the envelope. The command
 then asks it for up to 200 candidates, the most a scan can hold, and prints
 that array unchanged.
-`wiki list` currently returns at most 50 pages per query and warns on stderr
-when it reaches that limit.
+An older server answers `wiki list` with a plain JSON array of at most 50
+pages instead of the envelope. The command then prints the table as before, or
+that array unchanged with `--json`, and warns on stderr when the array holds
+exactly 50 pages, because later pages may be missing.
 
 ## Errors
 

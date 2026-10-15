@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const wikiPageLimit = 50
+const legacyWikiPageLimit = 50
 
 type wikiPageItem struct {
 	ID        string `json:"id"`
@@ -55,12 +55,13 @@ func newWikiListCmd(f *Factory) *cobra.Command {
 			if parent != "" {
 				q.Set("parentPageId", parent)
 			}
-			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/wiki/pages?"+q.Encode(), nil)
+			raw, err := f.listAll(cmd.Context(), "/api/wiki/pages", q, "wiki pages")
 			if err != nil {
 				return err
 			}
 			var pages []wikiPageItem
-			decoded := json.Unmarshal(raw, &pages) == nil
+			legacy := json.Unmarshal(raw, &pages) == nil
+			decoded := legacy || decodeWikiPageEnvelope(raw, &pages)
 			if asJSON || !decoded {
 				err = printJSON(f.Out, raw)
 			} else {
@@ -71,18 +72,29 @@ func newWikiListCmd(f *Factory) *cobra.Command {
 				}
 				err = tw.Flush()
 			}
-			if err != nil || !decoded || len(pages) != wikiPageLimit {
+			if err != nil || !legacy || len(pages) != legacyWikiPageLimit {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.ErrOrStderr(), "warning: the server returns at most %d wiki pages per query, so pages after the first %d may be missing; narrow the query with --parent or --audience\n", wikiPageLimit, wikiPageLimit)
+			_, err = fmt.Fprintf(cmd.ErrOrStderr(), "warning: the server returns at most %d wiki pages per query, so pages after the first %d may be missing; narrow the query with --parent or --audience\n", legacyWikiPageLimit, legacyWikiPageLimit)
 			return err
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product UUID (required)")
 	cmd.Flags().StringVar(&audience, "audience", "", "filter by audience (end_user|developer|admin|internal)")
 	cmd.Flags().StringVar(&parent, "parent", "", "filter by parent page UUID to get child pages")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	cmd.Flags().BoolVar(&asJSON, "json", false, listJSONUsage)
 	return cmd
+}
+
+func decodeWikiPageEnvelope(raw []byte, pages *[]wikiPageItem) bool {
+	var env struct {
+		Data *[]wikiPageItem `json:"data"`
+	}
+	if json.Unmarshal(raw, &env) != nil || env.Data == nil {
+		return false
+	}
+	*pages = *env.Data
+	return true
 }
 
 func newWikiCreateCmd(f *Factory) *cobra.Command {

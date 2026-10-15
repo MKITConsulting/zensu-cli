@@ -54,8 +54,8 @@ the JSON error line (see [Errors](#errors)). Only the `auth`, `meta` and
 
 The paginated list commands (`products list`, `features list`,
 `subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
-`roadmap list`, `mocks list`) read every page. With `--json` they print one
-envelope for the whole list, `{"data": [...], "total": N, "page": 1, "perPage": N}`.
+`roadmap list`, `mocks list`, `wiki list`) read every page. With `--json` they
+print one envelope for the whole list, `{"data": [...], "total": N, "page": 1, "perPage": N}`.
 If fewer items arrive than the server's total, because pages overlapped or
 shifted while they were read, the list is read once more; if the second read is
 still short, the command fails instead of printing a partial result. With
@@ -166,7 +166,7 @@ zensu subfeatures promote [feature-id] <subfeature-id>   # promote to top-level 
 
 ```
 zensu link test <feature-id> --file <path> --test-type unit|integration|e2e|security|performance|accessibility
-    [--function name] [--last-run-status passed|failed|skipped]
+    [--function name] [--last-run-status passed|failed|skipped|error]
 zensu link docs <feature-id> --doc-type <type> [--audience <a>] [--file path]
     [--external-url url] [--content markdown]       # --content creates/updates the linked wiki page
 zensu link source <feature-id> --file path[:type[:language]]   # repeatable
@@ -184,7 +184,7 @@ zensu security classify <feature-id> [--classification public|internal|confident
     [--threat-model-status not-required|pending|completed]
 zensu security add-test <feature-id> --file <path>
     --type auth-bypass|injection|access-control|rate-limit|input-validation|data-exposure|header-security|dependency-scan|csrf|xss|ssrf
-    [--owasp-id A01:2021] [--last-run-status passed|failed|skipped]
+    [--owasp-id A01:2021] [--last-run-status passed|failed|skipped|error]
 zensu security review <feature-id> --reviewer <who> --status approved|rejected|conditional
     [--type manual|automated|external] [--findings f] [--conditions c]
 zensu security score <feature-id>                   # score + release-gate state
@@ -451,7 +451,7 @@ zensu mocks get <feature-id> <mock-id> [--json | --raw]   # metadata (a JSON rec
 zensu wiki create --product <uuid> --title <t> --content <markdown>
     [--doc-type <type>] [--audience <a>] [--visibility public|private]
     [--entity-type feature|component|product --entity-id <uuid>]   # visibility defaults to private
-zensu wiki list --product <uuid> [--audience <a>] [--parent <uuid>]   # at most 50 pages; warns at the limit
+zensu wiki list --product <uuid> [--audience <a>] [--parent <uuid>]   # every page; an older server caps at 50 and the CLI warns
 zensu wiki update <page-id> [--title t] [--content markdown] [--change-summary s]
     [--visibility public|private]
 
@@ -491,7 +491,7 @@ zensu doc gen-context <feature-id> --doc-type <type>   # rich context for doc au
 | Feature scope (bootstrap) | `public_facing` `internal_only` |
 | Test type (`link test`) | `unit` `integration` `e2e` `security` `performance` `accessibility` |
 | Security test type (`security add-test`) | `auth-bypass` `injection` `access-control` `rate-limit` `input-validation` `data-exposure` `header-security` `dependency-scan` `csrf` `xss` `ssrf` |
-| Last run status | `passed` `failed` `skipped` |
+| Last run status | `passed` `failed` `skipped` `error` |
 | Doc type | `user_facing` `api_reference` `tutorial` `adr` `release_notes` `internal` `migration_guide` `overview` |
 | Audience | `end_user` `developer` `admin` `internal` |
 | Security classification | `public` `internal` `confidential` `restricted` |

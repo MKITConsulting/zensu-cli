@@ -228,8 +228,12 @@ were read, it reads the list once more; if the second read is still short, the
 command fails instead of printing a partial list. A change made while the list
 is read can still go unnoticed, for example when one item is deleted and
 another one is added at the same time. With `--json`, the other list commands
-print the server's plain JSON array. `ghost candidates` requests up to 200
-candidates, the most a scan can hold, instead of the server default of 50.
+print the server's plain JSON array. `ghost candidates` reads every page as
+well, 100 candidates per request, and prints all candidates of the scan as one
+plain JSON array, ordered by confidence. An older server answers
+`ghost candidates` with a plain JSON array instead of the envelope. The command
+then asks it for up to 200 candidates, the most a scan can hold, and prints
+that array unchanged.
 An older server answers `wiki list` with a plain JSON array of at most 50
 pages instead of the envelope. The command then prints the table as before, or
 that array unchanged with `--json`, and warns on stderr when the array holds

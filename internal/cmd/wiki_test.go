@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -34,30 +37,117 @@ func TestWikiList_Table(t *testing.T) {
 	}
 }
 
-func TestWikiList_WarnsWhenTheServerLimitIsReached(t *testing.T) {
+var wikiIDPattern = regexp.MustCompile(`\bw\d{3}\b`)
+
+func wikiFixture(n int) []map[string]any {
+	pages := make([]map[string]any, n)
+	for i := range pages {
+		pages[i] = map[string]any{"id": fmt.Sprintf("w%03d", i), "slug": fmt.Sprintf("page-%03d", i), "title": "T", "audience": "developer"}
+	}
+	return pages
+}
+
+func wikiIDs(n int) []string {
+	ids := make([]string, n)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("w%03d", i)
+	}
+	return ids
+}
+
+func legacyWikiArray(n int) pageResponder {
+	pages := wikiFixture(n)
+	return func(int, int) (int, any) { return http.StatusOK, pages }
+}
+
+func TestWikiList_ReadsEveryPageAndWarnsOnlyForTheLegacyArray(t *testing.T) {
 	tests := []struct {
 		name        string
-		pages       int
+		respond     pageResponder
 		json        bool
+		wantPages   []int
+		wantIDs     int
+		wantJSON    any
 		wantWarning bool
+		wantErr     string
 	}{
-		{"below the server limit", wikiPageLimit - 1, false, false},
-		{"at the server limit", wikiPageLimit, false, true},
-		{"at the server limit with --json", wikiPageLimit, true, true},
-		{"more than the limit, so the server pages for itself", wikiPageLimit + 1, false, false},
+		{
+			name:      "an envelope list is read over three requests",
+			respond:   backendPages(wikiFixture(250), 100),
+			wantPages: []int{1, 2, 3},
+			wantIDs:   250,
+		},
+		{
+			name:      "--json prints every page as one envelope",
+			respond:   backendPages(wikiFixture(250), 100),
+			json:      true,
+			wantPages: []int{1, 2, 3},
+			wantIDs:   250,
+			wantJSON:  map[string]any{"data": wikiFixture(250), "total": 250, "page": 1, "perPage": 250},
+		},
+		{
+			name:      "an envelope list of exactly 50 pages is complete, so it carries no warning",
+			respond:   backendPages(wikiFixture(legacyWikiPageLimit), 100),
+			wantPages: []int{1},
+			wantIDs:   legacyWikiPageLimit,
+		},
+		{
+			name:      "an empty envelope list prints the header only",
+			respond:   backendPages(wikiFixture(0), 100),
+			wantPages: []int{1},
+		},
+		{
+			name:      "a legacy array below the old limit carries no warning",
+			respond:   legacyWikiArray(legacyWikiPageLimit - 1),
+			wantPages: []int{1},
+			wantIDs:   legacyWikiPageLimit - 1,
+		},
+		{
+			name:        "a legacy array at the old limit warns",
+			respond:     legacyWikiArray(legacyWikiPageLimit),
+			wantPages:   []int{1},
+			wantIDs:     legacyWikiPageLimit,
+			wantWarning: true,
+		},
+		{
+			name:        "a legacy array at the old limit prints unchanged with --json and warns",
+			respond:     legacyWikiArray(legacyWikiPageLimit),
+			json:        true,
+			wantPages:   []int{1},
+			wantIDs:     legacyWikiPageLimit,
+			wantJSON:    wikiFixture(legacyWikiPageLimit),
+			wantWarning: true,
+		},
+		{
+			name:      "a legacy array above the old limit carries no warning",
+			respond:   legacyWikiArray(legacyWikiPageLimit + 1),
+			wantPages: []int{1},
+			wantIDs:   legacyWikiPageLimit + 1,
+		},
+		{
+			name: "an error status on the first page reaches the user unwrapped",
+			respond: func(int, int) (int, any) {
+				return http.StatusServiceUnavailable, map[string]any{"code": "service_unavailable", "message": "wiki service does not report a page total; update the wiki service"}
+			},
+			wantPages: []int{1},
+			wantErr:   "wiki service does not report a page total; update the wiki service (status 503, code service_unavailable)",
+		},
+		{
+			name: "an error status on a later page names that page",
+			respond: func(page, perPage int) (int, any) {
+				if page == 2 {
+					return http.StatusInternalServerError, map[string]any{"code": "internal_error", "message": "database unavailable"}
+				}
+				return backendPages(wikiFixture(250), 100)(page, perPage)
+			},
+			wantPages: []int{1, 2},
+			wantErr:   "reading page 2 of the wiki pages list: database unavailable (status 500, code internal_error)",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			pages := make([]map[string]any, tc.pages)
-			for i := range pages {
-				pages[i] = map[string]any{"id": fmt.Sprintf("w%03d", i), "slug": fmt.Sprintf("page-%03d", i), "title": "T", "audience": "developer"}
-			}
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				_ = json.NewEncoder(w).Encode(pages)
-			}))
-			defer srv.Close()
-
-			f, out := testFactory(srv)
+			srv := newPagedServer(t, "/api/wiki/pages", tc.respond)
+			f, out := testFactory(srv.Server)
 			cmd := NewWikiCmd(f)
 			var stderr bytes.Buffer
 			cmd.SetErr(&stderr)
@@ -65,17 +155,48 @@ func TestWikiList_WarnsWhenTheServerLimitIsReached(t *testing.T) {
 			if tc.json {
 				args = append(args, "--json")
 			}
-			if err := runCmd(t, cmd, args...); err != nil {
-				t.Fatalf("wiki list error: %v", err)
+			err := runCmd(t, cmd, args...)
+			assertPages(t, srv, tc.wantPages)
+			if got := strings.Contains(stderr.String(), "at most 50 wiki pages per query"); got != tc.wantWarning {
+				t.Errorf("limit warning on stderr: got %t, want %t (stderr %q)", got, tc.wantWarning, stderr.String())
 			}
-			if !strings.Contains(out.String(), fmt.Sprintf("page-%03d", tc.pages-1)) {
-				t.Errorf("the last page is missing from stdout:\n%s", out.String())
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("error: got %v, want %q", err, tc.wantErr)
+				}
+				if out.Len() != 0 {
+					t.Errorf("a failed listing must not print a partial list, got:\n%s", out.String())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("wiki list error: %v", err)
 			}
 			if strings.Contains(out.String(), "warning") {
 				t.Errorf("the warning must not reach stdout:\n%s", out.String())
 			}
-			if got := strings.Contains(stderr.String(), "at most 50 wiki pages per query"); got != tc.wantWarning {
-				t.Errorf("limit warning on stderr: got %t, want %t (stderr %q)", got, tc.wantWarning, stderr.String())
+			if got := wikiIDPattern.FindAllString(out.String(), -1); !slices.Equal(got, wikiIDs(tc.wantIDs)) {
+				t.Errorf("stdout lists the ids %v, want each id once in server order: %v", got, wikiIDs(tc.wantIDs))
+			}
+			if !tc.json {
+				lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+				if header := strings.Fields(lines[0]); !slices.Equal(header, []string{"ID", "SLUG", "TITLE", "AUDIENCE"}) {
+					t.Errorf("the first line must be the table header, got %q", lines[0])
+				}
+				if len(lines)-1 != tc.wantIDs {
+					t.Errorf("the table has %d rows, want %d", len(lines)-1, tc.wantIDs)
+				}
+				return
+			}
+			var got, want any
+			if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+				t.Fatalf("--json output is not JSON: %v\n%s", err, out.String())
+			}
+			if err := json.Unmarshal([]byte(jsonOf(t, tc.wantJSON)), &want); err != nil {
+				t.Fatalf("decode the expected JSON: %v", err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("--json output:\n%s\nwant the same JSON as:\n%s", out.String(), jsonOf(t, tc.wantJSON))
 			}
 		})
 	}

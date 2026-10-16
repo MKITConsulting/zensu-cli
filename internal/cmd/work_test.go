@@ -256,7 +256,7 @@ func TestWorkCreate_ResolveFailureStopsBeforeTheWrite(t *testing.T) {
 	})
 	f, _ := testFactory(srv)
 	err := runCmd(t, NewWorkCmd(f), "create", "--product", woProduct, "--feature", "ZEN-9", "--repository", "r")
-	if err == nil || !strings.Contains(err.Error(), "resolve ZEN-9: no feature ZEN-9 (status 404)") {
+	if err == nil || !strings.Contains(err.Error(), "resolve ZEN-9: no feature ZEN-9 (status 404, code not_found)") {
 		t.Fatalf("error = %v", err)
 	}
 	if api.count("POST", "/api/products/"+woProduct+"/work-orders") != 0 {
@@ -306,6 +306,42 @@ func TestWorkList_JSONWithoutFilters(t *testing.T) {
 	}
 }
 
+func TestWorkList_SendsRepeatedAndCommaSeparatedStatusesAsOneListAndTheSort(t *testing.T) {
+	srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+		"GET /api/work-orders": reply(200, `{"data":[],"total":0}`),
+	})
+	f, _ := testFactory(srv)
+	if err := runCmd(t, NewWorkCmd(f), "list", "--status", "blocked", "--status", "queued, claimed", "--status", "draft,", "--sort", "blocked"); err != nil {
+		t.Fatalf("work list: %v", err)
+	}
+	q := api.only(t, "GET", "/api/work-orders").Query
+	if got := q["status"]; len(got) != 1 || got[0] != "blocked,queued,claimed,draft" {
+		t.Fatalf("status = %v, want one comma-separated list", got)
+	}
+	if q.Get("sort") != "blocked" {
+		t.Fatalf("sort = %q", q.Get("sort"))
+	}
+}
+
+func TestWorkList_SurfacesTheServerRefusalOfAStatusOrSort(t *testing.T) {
+	for _, tc := range []struct {
+		args  []string
+		reply string
+		want  string
+	}{
+		{[]string{"list", "--status", "blocked,stuck"}, `{"code":"invalid_status","message":"unknown work order status"}`, "unknown work order status (status 400, code invalid_status)"},
+		{[]string{"list", "--sort", "oldest"}, `{"code":"invalid_sort","message":"sort must be created, queue or blocked"}`, "sort must be created, queue or blocked (status 400, code invalid_sort)"},
+	} {
+		srv, _ := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+			"GET /api/work-orders": reply(400, tc.reply),
+		})
+		f, out := testFactory(srv)
+		if err := runCmd(t, NewWorkCmd(f), tc.args...); err == nil || err.Error() != tc.want || out.Len() != 0 {
+			t.Errorf("%v: error = %v, output %q, want %q", tc.args, err, out.String(), tc.want)
+		}
+	}
+}
+
 func TestWorkGetAndEvents(t *testing.T) {
 	srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
 		"GET /api/work-orders/" + woID: reply(200, map[string]any{"id": woID, "status": "implementing", "spec": map[string]any{"title": "x"}}),
@@ -347,6 +383,93 @@ func TestWorkEvents_JSON(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"data": []`) {
 		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestWorkEvents_NewestFirstPagesBackwardsBySeq(t *testing.T) {
+	newest := []any{
+		map[string]any{"seq": 17, "event_type": "stage", "from_status": "implementing", "to_status": "pr_open", "actor_kind": "session", "attempt": 2, "occurred_at": "2026-10-12T10:00:00Z"},
+		map[string]any{"seq": 16, "event_type": "stage", "from_status": "claimed", "to_status": "implementing", "actor_kind": "session", "attempt": 2, "occurred_at": "2026-10-12T09:00:00Z"},
+	}
+	srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+		"GET /api/work-orders/" + woID + "/events": func(r recordedRequest) fakeReply {
+			if r.Query.Get("before") == "" {
+				return fakeReply{Body: map[string]any{"data": newest, "next_before": 16}}
+			}
+			return fakeReply{Body: map[string]any{"data": []any{map[string]any{"seq": 1, "event_type": "created", "actor_kind": "user", "occurred_at": "2026-10-12T08:00:00Z"}}, "next_before": nil}}
+		},
+	})
+	f, out := testFactory(srv)
+	if err := runCmd(t, NewWorkCmd(f), "events", woID, "--newest-first", "--per-page", "2"); err != nil {
+		t.Fatalf("work events --newest-first: %v", err)
+	}
+	f2, out2 := testFactory(srv)
+	if err := runCmd(t, NewWorkCmd(f2), "events", woID, "--newest-first", "--before", "16"); err != nil {
+		t.Fatalf("work events --before: %v", err)
+	}
+	calls := api.calls()
+	if len(calls) != 2 {
+		t.Fatalf("calls = %v", api.summary())
+	}
+	if q := calls[0].Query; q.Get("order") != "desc" || q.Get("per_page") != "2" || q.Has("before") || q.Has("page") {
+		t.Fatalf("first query = %v", q)
+	}
+	if q := calls[1].Query; q.Get("order") != "desc" || q.Get("before") != "16" || q.Has("page") {
+		t.Fatalf("second query = %v", q)
+	}
+	if !strings.HasSuffix(out.String(), "2 shown, newest first; older events: --before 16\n") || strings.Index(out.String(), "pr_open") > strings.Index(out.String(), "claimed") {
+		t.Fatalf("first slice:\n%s", out.String())
+	}
+	assertWorkColumnsAligned(t, out.String(), map[string]string{"TYPE": "stage", "FROM": "implementing", "ACTOR": "session"})
+	if !strings.Contains(out2.String(), "created") || !strings.HasSuffix(out2.String(), "1 shown, newest first; no older events\n") {
+		t.Fatalf("last slice:\n%s", out2.String())
+	}
+}
+
+func TestWorkEvents_NewestFirstJSONKeepsTheCursor(t *testing.T) {
+	srv, _ := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+		"GET /api/work-orders/" + woID + "/events": reply(200, `{"data":[],"next_before":null}`),
+	})
+	f, out := testFactory(srv)
+	if err := runCmd(t, NewWorkCmd(f), "events", woID, "--newest-first", "--json"); err != nil {
+		t.Fatalf("work events: %v", err)
+	}
+	if !strings.Contains(out.String(), `"next_before": null`) {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestWorkEvents_NewestFirstRefusesAServerThatIgnoresTheOrder(t *testing.T) {
+	srv, _ := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+		"GET /api/work-orders/" + woID + "/events": reply(200, `{"data":[],"total":0}`),
+	})
+	for _, args := range [][]string{{"events", woID, "--newest-first"}, {"events", woID, "--newest-first", "--json"}} {
+		f, out := testFactory(srv)
+		err := runCmd(t, NewWorkCmd(f), args...)
+		if err == nil || err.Error() != "this server does not list events newest first yet; run the command without --newest-first" || out.Len() != 0 {
+			t.Errorf("%v: error = %v, output %q", args, err, out.String())
+		}
+	}
+}
+
+func TestWorkEvents_ValidatesTheCursorFlagsLocally(t *testing.T) {
+	srv, api := newFakeAPI(t, nil)
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"events", woID, "--before", "16"}, "--before pages the newest-first order; add --newest-first"},
+		{[]string{"events", woID, "--newest-first", "--before", "0"}, "--before must be the positive seq of an event, got 0"},
+		{[]string{"events", woID, "--newest-first", "--before", "-3"}, "--before must be the positive seq of an event, got -3"},
+		{[]string{"events", woID, "--newest-first", "--page", "2"}, "if any flags in the group [newest-first page] are set none of the others can be; [newest-first page] were all set"},
+	} {
+		f, out := testFactory(srv)
+		if err := runCmd(t, NewWorkCmd(f), tc.args...); err == nil || err.Error() != tc.want || out.Len() != 0 {
+			t.Errorf("%v: error = %v, output %q, want %q", tc.args, err, out.String(), tc.want)
+		}
+	}
+	if n := len(api.calls()); n != 0 {
+		t.Fatalf("refused cursor flags sent %d requests: %v", n, api.summary())
 	}
 }
 
@@ -422,7 +545,7 @@ func TestWorkHumanDecisions_SurfaceTheInteractiveLoginRefusal(t *testing.T) {
 	})
 	f, out := testFactory(srv)
 	err := runCmd(t, NewWorkCmd(f), "approve", woID)
-	if err == nil || err.Error() != "this decision needs a signed-in person; API keys cannot make it (status 403)" {
+	if err == nil || err.Error() != "this decision needs a signed-in person; API keys cannot make it (status 403, code interactive_user_required)" {
 		t.Fatalf("error = %v", err)
 	}
 	if out.Len() != 0 {
@@ -455,6 +578,52 @@ func TestWorkConfirmMerge_RequiresTheHeadSHA(t *testing.T) {
 	}
 	if len(api.calls()) != 0 {
 		t.Fatal("no request without the head SHA")
+	}
+}
+
+func TestWorkConfirmMerge_AcknowledgesAHeadMismatchOnlyWhenAsked(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+		"POST /api/work-orders/" + woID + "/confirm-merge": reply(200, orderJSON("merged")),
+	})
+	f, out := testFactory(srv)
+	if err := runCmd(t, NewWorkCmd(f), "confirm-merge", woID, "--head-sha", head, "--acknowledge-head-mismatch"); err != nil {
+		t.Fatalf("confirm-merge: %v", err)
+	}
+	if raw := api.only(t, "POST", "/api/work-orders/"+woID+"/confirm-merge").Raw; raw != `{"acknowledgeHeadMismatch":true,"headSha":"`+head+`"}` {
+		t.Fatalf("body = %s, want the head and the acknowledgement", raw)
+	}
+	if out.String() != "Confirmed merge of work order "+woID+": merged\n" {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestWorkConfirmMerge_HeadMismatchNamesTheAcknowledgeFlag(t *testing.T) {
+	message := "the merged head differs from the head the order recorded"
+	mismatch := `{"code":"head_mismatch","message":"` + message + `"}`
+	for _, tc := range []struct {
+		name  string
+		args  []string
+		reply string
+		want  string
+	}{
+		{"without the flag", nil, mismatch, message + " (status 409, code head_mismatch); when the PR was merged at this head on purpose, run the command again with --acknowledge-head-mismatch to record that decision"},
+		{"with the flag", []string{"--acknowledge-head-mismatch"}, mismatch, message + " (status 409, code head_mismatch)"},
+		{"another conflict", nil, `{"code":"no_pull_request","message":"the order has no pull request to merge"}`, "the order has no pull request to merge (status 409, code no_pull_request)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+				"POST /api/work-orders/" + woID + "/confirm-merge": reply(409, tc.reply),
+			})
+			f, out := testFactory(srv)
+			err := runCmd(t, NewWorkCmd(f), append([]string{"confirm-merge", woID, "--head-sha", strings.Repeat("b", 40)}, tc.args...)...)
+			if err == nil || err.Error() != tc.want {
+				t.Fatalf("error = %v\nwant    %s", err, tc.want)
+			}
+			if api.count("POST", "/api/work-orders/"+woID+"/confirm-merge") != 1 || out.Len() != 0 {
+				t.Fatalf("calls %v, output %q", api.summary(), out.String())
+			}
+		})
 	}
 }
 
@@ -642,7 +811,7 @@ func TestWorkClaim_DoesNotRetryAServerError(t *testing.T) {
 	})
 	f, _ := testFactory(srv)
 	err := runCmd(t, NewWorkCmd(f), "claim", "--session-id", woSessionID, "--repository", "https://github.com/acme/app")
-	if err == nil || err.Error() != "the server is shutting down; retry after the advertised delay (status 503)" {
+	if err == nil || err.Error() != "the server is shutting down; retry after the advertised delay (status 503, code draining)" {
 		t.Fatalf("error = %v", err)
 	}
 	if n := api.count("POST", "/api/work-orders/claim"); n != 1 {
@@ -821,7 +990,7 @@ func TestWorkHeartbeat_StaleAttemptIsAnError(t *testing.T) {
 	})
 	f, _ := workSessionFactory(srv)
 	err := runCmd(t, NewWorkCmd(f), "heartbeat", woID)
-	if err == nil || !strings.Contains(err.Error(), "stop without further forge writes (status 409)") {
+	if err == nil || !strings.Contains(err.Error(), "stop without further forge writes (status 409, code stale_attempt)") {
 		t.Fatalf("error = %v", err)
 	}
 }
@@ -1302,10 +1471,10 @@ func TestWorkPolicySet_NamesTheFlagThatSuppliedRefusedKeys(t *testing.T) {
 		reply string
 		want  string
 	}{
-		{"add", []string{"--add-allowed-key", woAgentKey2}, refused, message + " (status 422); the refused keys came from --add-allowed-key"},
-		{"replace", []string{"--allowed-key", woAgentKey2}, refused, message + " (status 422); the refused keys came from --allowed-key"},
-		{"no key flag", []string{"--max-attempts", "4"}, refused, message + " (status 422)"},
-		{"another refusal", []string{"--add-allowed-key", woAgentKey2}, `{"code":"invalid_policy","message":"at most 100 allowed agent keys"}`, "at most 100 allowed agent keys (status 422)"},
+		{"add", []string{"--add-allowed-key", woAgentKey2}, refused, message + " (status 422, code invalid_agent_keys); the refused keys came from --add-allowed-key"},
+		{"replace", []string{"--allowed-key", woAgentKey2}, refused, message + " (status 422, code invalid_agent_keys); the refused keys came from --allowed-key"},
+		{"no key flag", []string{"--max-attempts", "4"}, refused, message + " (status 422, code invalid_agent_keys)"},
+		{"another refusal", []string{"--add-allowed-key", woAgentKey2}, `{"code":"invalid_policy","message":"at most 100 allowed agent keys"}`, "at most 100 allowed agent keys (status 422, code invalid_policy)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
@@ -1316,6 +1485,31 @@ func TestWorkPolicySet_NamesTheFlagThatSuppliedRefusedKeys(t *testing.T) {
 			err := runCmd(t, NewWorkCmd(f), append([]string{"policy", "set", "--product", woProduct}, tc.args...)...)
 			if err == nil || err.Error() != tc.want {
 				t.Fatalf("error = %v\nwant    %s", err, tc.want)
+			}
+			if api.count("PUT", "/api/products/"+woProduct+"/automation-policy") != 1 || out.Len() != 0 {
+				t.Fatalf("calls %v, output %q", api.summary(), out.String())
+			}
+		})
+	}
+}
+
+func TestWorkPolicySet_TellsAMemberThatAnAdminChangesTheAllowedKeys(t *testing.T) {
+	message := "only an admin changes the allowed agent keys; send the stored list unchanged"
+	want := message + " (status 403, code agent_keys_admin_only); an admin or owner must change the allowed agent keys"
+	for _, args := range [][]string{
+		{"--add-allowed-key", woAgentKey2},
+		{"--remove-allowed-key", woAgentKey},
+		{"--allowed-key", woAgentKey2},
+	} {
+		t.Run(args[0], func(t *testing.T) {
+			srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+				"GET /api/products/" + woProduct + "/automation-policy": reply(200, map[string]any{"dispatch_mode": "manual", "allowed_api_key_ids": []any{woAgentKey}}),
+				"PUT /api/products/" + woProduct + "/automation-policy": reply(403, `{"code":"agent_keys_admin_only","message":"`+message+`"}`),
+			})
+			f, out := testFactory(srv)
+			err := runCmd(t, NewWorkCmd(f), append([]string{"policy", "set", "--product", woProduct}, args...)...)
+			if err == nil || err.Error() != want {
+				t.Fatalf("error = %v\nwant    %s", err, want)
 			}
 			if api.count("PUT", "/api/products/"+woProduct+"/automation-policy") != 1 || out.Len() != 0 {
 				t.Fatalf("calls %v, output %q", api.summary(), out.String())

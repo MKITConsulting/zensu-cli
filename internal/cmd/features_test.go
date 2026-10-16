@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -320,6 +321,47 @@ func TestFeaturesStatus(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(out.String()), "testing") {
 		t.Errorf("status output should confirm new status: %s", out.String())
+	}
+}
+
+func TestFeaturesStatus_JSONPrintsTheUpdatedFeature(t *testing.T) {
+	srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+		"PATCH /api/features/f1/status": reply(200, `{"id":"f1","slug":"ZEN-1","status":"testing"}`),
+	})
+	f, out := testFactory(srv)
+	if err := runCmd(t, NewFeaturesCmd(f), "status", "f1", "testing", "--json"); err != nil {
+		t.Fatalf("features status --json: %v", err)
+	}
+	if want := "{\n  \"id\": \"f1\",\n  \"slug\": \"ZEN-1\",\n  \"status\": \"testing\"\n}\n"; out.String() != want {
+		t.Errorf("output = %q\nwant     %q", out.String(), want)
+	}
+	if body := api.only(t, "PATCH", "/api/features/f1/status").Body; body["status"] != "testing" {
+		t.Errorf("request body = %v", body)
+	}
+}
+
+func TestFeaturesStatus_JSONErrorLineCarriesTheReleaseGateCode(t *testing.T) {
+	srv, _ := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+		"PATCH /api/features/f1/status": reply(409, map[string]any{"code": "release_gate_blocked", "message": "release gate check failed"}),
+	})
+	f, out := testFactory(srv)
+	features := NewFeaturesCmd(f)
+	args := []string{"status", "f1", "released", "--json"}
+	features.SetArgs(args)
+	features.SetErr(&bytes.Buffer{})
+	ran, err := features.ExecuteC()
+	if err == nil {
+		t.Fatal("a refused transition must fail")
+	}
+	stderr := &bytes.Buffer{}
+	WriteError(stderr, ran, args, err)
+	want := "error: release gate check failed (status 409, code release_gate_blocked)\n" +
+		`{"error":{"status":409,"code":"release_gate_blocked","message":"release gate check failed"}}` + "\n"
+	if stderr.String() != want {
+		t.Errorf("stderr = %q\nwant     %q", stderr.String(), want)
+	}
+	if out.Len() != 0 {
+		t.Errorf("a refused transition must print nothing on stdout, got %q", out.String())
 	}
 }
 

@@ -109,7 +109,7 @@ func newSecurityClassifyCmd(f *Factory) *cobra.Command {
 }
 
 func newSecurityPostureCmd(f *Factory) *cobra.Command {
-	return &cobra.Command{
+	return jsonByDefault(&cobra.Command{
 		Use:   "posture <product-id>",
 		Short: "Get an aggregated security overview for an entire product",
 		Long: "Get an aggregated security overview for an entire product. Includes average " +
@@ -124,11 +124,11 @@ func newSecurityPostureCmd(f *Factory) *cobra.Command {
 			}
 			return printJSON(f.Out, raw)
 		},
-	}
+	})
 }
 
 func newSecurityScoreCmd(f *Factory) *cobra.Command {
-	return &cobra.Command{
+	return jsonByDefault(&cobra.Command{
 		Use:          "score <feature-id>",
 		Short:        "Get the calculated security score and release-gate state of a feature",
 		Args:         cobra.ExactArgs(1),
@@ -140,7 +140,7 @@ func newSecurityScoreCmd(f *Factory) *cobra.Command {
 			}
 			return printJSON(f.Out, raw)
 		},
-	}
+	})
 }
 
 func newSecurityAddTestCmd(f *Factory) *cobra.Command {
@@ -184,7 +184,7 @@ func newSecurityAddTestCmd(f *Factory) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&testType, "type", "", "test type (auth-bypass|injection|access-control|rate-limit|input-validation|data-exposure|header-security|dependency-scan|csrf|xss|ssrf) (required)")
 	cmd.Flags().StringVar(&filePath, "file", "", "path to the security test file (required)")
-	cmd.Flags().StringVar(&lastRunStatus, "last-run-status", "", "last run status (passed|failed|skipped)")
+	cmd.Flags().StringVar(&lastRunStatus, "last-run-status", "", "last run status (passed|failed|skipped|error)")
 	cmd.Flags().StringVar(&owaspID, "owasp-id", "", "OWASP Top 10 ID (e.g. A01:2021)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
@@ -241,7 +241,7 @@ func newSecurityReviewCmd(f *Factory) *cobra.Command {
 }
 
 func newSecurityContextCmd(f *Factory, use, short, long string) *cobra.Command {
-	return &cobra.Command{
+	return jsonByDefault(&cobra.Command{
 		Use:          use,
 		Short:        short,
 		Long:         long,
@@ -254,7 +254,7 @@ func newSecurityContextCmd(f *Factory, use, short, long string) *cobra.Command {
 			}
 			return printJSON(f.Out, raw)
 		},
-	}
+	})
 }
 
 func newSecurityAnalyzeCmd(f *Factory) *cobra.Command {

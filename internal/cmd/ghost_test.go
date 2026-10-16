@@ -3,8 +3,13 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -152,39 +157,168 @@ func TestGhostCandidates(t *testing.T) {
 	}
 }
 
-func TestGhostCandidates_RequestsEveryCandidateOfTheScan(t *testing.T) {
+func ghostCandidateFixture(n int) []map[string]any {
+	candidates := make([]map[string]any, n)
+	for i := range candidates {
+		candidates[i] = map[string]any{
+			"id":              fmt.Sprintf("cand-%03d", i),
+			"candidate_slug":  fmt.Sprintf("ZEN-%03d", i),
+			"candidate_title": fmt.Sprintf("Candidate %03d", i),
+		}
+	}
+	return candidates
+}
+
+func ghostCandidateIDs(n int) []string {
+	ids := make([]string, n)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("cand-%03d", i)
+	}
+	return ids
+}
+
+func ghostCandidatePages(n int) func(recordedRequest) fakeReply {
+	respond := backendPages(ghostCandidateFixture(n), 100)
+	return func(r recordedRequest) fakeReply {
+		page, _ := strconv.Atoi(r.Query.Get("page"))
+		perPage, _ := strconv.Atoi(r.Query.Get("per_page"))
+		status, body := respond(page, perPage)
+		return fakeReply{Status: status, Body: body}
+	}
+}
+
+func legacyGhostCandidates(n int) func(recordedRequest) fakeReply {
+	candidates := ghostCandidateFixture(n)
+	return func(r recordedRequest) fakeReply {
+		limit := 50
+		if v, err := strconv.Atoi(r.Query.Get("limit")); err == nil && v > 0 && v <= legacyGhostCandidateLimit {
+			limit = v
+		}
+		return fakeReply{Body: candidates[:min(limit, len(candidates))]}
+	}
+}
+
+func candidatePageQuery(page int) url.Values {
+	return url.Values{"page": {strconv.Itoa(page)}, "per_page": {"100"}}
+}
+
+func TestGhostCandidates_ReadsEveryPageAndFallsBackToTheLegacyArray(t *testing.T) {
+	listFailure := reply(http.StatusInternalServerError, map[string]any{"code": "internal_error", "message": "failed to list ghost candidates"})
 	tests := []struct {
-		name       string
-		candidates int
+		name           string
+		respond        func(recordedRequest) fakeReply
+		wantQueries    []url.Values
+		wantCandidates int
+		wantErr        string
 	}{
-		{"a few candidates", 3},
-		{"a full scan of 200 candidates", ghostCandidateLimit},
+		{
+			name:           "an envelope list of 230 candidates is read over three requests",
+			respond:        ghostCandidatePages(230),
+			wantQueries:    []url.Values{candidatePageQuery(1), candidatePageQuery(2), candidatePageQuery(3)},
+			wantCandidates: 230,
+		},
+		{
+			name:           "a full scan of 200 candidates is read over two requests",
+			respond:        ghostCandidatePages(legacyGhostCandidateLimit),
+			wantQueries:    []url.Values{candidatePageQuery(1), candidatePageQuery(2)},
+			wantCandidates: legacyGhostCandidateLimit,
+		},
+		{
+			name:        "an empty envelope list prints an empty array",
+			respond:     ghostCandidatePages(0),
+			wantQueries: []url.Values{candidatePageQuery(1)},
+		},
+		{
+			name:           "a legacy array is read again with the old limit and printed unchanged",
+			respond:        legacyGhostCandidates(legacyGhostCandidateLimit - 1),
+			wantQueries:    []url.Values{candidatePageQuery(1), {"limit": {"200"}}},
+			wantCandidates: legacyGhostCandidateLimit - 1,
+		},
+		{
+			name:           "a full legacy scan of 200 candidates is complete, so it prints unchanged without a warning",
+			respond:        legacyGhostCandidates(legacyGhostCandidateLimit),
+			wantQueries:    []url.Values{candidatePageQuery(1), {"limit": {"200"}}},
+			wantCandidates: legacyGhostCandidateLimit,
+		},
+		{
+			name:        "an error status on the first page reaches the user unwrapped",
+			respond:     reply(http.StatusNotFound, map[string]any{"code": "not_found", "message": "ghost scan not found"}),
+			wantQueries: []url.Values{candidatePageQuery(1)},
+			wantErr:     "ghost scan not found (status 404, code not_found)",
+		},
+		{
+			name: "an error status on a later page names that page",
+			respond: func(r recordedRequest) fakeReply {
+				if r.Query.Get("page") == "2" {
+					return listFailure(r)
+				}
+				return ghostCandidatePages(230)(r)
+			},
+			wantQueries: []url.Values{candidatePageQuery(1), candidatePageQuery(2)},
+			wantErr:     "reading page 2 of the ghost candidates list: failed to list ghost candidates (status 500, code internal_error)",
+		},
+		{
+			name: "an error status on the legacy read reaches the user unwrapped",
+			respond: func(r recordedRequest) fakeReply {
+				if r.Query.Has("limit") {
+					return listFailure(r)
+				}
+				return legacyGhostCandidates(legacyGhostCandidateLimit)(r)
+			},
+			wantQueries: []url.Values{candidatePageQuery(1), {"limit": {"200"}}},
+			wantErr:     "failed to list ghost candidates (status 500, code internal_error)",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var gotLimit string
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotLimit = r.URL.Query().Get("limit")
-				_ = json.NewEncoder(w).Encode(listFixture(tc.candidates))
-			}))
-			defer srv.Close()
-
+			srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+				"GET /api/products/p1/ghost/scans/s1/candidates": tc.respond,
+			})
 			f, out := testFactory(srv)
 			cmd := NewGhostCmd(f)
 			var stderr bytes.Buffer
 			cmd.SetErr(&stderr)
-			if err := runCmd(t, cmd, "candidates", "s1", "--product", "p1"); err != nil {
+			err := runCmd(t, cmd, "candidates", "s1", "--product", "p1")
+			var gotQueries []url.Values
+			for _, call := range api.calls() {
+				gotQueries = append(gotQueries, call.Query)
+			}
+			if !reflect.DeepEqual(gotQueries, tc.wantQueries) {
+				t.Errorf("the requests sent the queries %v, want %v", gotQueries, tc.wantQueries)
+			}
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("error: got %v, want %q", err, tc.wantErr)
+				}
+				if out.Len() != 0 {
+					t.Errorf("a failed listing must not print a partial list, got:\n%s", out.String())
+				}
+				return
+			}
+			if err != nil {
 				t.Fatalf("ghost candidates error: %v", err)
 			}
-			if gotLimit != "200" {
-				t.Errorf("limit: got %q, want 200, the most a scan can hold, instead of the server default of 50", gotLimit)
+			if stderr.Len() != 0 {
+				t.Errorf("a scan holds at most 200 candidates, so every listing is complete and needs no warning, got stderr %q", stderr.String())
 			}
 			var got []map[string]any
-			if err := json.Unmarshal(out.Bytes(), &got); err != nil || len(got) != tc.candidates {
-				t.Errorf("want all %d candidates as a JSON array on stdout, got %d (decode error %v)", tc.candidates, len(got), err)
+			if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+				t.Fatalf("stdout must be one JSON array of candidates: %v\n%s", err, out.String())
 			}
-			if stderr.Len() != 0 {
-				t.Errorf("a scan holds at most 200 candidates, so a full response is complete and needs no warning, got stderr %q", stderr.String())
+			ids := make([]string, 0, len(got))
+			for _, candidate := range got {
+				id, _ := candidate["id"].(string)
+				ids = append(ids, id)
+			}
+			if want := ghostCandidateIDs(tc.wantCandidates); !slices.Equal(ids, want) {
+				t.Errorf("stdout lists the ids %v, want each id once in server order: %v", ids, want)
+			}
+			var want []map[string]any
+			if err := json.Unmarshal([]byte(jsonOf(t, ghostCandidateFixture(tc.wantCandidates))), &want); err != nil {
+				t.Fatalf("decode the expected JSON: %v", err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("stdout must hold the server's candidates unchanged, got:\n%s", out.String())
 			}
 		})
 	}

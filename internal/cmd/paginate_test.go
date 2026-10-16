@@ -135,6 +135,7 @@ var paginatedListCommands = []struct {
 	{"tiers list", NewTiersCmd, []string{"list", "--product", "p1"}, "/api/products/p1/tiers", "slug-"},
 	{"roadmap list", NewRoadmapCmd, []string{"list", "--product", "p1"}, "/api/products/p1/roadmaps", "id-"},
 	{"mocks list", NewMocksCmd, []string{"list", "f1"}, "/api/features/f1/mocks", "id-"},
+	{"wiki list", NewWikiCmd, []string{"list", "--product", "p1"}, "/api/wiki/pages", "slug-"},
 }
 
 func TestListCommands_TableShowsEveryPage(t *testing.T) {
@@ -227,6 +228,7 @@ func TestListCommands_KeepFiltersOnEveryPage(t *testing.T) {
 	}{
 		{"features list", NewFeaturesCmd, []string{"list", "--product", "p1"}, "/api/features", url.Values{"productId": {"p1"}}},
 		{"subfeatures list --compact", NewSubfeaturesCmd, []string{"list", "f1", "--compact"}, "/api/features/f1/subfeatures", url.Values{"view": {"compact"}}},
+		{"wiki list --audience --parent", NewWikiCmd, []string{"list", "--product", "p1", "--audience", "developer", "--parent", "pp1"}, "/api/wiki/pages", url.Values{"productId": {"p1"}, "audience": {"developer"}, "parentPageId": {"pp1"}}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -289,7 +291,7 @@ func TestFeaturesList_PaginationEdgeCases(t *testing.T) {
 					return pages(page, perPage)
 				}
 			},
-			wantErr:   []string{"reading page 2 of the features list", "database unavailable (status 500)"},
+			wantErr:   []string{"reading page 2 of the features list", "database unavailable (status 500, code internal_error)"},
 			wantPages: []int{1, 2},
 		},
 		{
@@ -477,7 +479,7 @@ func TestListCommands_FirstPageErrorIsUnchanged(t *testing.T) {
 	})
 	f, _ := testFactory(srv.Server)
 	err := runCmd(t, NewFeaturesCmd(f), "list", "--product", "p1")
-	if err == nil || err.Error() != "token expired (status 401)" {
+	if err == nil || err.Error() != "token expired (status 401, code unauthorized)" {
 		t.Fatalf("a first-page error must reach the user unwrapped, got: %v", err)
 	}
 	assertPages(t, srv, []int{1})

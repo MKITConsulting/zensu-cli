@@ -182,7 +182,26 @@ agent key claims only in products whose automation policy allows it:
 the policy back with the version it read; when someone changed it in between, it reads the
 policy again and repeats the change. It makes at most three attempts and notes each repeat on
 stderr. A Zensu server from before this check refuses the version; the command then writes once
-without it and says on stderr that a simultaneous change is not detected.
+without it and says on stderr that a simultaneous change is not detected. Only an admin or owner
+may change the allowed keys: when a member's key flags change the list, the server answers
+`403 agent_keys_admin_only` and the error says that an admin or owner must change the keys.
+
+`zensu work list` takes `--status` more than once or as a comma-separated list
+(`--status blocked,queued`) and `--sort created|queue|blocked`; `queue` is the claim order and
+`blocked` orders by the time an order blocked. `zensu work events <order id>` lists the events
+oldest first, in the order the server stored them. With `--newest-first` it lists the newest
+events first, `--per-page` at a time, and its last line names the `--before <seq>` value that
+shows the next older slice. A server that does not support this order yet makes the command
+fail instead of showing the events oldest first.
+
+Both merge confirmations name the merged head. `zensu work confirm-merge <order id> --head-sha
+<sha>` must match the head the order recorded, or the server answers `409 head_mismatch`; the
+error points to `--acknowledge-head-mismatch`, which confirms the merge at the other head and
+records that decision on the order. `zensu plan confirm-merge <plan id> --head-sha <sha>` must
+match the final PR head the plan recorded. When the final PR moved on, record it again with
+`zensu plan finalize <plan id> --pr-url <url> --pr-number <n> --head-sha <sha>` and then
+confirm the merge. A Zensu server from before the plan head check refuses the head; the command
+then confirms once without it and says so on stderr.
 
 A typical `products` / `features` flow:
 
@@ -198,14 +217,17 @@ zensu features update <feature-id> --title "New title" [--description ... --prio
 zensu features status <feature-id> testing
 ```
 
-`--slug` is derived from `--title` when omitted. Add `--json` to typed commands
-for raw output.
+`--slug` is derived from `--title` when omitted. Every command that returns data
+accepts `--json` for raw JSON output; on commands that print JSON anyway, such as
+`zensu features get`, it only adds the JSON error line described under
+[Errors](#errors). The `auth`, `meta` and `completion` commands and the commands
+whose API call returns no data, such as `zensu roadmap delete`, have no `--json`.
 
 The paginated list commands (`products list`, `features list`,
 `subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
-`roadmap list`, `mocks list`) read every page, 100 items per request, so the
-table and the `--json` output are not cut off after the first page. With
-`--json` they print one envelope for the whole list,
+`roadmap list`, `mocks list`, `wiki list`) read every page, 100 items per
+request, so the table and the `--json` output are not cut off after the first
+page. With `--json` they print one envelope for the whole list,
 `{"data": [...], "total": N, "page": 1, "perPage": N}`, with all N items in
 `data`. `features list --status` filters on the status shown in the STATUS
 column. The CLI compares the number of items it received with the server's
@@ -214,10 +236,54 @@ were read, it reads the list once more; if the second read is still short, the
 command fails instead of printing a partial list. A change made while the list
 is read can still go unnoticed, for example when one item is deleted and
 another one is added at the same time. With `--json`, the other list commands
-print the server's plain JSON array. `ghost candidates` requests up to 200
-candidates, the most a scan can hold, instead of the server default of 50.
-`wiki list` currently returns at most 50 pages per query and warns on stderr
-when it reaches that limit.
+print the server's plain JSON array. `ghost candidates` reads every page as
+well, 100 candidates per request, and prints all candidates of the scan as one
+plain JSON array, ordered by confidence. An older server answers
+`ghost candidates` with a plain JSON array instead of the envelope. The command
+then asks it for up to 200 candidates, the most a scan can hold, and prints
+that array unchanged.
+An older server answers `wiki list` with a plain JSON array of at most 50
+pages instead of the envelope. The command then prints the table as before, or
+that array unchanged with `--json`, and warns on stderr when the array holds
+exactly 50 pages, because later pages may be missing.
+
+## Errors
+
+A failed command exits with status `1` and reports the failure on stderr. Scripts and agent
+harnesses can rely on the format below.
+
+The first line is `error: <message>`. When the Zensu API refuses a request, the message ends
+with the HTTP status and the API's error code:
+
+```text
+error: the order is held by another attempt or its lease expired; stop without further forge writes (status 409, code stale_attempt)
+```
+
+- Without a code the suffix is `(status 409)`. The CLI prints a code only when it matches
+  `^[a-z][a-z0-9_]{0,63}$` and treats any other value as absent.
+- A response without a JSON `message` prints `error: request failed (status 502): <body excerpt>`,
+  under the same suffix rule: `error: request failed (status 409, code stale_attempt): <body excerpt>`.
+- A command can add context around the API's message, for example
+  `error: item 3: create feature "Checkout": feature with this slug already exists (status 409, code conflict); created before the failure: …`.
+- The message can span several lines.
+
+With `--json`, stderr ends with exactly one more line, written after the `error:` line:
+
+```text
+{"error":{"status":409,"code":"stale_attempt","message":"the order is held by another attempt or its lease expired; stop without further forge writes"}}
+```
+
+`message` is the error text without the status suffix, including any context the command added.
+`status` and `code` are left out when they are absent, so a network, flag or validation error
+carries only `message`. The line follows the `--json` flag, not a command's default output:
+commands that print JSON by default, such as `zensu work get` and `zensu features get`, add the
+JSON error line only with `--json`. A flag
+error gets the line too when `--json` is on the command line, even after the flag that failed.
+Prefer this line for machine reading, because the message in the `error:` line comes from the
+server.
+
+The update notice (see [Updates](#updates)) never appears when stderr is not a terminal. In a
+terminal it is printed before the `error:` line, so the JSON line always stays last.
 
 ## Shell completion
 

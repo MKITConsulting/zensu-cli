@@ -335,8 +335,19 @@ func newWorkCreateCmd(f *Factory) *cobra.Command {
 	return cmd
 }
 
+func workStatusFilter(statuses []string) string {
+	kept := []string{}
+	for _, s := range statuses {
+		if s = strings.TrimSpace(s); s != "" {
+			kept = append(kept, s)
+		}
+	}
+	return strings.Join(kept, ",")
+}
+
 func newWorkListCmd(f *Factory) *cobra.Command {
-	var product, plan, feature, status string
+	var product, plan, feature, sortBy string
+	var statuses []string
 	var page, perPage int
 	var asJSON bool
 	cmd := &cobra.Command{
@@ -348,7 +359,7 @@ func newWorkListCmd(f *Factory) *cobra.Command {
 				return err
 			}
 			q := url.Values{}
-			for k, v := range map[string]string{"product": product, "plan": plan, "status": status} {
+			for k, v := range map[string]string{"product": product, "plan": plan, "status": workStatusFilter(statuses), "sort": sortBy} {
 				if v != "" {
 					q.Set(k, v)
 				}
@@ -400,7 +411,8 @@ func newWorkListCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&product, "product", "", "filter by product ID")
 	cmd.Flags().StringVar(&plan, "plan", "", "filter by work plan ID")
 	cmd.Flags().StringVar(&feature, "feature", "", "filter by feature ID or KEY-N reference")
-	cmd.Flags().StringVar(&status, "status", "", "filter by status (draft|queued|claimed|implementing|pr_open|ready_for_merge|blocked|merged|done|cancelled|...)")
+	cmd.Flags().StringSliceVar(&statuses, "status", nil, "filter by status; repeat it or separate statuses with commas (draft|queued|claimed|implementing|pr_open|ready_for_merge|blocked|merged|done|cancelled|...)")
+	cmd.Flags().StringVar(&sortBy, "sort", "", "order by created, queue (the claim order) or blocked (the time the order blocked)")
 	cmd.Flags().IntVar(&page, "page", 0, "page number")
 	cmd.Flags().IntVar(&perPage, "per-page", 0, "items per page")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
@@ -408,8 +420,7 @@ func newWorkListCmd(f *Factory) *cobra.Command {
 }
 
 func newWorkGetCmd(f *Factory) *cobra.Command {
-	var asJSON bool
-	cmd := &cobra.Command{
+	return jsonByDefault(&cobra.Command{
 		Use:          "get <work-order-id>",
 		Short:        "Show a work order with its spec, plan, policy, questions and lane",
 		Long:         "Show a work order. Inside a session (ZENSU_SESSION_TOKEN) only the session's own order is readable.",
@@ -422,21 +433,84 @@ func newWorkGetCmd(f *Factory) *cobra.Command {
 			}
 			return printJSON(f.Out, raw)
 		},
+	})
+}
+
+type workEventView struct {
+	EventType  string  `json:"event_type"`
+	FromStatus *string `json:"from_status"`
+	ToStatus   *string `json:"to_status"`
+	ActorKind  string  `json:"actor_kind"`
+	Attempt    *int    `json:"attempt"`
+	OccurredAt string  `json:"occurred_at"`
+}
+
+func writeWorkEvents(f *Factory, events []workEventView, footer string) error {
+	tw := tabwriter.NewWriter(f.Out, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(tw, "OCCURRED\tTYPE\tFROM\tTO\tACTOR\tATTEMPT")
+	for _, e := range events {
+		attempt := ""
+		if e.Attempt != nil {
+			attempt = strconv.Itoa(*e.Attempt)
+		}
+		fmt.Fprintln(tw, tableRow(e.OccurredAt, e.EventType, strValue(e.FromStatus), strValue(e.ToStatus), e.ActorKind, attempt))
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON (the default for this command)")
-	return cmd
+	fmt.Fprintln(tw, footer)
+	return tw.Flush()
+}
+
+func printNewestWorkEvents(f *Factory, raw []byte, asJSON bool) error {
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return fmt.Errorf("invalid event list: %w", err)
+	}
+	if _, ok := env["next_before"]; !ok {
+		return fmt.Errorf("this server does not list events newest first yet; run the command without --newest-first")
+	}
+	if asJSON {
+		return printJSON(f.Out, raw)
+	}
+	var page struct {
+		Data       []workEventView `json:"data"`
+		NextBefore *int64          `json:"next_before"`
+	}
+	if err := json.Unmarshal(raw, &page); err != nil {
+		return fmt.Errorf("invalid event list: %w", err)
+	}
+	footer := fmt.Sprintf("%d shown, newest first; no older events", len(page.Data))
+	if page.NextBefore != nil {
+		footer = fmt.Sprintf("%d shown, newest first; older events: --before %d", len(page.Data), *page.NextBefore)
+	}
+	return writeWorkEvents(f, page.Data, footer)
 }
 
 func newWorkEventsCmd(f *Factory) *cobra.Command {
 	var page, perPage int
-	var asJSON bool
+	var before int64
+	var newestFirst, asJSON bool
 	cmd := &cobra.Command{
-		Use:          "events <work-order-id>",
-		Short:        "Show the event timeline of a work order",
+		Use:   "events <work-order-id>",
+		Short: "Show the event timeline of a work order",
+		Long: "Show the event timeline of a work order, oldest first in the order the server stored the events. " +
+			"--newest-first lists the newest events first, --per-page at a time; the last line names the --before value of the next older slice.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("before") {
+				if !newestFirst {
+					return fmt.Errorf("--before pages the newest-first order; add --newest-first")
+				}
+				if before <= 0 {
+					return fmt.Errorf("--before must be the positive seq of an event, got %d", before)
+				}
+			}
 			q := url.Values{}
+			if newestFirst {
+				q.Set("order", "desc")
+			}
+			if before > 0 {
+				q.Set("before", strconv.FormatInt(before, 10))
+			}
 			if page > 0 {
 				q.Set("page", strconv.Itoa(page))
 			}
@@ -451,39 +525,28 @@ func newWorkEventsCmd(f *Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if newestFirst {
+				return printNewestWorkEvents(f, raw, asJSON)
+			}
 			if asJSON {
 				return printJSON(f.Out, raw)
 			}
 			var env struct {
-				Data []struct {
-					EventType  string  `json:"event_type"`
-					FromStatus *string `json:"from_status"`
-					ToStatus   *string `json:"to_status"`
-					ActorKind  string  `json:"actor_kind"`
-					Attempt    *int    `json:"attempt"`
-					OccurredAt string  `json:"occurred_at"`
-				} `json:"data"`
-				Total int `json:"total"`
+				Data  []workEventView `json:"data"`
+				Total int             `json:"total"`
 			}
 			if err := json.Unmarshal(raw, &env); err != nil {
 				return fmt.Errorf("invalid event list: %w", err)
 			}
-			tw := tabwriter.NewWriter(f.Out, 0, 2, 2, ' ', 0)
-			fmt.Fprintln(tw, "OCCURRED\tTYPE\tFROM\tTO\tACTOR\tATTEMPT")
-			for _, e := range env.Data {
-				attempt := ""
-				if e.Attempt != nil {
-					attempt = strconv.Itoa(*e.Attempt)
-				}
-				fmt.Fprintln(tw, tableRow(e.OccurredAt, e.EventType, strValue(e.FromStatus), strValue(e.ToStatus), e.ActorKind, attempt))
-			}
-			fmt.Fprintf(tw, "%d of %d\n", len(env.Data), env.Total)
-			return tw.Flush()
+			return writeWorkEvents(f, env.Data, fmt.Sprintf("%d of %d", len(env.Data), env.Total))
 		},
 	}
 	cmd.Flags().IntVar(&page, "page", 0, "page number")
 	cmd.Flags().IntVar(&perPage, "per-page", 0, "items per page")
+	cmd.Flags().BoolVar(&newestFirst, "newest-first", false, "list the newest events first")
+	cmd.Flags().Int64Var(&before, "before", 0, "with --newest-first, list the events older than this seq")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	cmd.MarkFlagsMutuallyExclusive("newest-first", "page")
 	return cmd
 }
 
@@ -536,11 +599,13 @@ func newWorkCancelCmd(f *Factory) *cobra.Command {
 
 func newWorkConfirmMergeCmd(f *Factory) *cobra.Command {
 	var mergeSHA, headSHA string
-	var asJSON bool
+	var acknowledgeHeadMismatch, asJSON bool
 	cmd := &cobra.Command{
-		Use:          "confirm-merge <work-order-id>",
-		Short:        "Confirm that the order's PR was merged (manual merge mode)",
-		Long:         "Confirm that the order's PR was merged (manual merge mode). --head-sha names the merged PR head and must match the head the order recorded; --merge-sha records the merge commit when you know it. Needs the browser login of `zensu auth login`.",
+		Use:   "confirm-merge <work-order-id>",
+		Short: "Confirm that the order's PR was merged (manual merge mode)",
+		Long: "Confirm that the order's PR was merged (manual merge mode). --head-sha names the merged PR head and must match the head the order recorded; " +
+			"--acknowledge-head-mismatch accepts a different merged head and records that decision on the order. " +
+			"--merge-sha records the merge commit when you know it. Needs the browser login of `zensu auth login`.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -551,7 +616,13 @@ func newWorkConfirmMergeCmd(f *Factory) *cobra.Command {
 			if mergeSHA != "" {
 				payload["mergeSha"] = mergeSHA
 			}
+			if acknowledgeHeadMismatch {
+				payload["acknowledgeHeadMismatch"] = true
+			}
 			raw, err := f.postJSON(cmd.Context(), workPath(args[0], "confirm-merge"), payload)
+			if e, ok := apiErrorOf(err); ok && e.code == "head_mismatch" && !acknowledgeHeadMismatch {
+				return fmt.Errorf("%w; when the PR was merged at this head on purpose, run the command again with --acknowledge-head-mismatch to record that decision", err)
+			}
 			if err != nil {
 				return err
 			}
@@ -563,6 +634,7 @@ func newWorkConfirmMergeCmd(f *Factory) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&mergeSHA, "merge-sha", "", "merge commit SHA (optional)")
 	cmd.Flags().StringVar(&headSHA, "head-sha", "", "full SHA of the merged PR head (required)")
+	cmd.Flags().BoolVar(&acknowledgeHeadMismatch, "acknowledge-head-mismatch", false, "accept a merged head that differs from the head the order recorded, as a recorded decision")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
 }
@@ -1331,7 +1403,7 @@ func newWorkPolicyGetCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	return cmd
+	return jsonByDefault(cmd)
 }
 
 type automationPolicy struct {
@@ -1393,13 +1465,19 @@ func requireAllowedKeyFlags(allowed, add, remove []string) error {
 	return nil
 }
 
-func allowedKeySourceError(err error, changed func(string) bool) error {
-	if e, ok := apiErrorOf(err); !ok || e.code != "invalid_agent_keys" {
+func allowedKeyError(err error, changed func(string) bool) error {
+	e, ok := apiErrorOf(err)
+	if !ok {
 		return err
 	}
-	for _, flag := range []string{"allowed-key", "add-allowed-key"} {
-		if changed(flag) {
-			return fmt.Errorf("%w; the refused keys came from --%s", err, flag)
+	switch e.code {
+	case "agent_keys_admin_only":
+		return fmt.Errorf("%w; an admin or owner must change the allowed agent keys", err)
+	case "invalid_agent_keys":
+		for _, flag := range []string{"allowed-key", "add-allowed-key"} {
+			if changed(flag) {
+				return fmt.Errorf("%w; the refused keys came from --%s", err, flag)
+			}
 		}
 	}
 	return err
@@ -1418,6 +1496,7 @@ func newWorkPolicySetCmd(f *Factory) *cobra.Command {
 			"When someone changed the policy in between, the server refuses the write and the command reads the policy again and repeats the change; it makes at most three attempts and notes each repeat on stderr. " +
 			"A server from before this check refuses the version field; the command then writes once without it and says so on stderr. " +
 			"--allowed-key replaces the list of agent keys whose workers may claim; --add-allowed-key and --remove-allowed-key change the list the command just read and cannot be combined with --allowed-key. " +
+			"Only an admin or owner may change the allowed agent keys; for a member the server refuses the change. " +
 			"The server drops stored keys that are no longer active and refuses newly named keys that are not active agent keys. " +
 			"--clear-max-order-cost removes the cost cap of one order. Needs the browser login of `zensu auth login`.",
 		SilenceUsage: true,
@@ -1510,7 +1589,7 @@ func newWorkPolicySetCmd(f *Factory) *cobra.Command {
 					return fmt.Errorf("%w; the policy changed %d times while this command wrote it, run it again", err, policyWriteAttempts)
 				}
 				if err != nil {
-					return allowedKeySourceError(err, changed)
+					return allowedKeyError(err, changed)
 				}
 				break
 			}

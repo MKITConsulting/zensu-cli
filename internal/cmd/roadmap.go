@@ -82,7 +82,7 @@ func newRoadmapListCmd(f *Factory) *cobra.Command {
 }
 
 func newRoadmapGetCmd(f *Factory) *cobra.Command {
-	return &cobra.Command{
+	return jsonByDefault(&cobra.Command{
 		Use:          "get <roadmap-id>",
 		Short:        "Get a roadmap with its embedded features and milestones",
 		Args:         cobra.ExactArgs(1),
@@ -94,7 +94,7 @@ func newRoadmapGetCmd(f *Factory) *cobra.Command {
 			}
 			return printJSON(f.Out, raw)
 		},
-	}
+	})
 }
 
 func newRoadmapCreateCmd(f *Factory) *cobra.Command {
@@ -313,7 +313,7 @@ func newRoadmapMilestoneCreateCmd(f *Factory) *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&title, "title", "", "milestone title (required), e.g. 'GA Release'")
+	cmd.Flags().StringVar(&title, "title", "", "milestone title, e.g. 'GA Release' (required)")
 	cmd.Flags().StringVar(&period, "period", "", "period the milestone sits in — quarter (2026-Q3), month (2026-06), week (2026-W23), or day (2026-06-15)")
 	cmd.Flags().StringVar(&status, "status", "", "milestone status, e.g. planned|done")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")

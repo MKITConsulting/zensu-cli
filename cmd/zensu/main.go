@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/MKITConsulting/zensu-cli/internal/cmd"
@@ -12,11 +11,11 @@ import (
 func main() {
 	root := cmd.NewRootCmd()
 	notice, cancel := update.Start(version.Version)
-	err := root.Execute()
+	ran, err := root.ExecuteC()
 	update.Finish(notice, os.Stderr)
 	cancel()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", cmd.ErrorText(err))
+		cmd.WriteError(os.Stderr, ran, os.Args[1:], err)
 		os.Exit(1)
 	}
 }

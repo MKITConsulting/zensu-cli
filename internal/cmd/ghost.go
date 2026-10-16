@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const ghostCandidateLimit = 200
+const legacyGhostCandidateLimit = 200
 
 func NewGhostCmd(f *Factory) *cobra.Command {
 	cmd := &cobra.Command{
@@ -111,7 +112,22 @@ func newGhostCandidatesCmd(f *Factory) *cobra.Command {
 			if product == "" {
 				return fmt.Errorf("--product is required")
 			}
-			raw, err := f.request(cmd.Context(), http.MethodGet, "/api/products/"+product+"/ghost/scans/"+args[0]+"/candidates?limit="+strconv.Itoa(ghostCandidateLimit), nil)
+			path := "/api/products/" + product + "/ghost/scans/" + args[0] + "/candidates"
+			raw, err := f.listAll(cmd.Context(), path, nil, "ghost candidates")
+			if err != nil {
+				return err
+			}
+			var env struct {
+				Data json.RawMessage `json:"data"`
+			}
+			if json.Unmarshal(raw, &env) == nil && bytes.HasPrefix(env.Data, []byte("[")) {
+				return printJSON(f.Out, env.Data)
+			}
+			var firstPage []json.RawMessage
+			if json.Unmarshal(raw, &firstPage) != nil {
+				return printJSON(f.Out, raw)
+			}
+			raw, err = f.request(cmd.Context(), http.MethodGet, path+"?limit="+strconv.Itoa(legacyGhostCandidateLimit), nil)
 			if err != nil {
 				return err
 			}
@@ -119,7 +135,7 @@ func newGhostCandidatesCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	return cmd
+	return jsonByDefault(cmd)
 }
 
 func newGhostApproveCmd(f *Factory) *cobra.Command {

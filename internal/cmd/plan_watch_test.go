@@ -110,7 +110,7 @@ func TestPlanStatus_WatchRetriesTransientFailures(t *testing.T) {
 	if strings.Count(out.String(), "Plan "+plPlan) != 2 || !strings.Contains(out.String(), `"Checkout": open`) || !strings.Contains(out.String(), `"Checkout": merged`) {
 		t.Fatalf("output:\n%s", out.String())
 	}
-	want := "poll 1 of 5 failed: backend down (status 503); retrying in 1s\npoll 2 of 5 failed: slow down (status 429); retrying in 2s\n"
+	want := "poll 1 of 5 failed: backend down (status 503, code unavailable); retrying in 1s\npoll 2 of 5 failed: slow down (status 429, code rate_limited); retrying in 2s\n"
 	if stderr.String() != want {
 		t.Fatalf("stderr = %q, want %q", stderr.String(), want)
 	}
@@ -128,7 +128,7 @@ func TestPlanStatus_WatchGivesUpAfterFiveFailedPollsInARow(t *testing.T) {
 	f, out := testFactory(srv)
 	c, stderr := watchCmd(f)
 	err := runCmd(t, c, "status", plPlan, "--watch", "--interval", "1s")
-	if err == nil || err.Error() != "stopped watching after 5 failed polls in a row: backend down (status 503)" {
+	if err == nil || err.Error() != "stopped watching after 5 failed polls in a row: backend down (status 503, code unavailable)" {
 		t.Fatalf("error = %v", err)
 	}
 	if polls != 6 || durations(*sleeps) != "1s 1s 2s 4s 8s" {
@@ -137,10 +137,10 @@ func TestPlanStatus_WatchGivesUpAfterFiveFailedPollsInARow(t *testing.T) {
 	if strings.Count(out.String(), "Plan "+plPlan) != 1 {
 		t.Fatalf("output:\n%s", out.String())
 	}
-	want := "poll 1 of 5 failed: backend down (status 503); retrying in 1s\n" +
-		"poll 2 of 5 failed: backend down (status 503); retrying in 2s\n" +
-		"poll 3 of 5 failed: backend down (status 503); retrying in 4s\n" +
-		"poll 4 of 5 failed: backend down (status 503); retrying in 8s\n"
+	want := "poll 1 of 5 failed: backend down (status 503, code unavailable); retrying in 1s\n" +
+		"poll 2 of 5 failed: backend down (status 503, code unavailable); retrying in 2s\n" +
+		"poll 3 of 5 failed: backend down (status 503, code unavailable); retrying in 4s\n" +
+		"poll 4 of 5 failed: backend down (status 503, code unavailable); retrying in 8s\n"
 	if stderr.String() != want {
 		t.Fatalf("stderr = %q, want %q", stderr.String(), want)
 	}
@@ -283,7 +283,7 @@ func TestPlanStatus_WatchStopsAtOnceOnClientErrors(t *testing.T) {
 	f, _ := testFactory(srv)
 	c, stderr := watchCmd(f)
 	err := runCmd(t, c, "status", plPlan, "--watch", "--interval", "1s")
-	if err == nil || err.Error() != "no plan (status 404)" {
+	if err == nil || err.Error() != "no plan (status 404, code not_found)" {
 		t.Fatalf("error = %v", err)
 	}
 	if polls != 1 || len(*sleeps) != 0 || stderr.Len() != 0 {
@@ -299,7 +299,7 @@ func TestPlanStatus_WithoutWatchFailsOnTheFirstError(t *testing.T) {
 	})
 	f, _ := testFactory(srv)
 	c, stderr := watchCmd(f)
-	if err := runCmd(t, c, "status", plPlan); err == nil || err.Error() != "backend down (status 503)" {
+	if err := runCmd(t, c, "status", plPlan); err == nil || err.Error() != "backend down (status 503, code unavailable)" {
 		t.Fatalf("error = %v", err)
 	}
 	if polls != 1 || len(*sleeps) != 0 || stderr.Len() != 0 {

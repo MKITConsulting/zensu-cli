@@ -41,17 +41,49 @@ zensu auth logout
   session instead of a login. A `401 invalid_session_token` or `409
   stale_attempt` means stop, not log in.
 
-Global flags on every command: `--api-url <url>`. Typed commands accept
-`--json` for raw JSON output.
+Global flags on every command: `--api-url <url>`.
+
+Every command that returns data accepts `--json` for raw JSON output. Commands
+that print JSON anyway, such as `features get`, `products get`, `security score`
+or `work get`, accept it too: their output stays the same, and a failure adds
+the JSON error line (see [Errors](#errors)). Only the `auth`, `meta` and
+`completion` commands and the commands whose API call returns no data have no
+`--json`: `roadmap add-feature`, `roadmap remove-feature`, `roadmap delete`,
+`roadmap milestone-delete`, `journeys step-delete` and
+`work repositories remove` print one confirmation line.
 
 The paginated list commands (`products list`, `features list`,
 `subfeatures list`, `journeys list`, `journeys steps`, `tiers list`,
-`roadmap list`, `mocks list`) read every page. With `--json` they print one
-envelope for the whole list, `{"data": [...], "total": N, "page": 1, "perPage": N}`.
+`roadmap list`, `mocks list`, `wiki list`) read every page. With `--json` they
+print one envelope for the whole list, `{"data": [...], "total": N, "page": 1, "perPage": N}`.
 If fewer items arrive than the server's total, because pages overlapped or
 shifted while they were read, the list is read once more; if the second read is
 still short, the command fails instead of printing a partial result. With
 `--json`, the other list commands print the server's plain JSON array.
+
+## Errors
+
+A failed command exits `1` and writes `error: <message>` to stderr. An API
+refusal ends the message with its status and error code,
+`error: <message> (status 409, code stale_attempt)`, or with `(status 409)` when
+the API sent no code. A response without a JSON message prints
+`error: request failed (status 502): <body excerpt>` under the same suffix rule.
+A code is printed only when it matches `^[a-z][a-z0-9_]{0,63}$`; any other value
+counts as absent. With `--json`, stderr ends with exactly one more line after the
+`error:` line:
+
+```
+error: the order is held by another attempt or its lease expired; stop without further forge writes (status 409, code stale_attempt)
+{"error":{"status":409,"code":"stale_attempt","message":"the order is held by another attempt or its lease expired; stop without further forge writes"}}
+```
+
+`message` is the error text without the status suffix. `status` and `code` are
+left out when absent, so a network, flag or validation error carries only
+`message`. The line follows the `--json` flag, not a command's default output:
+commands that print JSON by default, such as `work get` or `features get`, add
+the line only with `--json`. Branch on
+`code` from this last line. The update notice never appears when stderr is not a
+terminal.
 
 ## Command groups
 
@@ -91,7 +123,7 @@ zensu products import <product-id> --repo-url <url> [--repo-type github|gitlab|b
 zensu products vision-create --title <t> --content <markdown>
     [--product <uuid>] [--source studio|import|claude-code]   # omit --product for greenfield visions
 zensu products vision-get <vision-id>
-zensu products bootstrap-apply <vision-id>          # payload: {"components":[{name,slug,description}],
+zensu products bootstrap-apply <vision-id> --result '<json>'   # payload: {"components":[{name,slug,description}],
                                                     #   "features":[{title,slug,description,component,
                                                     #   priority,estimatedEffort,securityClassification,
                                                     #   securityReasoning,featureScope,subfeatures}]}
@@ -105,7 +137,7 @@ zensu features list --product <id> [--status planned|in-progress|testing|release
 zensu features get <feature-id> [--json]
 zensu features create --product <id> --component <id> --title <t> [--slug s] [--status s] [--json]
 zensu features update <feature-id> [--title t] [--description d] [--priority low|medium|high|critical]
-zensu features status <feature-id> <new-status>     # dedicated transition command
+zensu features status <feature-id> <new-status> [--json]   # dedicated transition command; --json prints the updated feature
 zensu features history <feature-id> [--json]
 zensu features revision <feature-id> --scope-summary <s> [--scope-details d]
     [--estimated-effort S|M|L|XL] [--coverage-target 0-100] [--docs-required]
@@ -120,15 +152,21 @@ zensu features deprecate <feature-id> [--reason r] [--replacement <uuid>] [--rem
 ```
 zensu subfeatures add <feature-id> --title <t> [--slug s] [--description d]
     [--priority critical|high|medium|low] [--status s] [--assignee a]   # status defaults to planned
-zensu subfeatures list <feature-id> [--compact]     # compact: id, slug, title, status, priority only
+zensu subfeatures list <feature-id> [--compact]     # compact: fewer fields per row, listed below
 zensu subfeatures promote [feature-id] <subfeature-id>   # promote to top-level feature
 ```
+
+`--compact` rows carry only `id`, `slug`, `number`, `title`, `priority`,
+`component_id`, `added_in_revision`, `removed_in_revision`, `stage`,
+`parent_gate`, `parent_security_score`, `parent_coverage_actual_percent`,
+`parent_security_classification`, `added_in_version`, `removed_in_version` and
+`total_count`. They carry no `status`, and `stage` is the parent feature's stage.
 
 ### link
 
 ```
 zensu link test <feature-id> --file <path> --test-type unit|integration|e2e|security|performance|accessibility
-    [--function name] [--last-run-status passed|failed|skipped]
+    [--function name] [--last-run-status passed|failed|skipped|error]
 zensu link docs <feature-id> --doc-type <type> [--audience <a>] [--file path]
     [--external-url url] [--content markdown]       # --content creates/updates the linked wiki page
 zensu link source <feature-id> --file path[:type[:language]]   # repeatable
@@ -146,7 +184,7 @@ zensu security classify <feature-id> [--classification public|internal|confident
     [--threat-model-status not-required|pending|completed]
 zensu security add-test <feature-id> --file <path>
     --type auth-bypass|injection|access-control|rate-limit|input-validation|data-exposure|header-security|dependency-scan|csrf|xss|ssrf
-    [--owasp-id A01:2021] [--last-run-status passed|failed|skipped]
+    [--owasp-id A01:2021] [--last-run-status passed|failed|skipped|error]
 zensu security review <feature-id> --reviewer <who> --status approved|rejected|conditional
     [--type manual|automated|external] [--findings f] [--conditions c]
 zensu security score <feature-id>                   # score + release-gate state
@@ -209,7 +247,10 @@ just read and may be combined; `--allowed-key` replaces the whole list and
 combines with neither. In text mode `policy set` prints the resulting
 `Allowed agent keys:` (or `none`). The server drops stored keys that are no
 longer active and refuses newly named keys that are not active agent keys
-(`422 invalid_agent_keys`); the error names the flag that supplied them.
+(`422 invalid_agent_keys`); the error names the flag that supplied them. Only
+an admin or owner may change the allowed keys: when a member's key flags change
+the list, the server answers `403 agent_keys_admin_only` and the error says that
+an admin or owner must change the keys.
 `policy set` writes the policy back with the version it read; when someone
 changed the policy in between (`409 policy_changed`), it reads the policy again
 and repeats the change. It makes at most three attempts and notes each repeat on
@@ -220,13 +261,14 @@ that a simultaneous change is not detected.
 ```
 # humans (browser login; read commands also work with an API key)
 zensu work create --product <id> --feature <KEY-N|uuid> --repository <url> [--base-branch main] [--harness claude]
-zensu work list [--product id] [--plan id] [--feature KEY-N|uuid] [--status s] [--page n] [--per-page n]
+zensu work list [--product id] [--plan id] [--feature KEY-N|uuid] [--status s[,s]...]... [--sort created|queue|blocked] [--page n] [--per-page n]
 zensu work get <work-order-id> --json
-zensu work events <work-order-id>
+zensu work events <work-order-id> [--page n] [--per-page n]                         # oldest first
+zensu work events <work-order-id> --newest-first [--before <seq>] [--per-page n]    # the last line names the next --before
 zensu work approve <work-order-id>
 zensu work requeue <work-order-id>
 zensu work cancel <work-order-id> [--confirm-pr-closed]
-zensu work confirm-merge <work-order-id> --head-sha <full-sha> [--merge-sha <sha>]
+zensu work confirm-merge <work-order-id> --head-sha <full-sha> [--merge-sha <sha>] [--acknowledge-head-mismatch]
 zensu work answer <question-id> --answer "..." [--rationale "..."] [--plan-wide]
 zensu work overturn <question-id> --answer "..." [--rationale "..."]
 zensu work questions --plan <plan-id> [--order id] [--status open|awaiting_human|answered] [--scope package|plan]
@@ -259,6 +301,17 @@ and stops. A person runs `zensu work approve <work-order-id>`; the order is
 queued again and the next claim implements. `--stage implementing` before that
 answers `409 plan_approval_required`. A stage event carries no `--detail`.
 
+`work list --status` takes several statuses, repeated or comma-separated;
+`--sort queue` lists in claim order and `--sort blocked` by the time the orders
+blocked (`400 invalid_status`, `400 invalid_sort` for unknown values).
+`work events` lists oldest first, in the order the server stored the events;
+`--newest-first` pages backwards with `--before <seq>` and fails on a server
+that does not support that order yet. `work confirm-merge` refuses a head other
+than the one the order recorded (`409 head_mismatch`).
+`--acknowledge-head-mismatch` confirms the merge at that head anyway and records
+the decision on the order; pass it only when the user decides so, never as a
+retry.
+
 Events and questions carry a client event id; pass `--client-event-id` to make
 retries idempotent. A `409 stale_attempt` means the lease belongs to another
 attempt, and a `401 invalid_session_token` means the session has ended — stop
@@ -276,11 +329,18 @@ zensu plan list --product <id> [--status draft|decomposing|graph_proposed|open|i
 zensu plan approve <plan-id>
 zensu plan finalize <plan-id> [--pr-url u --pr-number n --head-sha <full-sha>]
 zensu plan abandon <plan-id> [--confirm-pr-closed]
-zensu plan confirm-merge <plan-id>
+zensu plan confirm-merge <plan-id> --head-sha <full-sha>
 zensu plan followups <plan-id>
 zensu plan followup accept <plan-id> <followup-id>
 zensu plan followup dismiss <plan-id> <followup-id>
 ```
+
+`plan confirm-merge` needs `--head-sha`, the merged head of the final PR. It
+must match the head `plan finalize` recorded (`409 head_mismatch`); when the
+final PR moved on, record it again with `plan finalize <plan-id> --pr-url u
+--pr-number n --head-sha <full-sha>` and then confirm the merge. A server from
+before this check refuses the head (`400 invalid_body`); the command then
+confirms once without it and says so on stderr.
 
 A plan file is Markdown with a YAML front matter (`product`, `repository`,
 `base_branch`, `name`, `items`); each item names `feature` (KEY-N or UUID),
@@ -386,12 +446,12 @@ zensu mocks create <feature-id> <file> [--title t] [--alt-text a]
     # body is assembled in memory. Responses have their own bound, ZENSU_MAX_RESPONSE_BYTES
     # (64 MiB default), applied to every response a subcommand reads.
 zensu mocks list <feature-id>
-zensu mocks get <feature-id> <mock-id>              # metadata or raw content
+zensu mocks get <feature-id> <mock-id> [--json | --raw]   # metadata (a JSON record with --json) or raw content
 
 zensu wiki create --product <uuid> --title <t> --content <markdown>
     [--doc-type <type>] [--audience <a>] [--visibility public|private]
     [--entity-type feature|component|product --entity-id <uuid>]   # visibility defaults to private
-zensu wiki list --product <uuid> [--audience <a>] [--parent <uuid>]   # at most 50 pages; warns at the limit
+zensu wiki list --product <uuid> [--audience <a>] [--parent <uuid>]   # every page; an older server caps at 50 and the CLI warns
 zensu wiki update <page-id> [--title t] [--content markdown] [--change-summary s]
     [--visibility public|private]
 
@@ -413,8 +473,8 @@ zensu meta scaffold-agent [--cli claude-code|kiro|cursor|copilot|all]
 
 ```
 zensu doc claude-md --product <id> --variant full|minimal|ci-only
-zensu doc claude-md-context <product-id>            # aggregate behind the template
-zensu doc gen-context <feature-id>                  # rich context for doc authoring
+zensu doc claude-md-context --product <id>          # aggregate behind the template
+zensu doc gen-context <feature-id> --doc-type <type>   # rich context for doc authoring
 ```
 
 `claude-md` variants: `full` (active feature development), `minimal`
@@ -431,7 +491,7 @@ zensu doc gen-context <feature-id>                  # rich context for doc autho
 | Feature scope (bootstrap) | `public_facing` `internal_only` |
 | Test type (`link test`) | `unit` `integration` `e2e` `security` `performance` `accessibility` |
 | Security test type (`security add-test`) | `auth-bypass` `injection` `access-control` `rate-limit` `input-validation` `data-exposure` `header-security` `dependency-scan` `csrf` `xss` `ssrf` |
-| Last run status | `passed` `failed` `skipped` |
+| Last run status | `passed` `failed` `skipped` `error` |
 | Doc type | `user_facing` `api_reference` `tutorial` `adr` `release_notes` `internal` `migration_guide` `overview` |
 | Audience | `end_user` `developer` `admin` `internal` |
 | Security classification | `public` `internal` `confidential` `restricted` |

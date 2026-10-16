@@ -145,7 +145,7 @@ func filterFeaturesByStatus(raw []byte, status string) ([]byte, error) {
 }
 
 func newFeaturesGetCmd(f *Factory) *cobra.Command {
-	return &cobra.Command{
+	return jsonByDefault(&cobra.Command{
 		Use:          "get <feature-id>",
 		Short:        "Get a feature by ID",
 		Args:         cobra.ExactArgs(1),
@@ -157,7 +157,7 @@ func newFeaturesGetCmd(f *Factory) *cobra.Command {
 			}
 			return printJSON(f.Out, raw)
 		},
-	}
+	})
 }
 
 func newFeaturesCreateCmd(f *Factory) *cobra.Command {
@@ -272,7 +272,8 @@ func newFeaturesUpdateCmd(f *Factory) *cobra.Command {
 }
 
 func newFeaturesStatusCmd(f *Factory) *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:          "status <feature-id> <new-status>",
 		Short:        "Transition a feature's status",
 		Args:         cobra.ExactArgs(2),
@@ -282,18 +283,23 @@ func newFeaturesStatusCmd(f *Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, err = f.request(cmd.Context(), http.MethodPatch, "/api/features/"+args[0]+"/status", body)
+			raw, err := f.request(cmd.Context(), http.MethodPatch, "/api/features/"+args[0]+"/status", body)
 			if err != nil {
 				return err
+			}
+			if asJSON {
+				return printJSON(f.Out, raw)
 			}
 			_, err = fmt.Fprintf(f.Out, "Feature %s status → %s\n", args[0], args[1])
 			return err
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
+	return cmd
 }
 
 func newFeaturesHistoryCmd(f *Factory) *cobra.Command {
-	return &cobra.Command{
+	return jsonByDefault(&cobra.Command{
 		Use:          "history <feature-id>",
 		Short:        "Show a feature's full history timeline",
 		Long:         "Get the complete history of a feature including status changes, revisions, lifecycle events and security changes. Returns a chronological timeline.",
@@ -306,7 +312,7 @@ func newFeaturesHistoryCmd(f *Factory) *cobra.Command {
 			}
 			return printJSON(f.Out, raw)
 		},
-	}
+	})
 }
 
 func newFeaturesDeprecateCmd(f *Factory) *cobra.Command {

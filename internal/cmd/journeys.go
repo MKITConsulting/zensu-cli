@@ -245,7 +245,7 @@ func newJourneysGetCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	return cmd
+	return jsonByDefault(cmd)
 }
 
 func newJourneysCreateCmd(f *Factory) *cobra.Command {
@@ -593,7 +593,7 @@ func newJourneysHealthCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	return cmd
+	return jsonByDefault(cmd)
 }
 
 func newJourneysSuggestCmd(f *Factory) *cobra.Command {
@@ -615,7 +615,7 @@ func newJourneysSuggestCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	return cmd
+	return jsonByDefault(cmd)
 }
 
 func journeyStr(s *string) string {

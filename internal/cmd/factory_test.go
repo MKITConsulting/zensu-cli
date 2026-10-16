@@ -194,7 +194,10 @@ func TestErrorText_PrintsARefusedRefreshWithoutEscapeBytes(t *testing.T) {
 	defer srv.Close()
 	f := &Factory{Out: &bytes.Buffer{}, NewClient: func(context.Context) (*client.Client, error) {
 		cfg := &config.Config{AccessToken: "expired", RefreshToken: "r1", ExpiresAt: time.Now().Add(-time.Hour)}
-		return client.New(cfg, srv.URL, srv.URL+"/oauth/token", client.WithHTTPClient(srv.Client())), nil
+		return client.New(cfg, srv.URL, srv.URL+"/oauth/token",
+			client.WithHTTPClient(srv.Client()),
+			client.WithSaver(func(*config.Config) error { return nil }),
+		), nil
 	}}
 	_, err := f.request(context.Background(), http.MethodGet, "/api/products", nil)
 	if got := ErrorText(err); got != "refreshing session: token endpoint: invalid_grant: ]0;pwnedx" {

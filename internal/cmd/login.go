@@ -62,7 +62,7 @@ func (f *Factory) loginWithToken(ctx context.Context, httpClient *http.Client, c
 	cfg.APIURL = apiURL
 	cfg.APIKey = token
 	cfg.AccessToken, cfg.RefreshToken, cfg.ExpiresAt = "", "", time.Time{}
-	if err := cfg.Save(); err != nil {
+	if err := persistLogin(ctx, cfg); err != nil {
 		return err
 	}
 	if kind == auth.APIKeyKindAgent {
@@ -113,7 +113,7 @@ func (f *Factory) loginWithBrowser(ctx context.Context, httpClient *http.Client,
 	}
 	email, org := auth.IdentityFromToken(tok.AccessToken)
 	cfg.User, cfg.Org = email, org
-	if err := cfg.Save(); err != nil {
+	if err := persistLogin(ctx, cfg); err != nil {
 		return err
 	}
 
@@ -123,4 +123,11 @@ func (f *Factory) loginWithBrowser(ctx context.Context, httpClient *http.Client,
 	}
 	fmt.Fprintf(f.Out, "Logged in to %s as %s\n", apiURL, who)
 	return nil
+}
+
+func persistLogin(ctx context.Context, cfg *config.Config) error {
+	return config.UpdateStored(ctx, func(stored *config.Config) bool {
+		*stored = *cfg
+		return true
+	})
 }

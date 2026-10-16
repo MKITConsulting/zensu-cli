@@ -139,3 +139,21 @@ func SoleEntry(t TB, dir string) string {
 	}
 	return filepath.Join(dir, entries[0].Name())
 }
+
+func CredentialStoreEntry(t TB, dir string) string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading isolated config dir: %v", err)
+		return ""
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	if len(names) != 2 || names[0] != "hosts.json" || names[1] != "hosts.json.lock" {
+		t.Fatalf("isolated config dir holds %v, want exactly the credential store hosts.json and its lock file hosts.json.lock", names)
+		return ""
+	}
+	return filepath.Join(dir, "hosts.json")
+}

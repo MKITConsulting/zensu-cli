@@ -142,6 +142,7 @@ and flags of each group.
 | `security` | Feature security classification, tests, reviews, and posture |
 | `ghost` | Ghost scans and feature candidates |
 | `pulse` | Development sessions |
+| `ai-work` | Authenticated work declarations and result submissions; human acceptance stays in the web UI |
 | `work` | Work orders for autonomous delivery: dispatch, claim, session reporting, questions, decisions |
 | `plan` | Work plans: push plan files, follow their status, approve, finalize, abandon |
 | `link` | Link tests, docs, and source files to a feature |

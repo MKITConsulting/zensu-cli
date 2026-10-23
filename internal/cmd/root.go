@@ -99,6 +99,7 @@ func NewRootCmd() *cobra.Command {
 		NewDocCmd(f),
 		NewKnowledgeCmd(f),
 		NewPulseCmd(f),
+		NewAIWorkCmd(f),
 		NewWorkCmd(f),
 		NewPlanCmd(f),
 		NewMetaCmd(f),

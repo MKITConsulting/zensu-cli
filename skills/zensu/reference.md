@@ -472,6 +472,9 @@ zensu mocks get <feature-id> <mock-id> [--json | --raw]   # metadata (a JSON rec
 zensu wiki create --product <uuid> --title <t> --content <markdown>
     [--doc-type <type>] [--audience <a>] [--visibility public|private]
     [--entity-type feature|component|product --entity-id <uuid>]   # visibility defaults to private
+    # creates new pages only: when a page already exists at the new page's path, it fails,
+    # names that page's path and id and leaves it unchanged; change it with wiki update.
+    # Needs backend v0.89.2 and wiki v0.15.1 or later; an older server updates the page instead.
 zensu wiki list --product <uuid> [--audience <a>] [--parent <uuid>]   # every page; an older server caps at 50 and the CLI warns
 zensu wiki update <page-id> [--title t] [--content markdown] [--change-summary s]
     [--visibility public|private]

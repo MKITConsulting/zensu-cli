@@ -243,59 +243,176 @@ func TestWikiList_Filters(t *testing.T) {
 	}
 }
 
-func TestWikiCreate(t *testing.T) {
-	var body map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/wiki/pages" {
-			t.Errorf("got %s %s", r.Method, r.URL.Path)
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": "w9", "slug": "guide", "title": "Guide"})
-	}))
-	defer srv.Close()
-
-	f, out := testFactory(srv)
-	cmd := NewWikiCmd(f)
-	if err := runCmd(t, cmd, "create",
-		"--product", "p1",
-		"--title", "Guide",
-		"--content", "# Hello",
-		"--audience", "developer",
-		"--visibility", "public",
-	); err != nil {
-		t.Fatalf("wiki create error: %v", err)
-	}
-	if body["productId"] != "p1" || body["title"] != "Guide" || body["content"] != "# Hello" {
-		t.Errorf("create body must carry productId, title, content: %v", body)
-	}
-	if body["audience"] != "developer" || body["visibility"] != "public" {
-		t.Errorf("create body must carry optional audience+visibility: %v", body)
-	}
-	if !strings.Contains(out.String(), "w9") && !strings.Contains(out.String(), "guide") {
-		t.Errorf("create output missing created page: %s", out.String())
+func TestWikiCreate_SendsEveryCreateAsCreateOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want map[string]any
+	}{
+		{
+			name: "a create without optional flags sends only the required fields",
+			args: []string{"--product", "p1", "--title", "Guide", "--content", "# Hello"},
+			want: map[string]any{"productId": "p1", "title": "Guide", "content": "# Hello", "createOnly": true},
+		},
+		{
+			name: "a public create",
+			args: []string{"--product", "p1", "--title", "Guide", "--content", "# Hello", "--audience", "developer", "--visibility", "public"},
+			want: map[string]any{"productId": "p1", "title": "Guide", "content": "# Hello", "audience": "developer", "visibility": "public", "createOnly": true},
+		},
+		{
+			name: "a feature-linked create",
+			args: []string{"--product", "p1", "--title", "Guide", "--content", "# Hello", "--entity-type", "feature", "--entity-id", "f1", "--doc-type", "user_facing"},
+			want: map[string]any{"productId": "p1", "title": "Guide", "content": "# Hello", "entityType": "feature", "entityId": "f1", "docType": "user_facing", "createOnly": true},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+				"POST /api/wiki/pages": reply(http.StatusCreated, map[string]any{"id": "w9", "slug": "guide", "title": "Guide"}),
+			})
+			f, out := testFactory(srv)
+			if err := runCmd(t, NewWikiCmd(f), append([]string{"create"}, tc.args...)...); err != nil {
+				t.Fatalf("wiki create error: %v", err)
+			}
+			if calls := api.summary(); !slices.Equal(calls, []string{"POST /api/wiki/pages"}) {
+				t.Fatalf("wiki create must send exactly one POST and never a PUT, got %v", calls)
+			}
+			if body := api.only(t, http.MethodPost, "/api/wiki/pages").Body; !reflect.DeepEqual(body, tc.want) {
+				t.Errorf("create body = %#v\nwant          %#v", body, tc.want)
+			}
+			if want := "Created wiki page guide \"Guide\" (w9)\n"; out.String() != want {
+				t.Errorf("stdout = %q, want %q", out.String(), want)
+			}
+		})
 	}
 }
 
-func TestWikiCreate_OmitsUnsetOptionals(t *testing.T) {
-	var body map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": "w9"})
-	}))
-	defer srv.Close()
-
-	f, _ := testFactory(srv)
-	cmd := NewWikiCmd(f)
-	if err := runCmd(t, cmd, "create", "--product", "p1", "--title", "Guide", "--content", "x"); err != nil {
-		t.Fatalf("wiki create error: %v", err)
+func TestWikiCreate_NamesAnExistingPageAndLeavesItUnchanged(t *testing.T) {
+	const pageID = "7d2f0c4e-1a3b-4c5d-8e9f-0a1b2c3d4e5f"
+	exists := func(path string) string {
+		return `{"code":"PAGE_EXISTS","message":"A page already exists at this path","pageId":"` + pageID + `","path":"` + path + `"}`
 	}
-	if _, ok := body["visibility"]; ok {
-		t.Errorf("unset --visibility must not appear in body: %v", body)
-	}
-	if _, ok := body["entityId"]; ok {
-		t.Errorf("unset --entity-id must not appear in body: %v", body)
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+		json   bool
+		want   string
+	}{
+		{
+			name:   "an unlinked page",
+			status: http.StatusConflict,
+			body:   exists("/custom/guide"),
+			want:   `error: a wiki page already exists at /custom/guide (` + pageID + `) and was left unchanged; use "zensu wiki update ` + pageID + `" to change it (status 409)` + "\n",
+		},
+		{
+			name:   "an unlinked page with --json",
+			status: http.StatusConflict,
+			body:   exists("/custom/guide"),
+			json:   true,
+			want: `error: a wiki page already exists at /custom/guide (` + pageID + `) and was left unchanged; use "zensu wiki update ` + pageID + `" to change it (status 409)` + "\n" +
+				`{"error":{"status":409,"message":"a wiki page already exists at /custom/guide (` + pageID + `) and was left unchanged; use \"zensu wiki update ` + pageID + `\" to change it"}}` + "\n",
+		},
+		{
+			name:   "a feature-linked page",
+			status: http.StatusConflict,
+			body:   exists("/features/checkout/user_facing"),
+			want:   `error: a wiki page already exists at /features/checkout/user_facing (` + pageID + `) and was left unchanged; use "zensu wiki update ` + pageID + `" to change it (status 409)` + "\n",
+		},
+		{
+			name:   "a path with terminal control sequences",
+			status: http.StatusConflict,
+			body:   exists(`/custom/gu\u001b[2Jide`),
+			want:   `error: a wiki page already exists at /custom/gu[2Jide (` + pageID + `) and was left unchanged; use "zensu wiki update ` + pageID + `" to change it (status 409)` + "\n",
+		},
+		{
+			name:   "an answer without a path still names the page",
+			status: http.StatusConflict,
+			body:   `{"code":"PAGE_EXISTS","message":"A page already exists at this path","pageId":"` + pageID + `"}`,
+			want:   `error: a wiki page already exists (` + pageID + `) and was left unchanged; use "zensu wiki update ` + pageID + `" to change it (status 409)` + "\n",
+		},
+		{
+			name:   "PAGE_EXISTS without a pageId keeps the generic error",
+			status: http.StatusConflict,
+			body:   `{"code":"PAGE_EXISTS","message":"A page already exists at this path","path":"/custom/guide"}`,
+			want:   "error: A page already exists at this path (status 409)\n",
+		},
+		{
+			name:   "PAGE_EXISTS without a pageId keeps the generic error with --json",
+			status: http.StatusConflict,
+			body:   `{"code":"PAGE_EXISTS","message":"A page already exists at this path","path":"/custom/guide"}`,
+			json:   true,
+			want:   "error: A page already exists at this path (status 409)\n" + `{"error":{"status":409,"message":"A page already exists at this path"}}` + "\n",
+		},
+		{
+			name:   "a pageId that is not a UUID keeps the generic error",
+			status: http.StatusConflict,
+			body:   `{"code":"PAGE_EXISTS","message":"A page already exists at this path","pageId":"x\" && touch pwned #","path":"/custom/guide"}`,
+			want:   "error: A page already exists at this path (status 409)\n",
+		},
+		{
+			name:   "PAGE_EXISTS with another status keeps the generic error",
+			status: http.StatusBadRequest,
+			body:   exists("/custom/guide"),
+			want:   "error: A page already exists at this path (status 400)\n",
+		},
+		{
+			name:   "PAGE_CONFLICT keeps the generic error",
+			status: http.StatusConflict,
+			body:   `{"code":"PAGE_CONFLICT","message":"Page changed during creation","pageId":"` + pageID + `","path":"/custom/guide"}`,
+			want:   "error: Page changed during creation (status 409)\n",
+		},
+		{
+			name:   "PAGE_CONFLICT keeps the generic error with --json",
+			status: http.StatusConflict,
+			body:   `{"code":"PAGE_CONFLICT","message":"Page changed during creation","pageId":"` + pageID + `","path":"/custom/guide"}`,
+			json:   true,
+			want:   "error: Page changed during creation (status 409)\n" + `{"error":{"status":409,"message":"Page changed during creation"}}` + "\n",
+		},
+		{
+			name:   "a 409 without a JSON body keeps the generic error",
+			status: http.StatusConflict,
+			body:   "conflict",
+			want:   "error: request failed (status 409): conflict\n",
+		},
+		{
+			name:   "a 409 without a JSON body keeps the generic error with --json",
+			status: http.StatusConflict,
+			body:   "conflict",
+			json:   true,
+			want:   "error: request failed (status 409): conflict\n" + `{"error":{"status":409,"message":"request failed: conflict"}}` + "\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+				"POST /api/wiki/pages": reply(tc.status, tc.body),
+			})
+			f, out := testFactory(srv)
+			args := []string{"create", "--product", "p1", "--title", "Guide", "--content", "# Hello", "--visibility", "public"}
+			if tc.json {
+				args = append(args, "--json")
+			}
+			wiki := NewWikiCmd(f)
+			wiki.SetArgs(args)
+			wiki.SetErr(&bytes.Buffer{})
+			ran, err := wiki.ExecuteC()
+			if err == nil {
+				t.Fatal("the refused create must fail")
+			}
+			stderr := &bytes.Buffer{}
+			WriteError(stderr, ran, args, err)
+			if stderr.String() != tc.want {
+				t.Fatalf("stderr = %q\nwant     %q", stderr.String(), tc.want)
+			}
+			if tc.json {
+				assertJSONErrorIsTheLastLine(t, stderr.String())
+			}
+			if out.Len() != 0 {
+				t.Errorf("a refused create must print nothing on stdout, got %q", out.String())
+			}
+			if calls := api.summary(); !slices.Equal(calls, []string{"POST /api/wiki/pages"}) {
+				t.Errorf("a refused create must not retry or fall back to an update, got %v", calls)
+			}
+		})
 	}
 }
 

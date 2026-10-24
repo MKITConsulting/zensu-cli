@@ -204,6 +204,17 @@ match the final PR head the plan recorded. When the final PR moved on, record it
 confirm the merge. A Zensu server from before the plan head check refuses the head; the command
 then confirms once without it and says so on stderr.
 
+`zensu wiki create` creates new pages only and never changes an existing one. The server derives
+the new page's path from the title, or for a feature-linked page from the feature and the doc
+type, for example `/custom/<slug of the title>` or `/features/<feature slug>/<doc type>`. When a
+page already exists at that path, the server answers `409` with the code `PAGE_EXISTS` and leaves
+the page unchanged, and the command fails with
+`error: a wiki page already exists at <path> (<page id>) and was left unchanged; use "zensu wiki update <page id>" to change it (status 409)`.
+With `--json` the error line carries `status` 409 and no `code`, because `PAGE_EXISTS` does not
+match the code pattern described under [Errors](#errors). `zensu wiki update <page id>` changes an
+existing page. The check needs Zensu backend v0.89.2 and wiki v0.15.1 or later; an older server
+ignores it, updates the existing page and the command still reports a created page.
+
 A typical `products` / `features` flow:
 
 ```bash

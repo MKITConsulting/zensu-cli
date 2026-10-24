@@ -101,18 +101,23 @@ func newWikiCreateCmd(f *Factory) *cobra.Command {
 	var product, title, content, entityType, entityID, docType, audience, visibility string
 	var asJSON bool
 	cmd := &cobra.Command{
-		Use:          "create",
-		Short:        "Create a wiki page for a product",
-		Long:         "Create a new wiki page for a product. Wiki pages store documentation content such as user-facing guides, API references, internal docs, and release notes.",
+		Use:   "create",
+		Short: "Create a wiki page for a product",
+		Long: "Create a new wiki page for a product. Wiki pages store documentation content such as user-facing guides, API references, internal docs, and release notes. " +
+			"The command never changes an existing page. The server derives the new page's path from the title, or for a feature-linked page from the feature and the doc type, " +
+			"for example /custom/<slug of the title> or /features/<feature slug>/<doc type>. When a page already exists at that path, the command fails, names that page's path and id " +
+			"and leaves it unchanged; `zensu wiki update <page-id>` changes an existing page. " +
+			"The check needs Zensu backend v0.89.2 and wiki v0.15.1 or later; an older server ignores it and updates the existing page instead.",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if product == "" || title == "" || content == "" {
 				return fmt.Errorf("--product, --title and --content are required")
 			}
-			payload := map[string]string{
-				"productId": product,
-				"title":     title,
-				"content":   content,
+			payload := map[string]any{
+				"productId":  product,
+				"title":      title,
+				"content":    content,
+				"createOnly": true,
 			}
 			if entityType != "" {
 				payload["entityType"] = entityType
@@ -135,7 +140,7 @@ func newWikiCreateCmd(f *Factory) *cobra.Command {
 			}
 			raw, err := f.request(cmd.Context(), http.MethodPost, "/api/wiki/pages", body)
 			if err != nil {
-				return err
+				return wikiPageExistsError(err)
 			}
 			if asJSON {
 				return printJSON(f.Out, raw)
@@ -156,6 +161,26 @@ func newWikiCreateCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&visibility, "visibility", "", "page visibility: public|private (defaults to private)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
+}
+
+func wikiPageExistsError(err error) error {
+	e, ok := apiErrorOf(err)
+	if !ok || e.status != http.StatusConflict || e.code != "PAGE_EXISTS" {
+		return err
+	}
+	var existing struct {
+		PageID string `json:"pageId"`
+		Path   string `json:"path"`
+	}
+	if json.Unmarshal(e.raw, &existing) != nil || !pulseSessionIDPattern.MatchString(existing.PageID) {
+		return err
+	}
+	at := ""
+	if path := sanitizeTerminal(excerpt(existing.Path)); path != "" {
+		at = " at " + path
+	}
+	plain := fmt.Sprintf("a wiki page already exists%s (%s) and was left unchanged; use \"zensu wiki update %s\" to change it", at, existing.PageID, existing.PageID)
+	return &apiStatusError{status: e.status, code: e.code, text: plain + " " + statusSuffix(e.status, e.printableCode()), plain: plain, raw: e.raw}
 }
 
 func newWikiUpdateCmd(f *Factory) *cobra.Command {

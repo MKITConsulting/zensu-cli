@@ -86,6 +86,7 @@ type apiStatusError struct {
 	code   string
 	text   string
 	plain  string
+	raw    []byte
 }
 
 func (e *apiStatusError) Error() string { return e.text }
@@ -120,7 +121,7 @@ func apiError(status int, raw []byte) error {
 		Message string `json:"message"`
 	}
 	decoded := json.Unmarshal(raw, &body) == nil
-	e := &apiStatusError{status: status, code: body.Code}
+	e := &apiStatusError{status: status, code: body.Code, raw: raw}
 	suffix := statusSuffix(status, e.printableCode())
 	if decoded && body.Message != "" {
 		e.plain = sanitizeTerminal(excerpt(body.Message))

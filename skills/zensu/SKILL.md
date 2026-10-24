@@ -223,9 +223,16 @@ zensu doc gen-context <feature-id> --doc-type user_facing --json   # aggregated 
 zensu link docs <feature-id> --doc-type user_facing --audience end_user \
   --content "<markdown>"                       # creates/updates the linked wiki page
 zensu wiki create --product <id> --title "..." --content "<markdown>" \
-  [--doc-type overview] [--entity-type feature --entity-id <uuid>]
+  [--doc-type overview] [--entity-type feature --entity-id <uuid>]   # new pages only
+zensu wiki update <page-id> --content "<markdown>"   # changes an existing page
 zensu doc claude-md --product <id> --variant full|minimal|ci-only   # CLAUDE.md template
 ```
+
+`wiki create` never changes an existing page. When a page already exists at the
+path the new page would get, it fails, names that page's path and id and leaves
+it unchanged; change that page with `wiki update <page-id>`. The guard needs
+backend v0.89.2 and wiki v0.15.1 or later; an older server updates the existing
+page instead.
 
 ### Work orders
 

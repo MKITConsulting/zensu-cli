@@ -99,6 +99,7 @@ terminal.
 | `security` | Classification, security tests, reviews, score, posture |
 | `ghost` | Ghost scans and feature candidates (brownfield import) |
 | `pulse` | Development sessions |
+| `ai-work` | Authenticated work declarations and result submissions |
 | `work` | Work orders: dispatch, claim, session reporting, questions, human decisions, policy, repositories |
 | `plan` | Work plans: push plan files, follow status, approve, finalize, abandon, follow-ups |
 | `link` | Link tests, docs, and source files to a feature |
@@ -216,6 +217,26 @@ zensu ghost apply <scan-id> --product <id> [--enrich-existing]
 `--enrich-existing` by default — it links discovered artifacts to matching
 existing features (by slug) instead of failing on slug conflicts. Omit it only
 on the very first scan of an empty product.
+
+### ai-work
+
+```bash
+zensu ai-work context
+zensu ai-work start --id <work-uuid> --title "Agreed objective" [--work-order <uuid>]
+zensu ai-work get <work-uuid>
+zensu ai-work submit <work-uuid> --event-id <event-uuid> --expected-version 1 --artifact "commit:<immutable-sha>" --criteria-version "sha256:<criteria-digest>"
+```
+
+Requires a personal first-party CLI OAuth login. API keys and worker tokens are
+refused before sending. The server validates the account and organization again.
+Keep UUIDs and payloads stable on retries. A changed payload with the same event
+ID conflicts; stale expected versions conflict. Do not replace or auto-retry a
+conflicting decision with a fresh ID. The get response includes a version-bound
+`reviewUrl` derived from the server's self-hosted-compatible `APP_BASE_URL`.
+The CLI has no accept/revoke/assign command: only an explicit authenticated web
+decision accepts a concrete result. The reporting account is not an authorship
+claim. Native plugins automate begin/checkpoint and persist retry receipts;
+Pulse and credit billing remain independent.
 
 ### pulse
 

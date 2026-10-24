@@ -146,7 +146,7 @@ and flags of each group.
 | `work` | Work orders for autonomous delivery: dispatch, claim, session reporting, questions, decisions |
 | `plan` | Work plans: push plan files, follow their status, approve, finalize, abandon |
 | `link` | Link tests, docs, and source files to a feature |
-| `knowledge` | Search and inspect the organization's knowledge pool |
+| `knowledge` | Load feature context packages, search passages and inspect knowledge items |
 | `design` | Inspect a product's design system |
 | `mocks` | Upload and inspect a feature's design mocks |
 | `wiki` | Wiki pages |

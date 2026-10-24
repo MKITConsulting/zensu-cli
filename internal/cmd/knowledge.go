@@ -33,6 +33,7 @@ func NewKnowledgeCmd(f *Factory) *cobra.Command {
 		newKnowledgeSearchCmd(f),
 		newKnowledgeGetCmd(f),
 		newKnowledgeSourcesCmd(f),
+		newKnowledgeContextPackCmd(f),
 	)
 	return cmd
 }

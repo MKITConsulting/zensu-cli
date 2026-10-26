@@ -146,7 +146,7 @@ and flags of each group.
 | `work` | Work orders for autonomous delivery: dispatch, claim, session reporting, questions, decisions |
 | `plan` | Work plans: push plan files, follow their status, approve, finalize, abandon |
 | `link` | Link tests, docs, and source files to a feature |
-| `knowledge` | Load feature context packages, search passages and inspect knowledge items |
+| `knowledge` | Load feature context packages, record agent/source retrievals, search passages and inspect knowledge items |
 | `design` | Inspect a product's design system |
 | `mocks` | Upload and inspect a feature's design mocks |
 | `wiki` | Wiki pages |
@@ -154,6 +154,16 @@ and flags of each group.
 | `doc` | Generate documentation context and CLAUDE.md templates |
 | `meta` | Agent integration and workflow guidance helpers |
 | `completion` | Shell completion scripts (see [Shell completion](#shell-completion)) |
+
+Context retrieval receipts are explicit: `zensu knowledge context-pack ZEN-42 --json --agent codex`
+returns a `load_id`. Pass it to `zensu knowledge get <item-id> --json --context-load <load-id>`
+for relevant source reads. Use the actual host label (`codex`, `claude-code`, `copilot`,
+`kiro`, `antigravity`, `gemini-cli` or `cli`). The feature context board groups these
+server-processed retrievals by package, authenticated account and server time. The
+agent label is client-declared. A receipt does not prove model comprehension, and
+local file reads are not recorded. Reads without these flags preserve the original
+GET behavior. The backend must support context-load receipts; errors are never
+silently replaced by untracked reads. Plugins and CLI are released separately.
 
 Pulse treats the server-side privacy setting as authoritative. When tracking is
 disabled, `zensu pulse start` and `zensu pulse end` succeed as no-ops and explain

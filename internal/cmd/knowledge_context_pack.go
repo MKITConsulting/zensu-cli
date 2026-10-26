@@ -1,18 +1,27 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
+var contextIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func validContextID(id string) bool {
+	return contextIDPattern.MatchString(id) && id != "00000000-0000-0000-0000-000000000000"
+}
+
 func newKnowledgeContextPackCmd(f *Factory) *cobra.Command {
 	var depth int
-	var include string
+	var include, agent string
 	cmd := &cobra.Command{
 		Use:   "context-pack <feature-ref>",
 		Short: "Load the linked knowledge around a feature (UUID or KEY-N)",
@@ -20,7 +29,8 @@ func newKnowledgeContextPackCmd(f *Factory) *cobra.Command {
 			"JSON is the default. This supplements feature, security and design context; it does not replace them. " +
 			"Inspect truncated, then use knowledge get <item-id> --json for relevant real items. " +
 			"A file URI may only be a reference: read the actual file from the authorized checkout. " +
-			"This read never syncs a product or records agent usage.",
+			"With --agent, record an authenticated retrieval receipt and retain load_id for knowledge get --context-load. " +
+			"The agent label is client-declared; receipts prove retrieval, not model comprehension. Without --agent no receipt is recorded.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -48,17 +58,39 @@ func newKnowledgeContextPackCmd(f *Factory) *cobra.Command {
 				query.Set("include", strings.Join(layers, ","))
 			}
 			path := "/api/knowledge/features/" + url.PathEscape(ref) + "/context-pack"
+			method := http.MethodGet
+			var body []byte
+			if cmd.Flags().Changed("agent") {
+				switch agent {
+				case "codex", "claude-code", "copilot", "kiro", "antigravity", "gemini-cli", "cli":
+				default:
+					return fmt.Errorf("--agent must name codex, claude-code, copilot, kiro, antigravity, gemini-cli or cli")
+				}
+				method = http.MethodPost
+				path = "/api/knowledge/features/" + url.PathEscape(ref) + "/context-loads"
+				body, _ = json.Marshal(map[string]string{"agent": agent})
+			}
 			if len(query) > 0 {
 				path += "?" + query.Encode()
 			}
-			raw, err := f.request(cmd.Context(), http.MethodGet, path, nil)
+			raw, err := f.request(cmd.Context(), method, path, body)
 			if err != nil {
 				return err
+			}
+			if method == http.MethodPost {
+				var receipt struct {
+					LoadID   string    `json:"load_id"`
+					LoadedAt time.Time `json:"loaded_at"`
+				}
+				if err := json.Unmarshal(raw, &receipt); err != nil || !validContextID(receipt.LoadID) || receipt.LoadedAt.IsZero() {
+					return fmt.Errorf("server did not return a valid context retrieval receipt; no tracked package can be confirmed")
+				}
 			}
 			return printJSON(f.Out, raw)
 		},
 	}
 	cmd.Flags().IntVar(&depth, "depth", 0, "maximum relationship steps (1-5; server default 2)")
 	cmd.Flags().StringVar(&include, "include", "", "comma-separated layers; omitted means all layers plus passages")
+	cmd.Flags().StringVar(&agent, "agent", "", "declare the calling agent and record this retrieval in the feature context board")
 	return jsonByDefault(cmd)
 }

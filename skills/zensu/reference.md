@@ -456,6 +456,7 @@ zensu journeys suggest --product <id>               # context to suggest journey
 
 ```
 zensu knowledge context-pack <feature-ref> [--depth 1-5] [--include placement,build,constraints,lineage,passages] [--agent codex|claude-code|copilot|kiro|antigravity|gemini-cli|cli] [--json]
+zensu knowledge context-search --query "<task>" [--product <uuid>] --json
 zensu knowledge search --query "<text>" [--limit 1-50] [--scope org|personal] --json
 zensu knowledge get <item-id> --json
 zensu knowledge sources
@@ -484,6 +485,13 @@ zensu wiki update <page-id> [--title t] [--content markdown] [--change-summary s
 
 zensu org users [--query "name-or-email"]           # omit --query to list all members
 ```
+
+Task discovery sends up to 2,000 query characters to the configured backend and
+returns up to five distinct canonical feature candidates after one organization
+search and at most five item reads. It creates no retrieval receipt. Match the
+task and verified product/repository scope before loading a package; ask if
+ambiguous. Search rank is not confidence. The optional product filter applies
+within the bounded results, so an empty result does not prove absence.
 
 The context pack accepts a feature UUID or KEY-N and prints JSON by default.
 Omitted filters retain the server defaults (depth 2, all layers with passages).

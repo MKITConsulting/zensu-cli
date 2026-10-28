@@ -456,3 +456,19 @@ may make you hold.
 ## License
 
 [Apache License 2.0](LICENSE).
+
+
+### Work capture metadata
+
+`zensu ai-work start --id <uuid> --title <objective>` declares source `cli`, the
+installed CLI version and run kind `work`. Explicit validation/demo/probe goals
+use `--run-kind test`; implementing tests for a product remains normal work.
+Plugins supply `--source` (`codex`, `claude_code`, `antigravity`, `copilot`, `kiro`)
+and `--source-version` from their package. These are client declarations, not
+verified host identity. Keep source/version/purpose stable when retrying a start.
+Update the backend first; old servers reject the metadata fields visibly.
+Historical plugin receipts use the hidden `--legacy-metadata` compatibility flag
+to replay unchanged declarations without inventing origin or purpose. It cannot
+be combined with metadata flags. Classification corrections and acceptance stay
+in the authenticated web UI. Tests are excluded from default analytics; all
+booked credits remain separately unfiltered because there is no run-cost linkage.

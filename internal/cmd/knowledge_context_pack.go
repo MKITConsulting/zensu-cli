@@ -24,10 +24,13 @@ func newKnowledgeContextPackCmd(f *Factory) *cobra.Command {
 	var include, agent string
 	cmd := &cobra.Command{
 		Use:   "context-pack <feature-ref>",
-		Short: "Load the linked knowledge around a feature (UUID or KEY-N)",
+		Short: "Load relevant feature context and a separate related-item index (UUID or KEY-N)",
 		Long: "Load placement, build, constraints and lineage with provenance and excerpts. " +
 			"JSON is the default. This supplements feature, security and design context; it does not replace them. " +
-			"Inspect truncated, then use knowledge get <item-id> --json for relevant real items. " +
+			"Read layers first; related_layers contains additional relationships, not automatic dependencies. " +
+			"Inspect each item's relevance, reason and directed path. Older backends without related_layers do not provide this separation. " +
+			"Do not bulk-fetch either group: choose real items needed for a specific task question, then use knowledge get <item-id> --json. " +
+			"Inspect truncated and use targeted knowledge search --query <question> --json when needed. " +
 			"A file URI may only be a reference: read the actual file from the authorized checkout. " +
 			"With --agent, record an authenticated retrieval receipt and retain load_id for knowledge get --context-load. " +
 			"The agent label is client-declared; receipts prove retrieval, not model comprehension. Without --agent no receipt is recorded.",

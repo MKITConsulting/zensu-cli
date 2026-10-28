@@ -21,9 +21,9 @@ func TestKnowledgeContextPack(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			payload := map[string]any{"feature_id": "feature", "max_depth": 2, "truncated": true, "layers": map[string]any{
-				"build":     []any{map[string]any{"item_id": "doc", "uri": "file:README.md", "excerpt": "reference only", "depth": 1, "relation": "documented_by", "source_id": "source"}},
+				"build":     []any{map[string]any{"item_id": "doc", "uri": "file:README.md", "excerpt": "reference only", "depth": 1, "relation": "documented_by", "source_id": "source", "relevance": "direct", "reason": "direct_link", "path": []any{map[string]any{"item_id": "feature"}, map[string]any{"item_id": "doc", "relation": "documented_by", "direction": "outgoing"}}}},
 				"placement": []any{}, "constraints": []any{}, "lineage": []any{},
-			}, "future_field": "preserved"}
+			}, "related_layers": map[string]any{"build": []any{map[string]any{"item_id": "theme", "relevance": "related", "reason": "shared_document", "path": []any{map[string]any{"item_id": "feature"}, map[string]any{"item_id": "doc", "relation": "documented_by", "direction": "outgoing"}, map[string]any{"item_id": "theme", "relation": "documented_by", "direction": "incoming"}}}}}, "future_field": "preserved"}
 			calls := 0
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++

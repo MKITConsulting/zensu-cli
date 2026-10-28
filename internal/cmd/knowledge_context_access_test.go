@@ -5,9 +5,60 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestKnowledgeSelectiveContextFollowup(t *testing.T) {
+	const load = "11111111-1111-4111-8111-111111111111"
+	const direct = "22222222-2222-4222-8222-222222222222"
+	const related = "33333333-3333-4333-8333-333333333333"
+	const feature = "44444444-4444-4444-8444-444444444444"
+	for _, tc := range []struct{ name, chosen string }{{"primary source", direct}, {"selected related source", related}} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := fmt.Sprintf(`{"load_id":%q,"loaded_at":"2026-10-28T10:00:00Z","feature_id":%q,"max_depth":2,"truncated":false,
+"layers":{"placement":[],"build":[{"item_id":%q,"relevance":"direct","reason":"direct_link","excerpt":"Primary evidence","path":[{"item_id":%q},{"item_id":%q,"relation":"documented_by","direction":"outgoing"}]}],"constraints":[],"lineage":[]},
+"related_layers":{"placement":[],"build":[{"item_id":%q,"relevance":"related","reason":"shared_document","path":[{"item_id":%q},{"item_id":%q,"relation":"documented_by","direction":"outgoing"},{"item_id":%q,"relation":"documented_by","direction":"incoming"}]}],"constraints":[],"lineage":[]}}`, load, feature, direct, feature, direct, related, feature, direct, related)
+			var calls []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls = append(calls, r.Method+" "+r.URL.Path)
+				switch r.URL.Path {
+				case "/api/knowledge/features/ZEN-42/context-loads":
+					fmt.Fprint(w, payload)
+				case "/api/knowledge/context-loads/" + load + "/items/" + tc.chosen:
+					fmt.Fprintf(w, `{"id":%q,"content":"Selected source contents"}`, tc.chosen)
+				default:
+					t.Errorf("unexpected source fetch: %s", r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+			f, out := testFactory(srv)
+			if err := runCmd(t, NewKnowledgeCmd(f), "context-pack", "ZEN-42", "--agent", "codex", "--json"); err != nil {
+				t.Fatal(err)
+			}
+			var got, want any
+			if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal([]byte(payload), &want); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, want) || len(calls) != 1 {
+				t.Fatalf("relevance payload changed or sources fetched eagerly: %s calls=%v", out.String(), calls)
+			}
+			out.Reset()
+			if err := runCmd(t, NewKnowledgeCmd(f), "get", tc.chosen, "--json", "--context-load", load); err != nil {
+				t.Fatal(err)
+			}
+			wantCalls := []string{"POST /api/knowledge/features/ZEN-42/context-loads", "POST /api/knowledge/context-loads/" + load + "/items/" + tc.chosen}
+			if !reflect.DeepEqual(calls, wantCalls) || !strings.Contains(out.String(), tc.chosen) || !strings.Contains(out.String(), "Selected source contents") {
+				t.Fatalf("selective read lost correlation or contents: calls=%v output=%s", calls, out.String())
+			}
+		})
+	}
+}
 
 func TestKnowledgeContextReceipts(t *testing.T) {
 	const load = "11111111-1111-4111-8111-111111111111"

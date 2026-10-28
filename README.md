@@ -165,6 +165,16 @@ local file reads are not recorded. Reads without these flags preserve the origin
 GET behavior. The backend must support context-load receipts; errors are never
 silently replaced by untracked reads. Plugins and CLI are released separately.
 
+Context JSON preserves the backend's relevance split: read `layers` first, then
+consult `related_layers` as a separate metadata index when a specific task question
+needs more evidence. Both groups retain `relevance`, `reason` and the full directed
+`path`; sharing a document or container does not establish a dependency. The CLI
+does not eagerly fetch either group's sources. Choose individual items and use
+`knowledge get --context-load` with the same receipt. If `truncated` is true, use
+targeted `knowledge search --query "<question>" --json` and correlated item reads;
+increasing depth does not prove completeness. Older backends without `related_layers`
+return unseparated context and require an explicit relevance assessment by the agent.
+
 Pulse treats the server-side privacy setting as authoritative. When tracking is
 disabled, `zensu pulse start` and `zensu pulse end` succeed as no-ops and explain
 that nothing was recorded. With `--json`, they preserve the machine-readable

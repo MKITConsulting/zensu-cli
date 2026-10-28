@@ -470,6 +470,8 @@ zensu mocks create <feature-id> <file> [--title t] [--alt-text a]
 zensu mocks list <feature-id>
 zensu mocks get <feature-id> <mock-id> [--json | --raw]   # metadata (a JSON record with --json) or raw content
 
+zensu wiki images policy --product <uuid> --json
+zensu wiki images upload --product <uuid> --file ./image.png --json
 zensu wiki create --product <uuid> --title <t> --content <markdown>
     [--doc-type <type>] [--audience <a>] [--visibility public|private]
     [--entity-type feature|component|product --entity-id <uuid>]   # visibility defaults to private
@@ -568,3 +570,17 @@ curl -sH "Authorization: Bearer $(zensu auth token)" "${ZENSU_API_URL:-https://a
 ```bash
 zensu completion zsh|bash|fish|powershell   # see README for per-shell setup
 ```
+
+### Managed Wiki image authoring
+
+`wiki images policy` reports current byte/pixel/dimension limits; `wiki images upload`
+reads a regular local file, checks its size against the server policy, and sends
+binary bytes for sanitization. The response includes `reference`, dimensions, byte
+size and MIME type. It never fetches a remote URL or publishes a page.
+
+Embed `![Alt](wiki-asset:<uuid> "Caption"){width=50%}` in the same product.
+Width is optional (automatic), or 1–100% / 1–4096px; height stays proportional.
+Use the same author for upload and first save. Saved pages/revisions retain assets;
+unused uploads expire after 30 days. `doc gen-context` supplies these rules as
+`markdownGuidance`. Uploads require the matching backend release; 413 means reduce
+the file, 429 means retry later. External image URLs remain blocked.

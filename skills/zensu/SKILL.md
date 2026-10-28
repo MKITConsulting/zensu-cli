@@ -235,11 +235,21 @@ zensu doc gen-context <feature-id> --doc-type user_facing --json   # aggregated 
 # READ THE ACTUAL SOURCE FILES before writing — never document from metadata alone
 zensu link docs <feature-id> --doc-type user_facing --audience end_user \
   --content "<markdown>"                       # creates/updates the linked wiki page
+zensu wiki images policy --product <uuid> --json
+zensu wiki images upload --product <uuid> --file ./image.png --json
 zensu wiki create --product <id> --title "..." --content "<markdown>" \
   [--doc-type overview] [--entity-type feature --entity-id <uuid>]   # new pages only
 zensu wiki update <page-id> --content "<markdown>"   # changes an existing page
 zensu doc claude-md --product <id> --variant full|minimal|ci-only   # CLAUDE.md template
 ```
+
+For image-bearing documentation, read `doc gen-context`'s `markdownGuidance`,
+then upload a local PNG/JPEG/WebP. Embed the returned reference as
+`![Alt](wiki-asset:<uuid> "Caption"){width=50%}`. Omit width for automatic sizing;
+otherwise use 1–100% or 1–4096px (responsive and proportional). Never invent UUIDs
+or use remote image URLs, HTML, data: or blob: sources. Uploading does not publish;
+save explicitly in the same product as the same author. Unreferenced uploads
+expire after 30 days. These commands require the backend image-upload API release.
 
 `wiki create` never changes an existing page. When a page already exists at the
 path the new page would get, it fails, names that page's path and id and leaves

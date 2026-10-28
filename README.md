@@ -214,6 +214,35 @@ match the final PR head the plan recorded. When the final PR moved on, record it
 confirm the merge. A Zensu server from before the plan head check refuses the head; the command
 then confirms once without it and says so on stderr.
 
+### Secure Wiki images
+
+```sh
+zensu wiki images policy --product "$PRODUCT_ID"
+zensu wiki images upload --product "$PRODUCT_ID" --file ./dashboard.png --json
+```
+
+The upload accepts a regular local PNG/JPEG/WebP file, reads the server limits,
+and sends its bytes for sanitization. It never fetches an image URL. The result
+contains `reference=wiki-asset:<uuid>`, dimensions, byte size and MIME type.
+Embed that reference in a page in the same product:
+`![Weekly totals](wiki-asset:<uuid> "Dashboard"){width=50%}`.
+Omit the suffix for automatic sizing; use integer 1–100% or 1–4096px otherwise.
+Height stays proportional and width fits the current content column. This is a
+Zensu Markdown extension; other renderers may show the suffix literally.
+
+Uploads are private and do not publish pages. Use the same author for upload and
+first save, keep references in the same product, and explicitly save the page.
+Unreferenced uploads expire after 30 days; saved pages/revisions retain them.
+Use meaningful alt text, empty alt only for decorative images, and escape
+Markdown metacharacters. Never invent UUIDs or embed remote/HTML/data/blob images.
+`zensu doc gen-context` carries `markdownGuidance` with these authoring rules.
+
+This command requires the backend release adding `/api/wiki/images/{productID}`;
+release that backend before this CLI. It uses the existing configurable API URL,
+normal read/write scopes and BlobStore, including self-hosted storage. A 413
+requires a smaller file; 429 is retryable. Uploads are bounded to 10 MiB and the
+lower server policy. Pixel/format validation remains authoritative on the server.
+
 `zensu wiki create` creates new pages only and never changes an existing one. The server derives
 the new page's path from the title, or for a feature-linked page from the feature and the doc
 type, for example `/custom/<slug of the title>` or `/features/<feature slug>/<doc type>`. When a

@@ -132,7 +132,7 @@ func newLinkDocsCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&externalURL, "external-url", "", "external URL for the doc")
 	cmd.Flags().StringVar(&audience, "audience", "", "target audience: end_user|developer|admin|internal")
 	cmd.Flags().StringVar(&publicationStatus, "publication-status", "", "publication status: draft|published|archived")
-	cmd.Flags().StringVar(&content, "content", "", "wiki page content (markdown); creates/updates the linked wiki page when provided")
+	cmd.Flags().StringVar(&content, "content", "", "wiki page content (Markdown); creates/updates the linked page. Upload local images with wiki images upload first; use wiki-asset references and optional {width=50%} or {width=360px}; no remote images")
 	cmd.Flags().BoolVar(&publishToWiki, "publish-to-wiki", true, "ensure a linked wiki page exists for this doc (default true)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd

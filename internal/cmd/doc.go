@@ -83,7 +83,7 @@ func newDocGenContextCmd(f *Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "gen-context <feature-id>",
 		Short:        "Get aggregated context for generating a feature's documentation",
-		Long:         "Get rich aggregated context for generating documentation for a feature. Returns feature details, subfeatures, source files, tests, security profile, tier availability, journeys, existing docs, component and product info. Valid doc types: user_facing, api_reference, tutorial, adr, release_notes, internal, migration_guide, overview.",
+		Long:         "Get rich aggregated context for generating documentation for a feature. Returns feature details, subfeatures, source files, tests, security profile, tier availability, journeys, existing docs, component and product info, plus Markdown/image authoring guidance. Upload local images with zensu wiki images upload before embedding their managed references. Valid doc types: user_facing, api_reference, tutorial, adr, release_notes, internal, migration_guide, overview.",
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

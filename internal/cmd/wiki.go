@@ -29,6 +29,7 @@ func NewWikiCmd(f *Factory) *cobra.Command {
 	}
 	cmd.AddCommand(
 		newWikiListCmd(f),
+		newWikiImagesCmd(f),
 		newWikiCreateCmd(f),
 		newWikiUpdateCmd(f),
 	)
@@ -107,7 +108,7 @@ func newWikiCreateCmd(f *Factory) *cobra.Command {
 			"The command never changes an existing page. The server derives the new page's path from the title, or for a feature-linked page from the feature and the doc type, " +
 			"for example /custom/<slug of the title> or /features/<feature slug>/<doc type>. When a page already exists at that path, the command fails, names that page's path and id " +
 			"and leaves it unchanged; `zensu wiki update <page-id>` changes an existing page. " +
-			"The check needs Zensu backend v0.89.2 and wiki v0.15.1 or later; an older server ignores it and updates the existing page instead.",
+			"The check needs Zensu backend v0.89.2 and wiki v0.15.1 or later; an older server ignores it and updates the existing page instead.\n\n" + wikiImageHelp,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if product == "" || title == "" || content == "" {
@@ -189,7 +190,7 @@ func newWikiUpdateCmd(f *Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "update <page-id>",
 		Short:        "Update an existing wiki page",
-		Long:         "Update an existing wiki page. Supports partial updates — only provided fields are changed.",
+		Long:         "Update an existing wiki page. Supports partial updates — only provided fields are changed.\n\n" + wikiImageHelp,
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

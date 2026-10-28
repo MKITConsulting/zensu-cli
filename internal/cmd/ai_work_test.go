@@ -17,7 +17,9 @@ func TestAIWorkCommands(t *testing.T) {
 		args               []string
 		body               map[string]any
 	}{
-		{"start", "POST", "/api/ai-work/capture/units", []string{"start", "--id", id, "--title", "Agreed goal", "--work-order", event}, map[string]any{"id": id, "title": "Agreed goal", "workOrderId": event}},
+		{"start", "POST", "/api/ai-work/capture/units", []string{"start", "--id", id, "--title", "Agreed goal", "--work-order", event}, map[string]any{"id": id, "title": "Agreed goal", "workOrderId": event, "source": "cli", "sourceVersion": "dev", "runKind": "work"}},
+		{"plugin test", "POST", "/api/ai-work/capture/units", []string{"start", "--id", id, "--title", "Probe", "--source", "copilot", "--source-version", "1.2.3", "--run-kind", "test"}, map[string]any{"id": id, "title": "Probe", "source": "copilot", "sourceVersion": "1.2.3", "runKind": "test"}},
+		{"legacy replay", "POST", "/api/ai-work/capture/units", []string{"start", "--id", id, "--title", "Old goal", "--legacy-metadata"}, map[string]any{"id": id, "title": "Old goal"}},
 		{"get", "GET", "/api/ai-work/capture/units/" + id, []string{"get", id}, nil},
 		{"submit", "POST", "/api/ai-work/capture/units/" + id + "/submissions", []string{"submit", id, "--event-id", event, "--expected-version", "2", "--artifact", "commit:abc", "--criteria-version", "sha256:def"}, map[string]any{"id": event, "expectedVersion": float64(2), "artifactRef": "commit:abc", "criteriaVersion": "sha256:def"}},
 	} {
@@ -45,6 +47,13 @@ func TestAIWorkCommands(t *testing.T) {
 		f, _ := failingFactory()
 		if runCmd(t, NewAIWorkCmd(f), args...) == nil {
 			t.Fatalf("accepted invalid command %v", args)
+		}
+	}
+	for _, flags := range [][]string{{"--source", "web"}, {"--run-kind", "unknown"}, {"--source-version", "1\x00"}, {"--source", "codex"}, {"--legacy-metadata", "--run-kind", "test"}} {
+		f, _ := failingFactory()
+		args := append([]string{"start", "--id", id, "--title", "Goal"}, flags...)
+		if err := runCmd(t, NewAIWorkCmd(f), args...); err == nil {
+			t.Fatalf("invalid metadata accepted: %v", flags)
 		}
 	}
 	for _, cfg := range []*config.Config{{APIKey: "zsk_shared"}, {AccessToken: "zst_worker"}, {}} {

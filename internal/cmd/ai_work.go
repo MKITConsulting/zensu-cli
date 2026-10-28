@@ -3,9 +3,12 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/MKITConsulting/zensu-cli/internal/version"
 	"net/http"
 	"net/url"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/MKITConsulting/zensu-cli/internal/client"
 	"github.com/spf13/cobra"
@@ -17,7 +20,8 @@ import (
 func NewAIWorkCmd(f *Factory) *cobra.Command {
 	root := &cobra.Command{Use: "ai-work", Short: "Capture work and result versions using your personal OAuth login",
 		Long: "Capture work for My work and Organization. API keys and work-order session tokens are refused. Submission is not acceptance; review and decide the exact result in the web application."}
-	var id, title, order string
+	var id, title, order, source, sourceVersion, runKind string
+	var legacyMetadata bool
 	start := jsonByDefault(&cobra.Command{Use: "start", Short: "Declare an agreed work objective (retry with the same ID)", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := aiWorkUUID(id); err != nil {
@@ -27,6 +31,29 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 				return fmt.Errorf("--title is required")
 			}
 			body := map[string]any{"id": id, "title": title}
+			if legacyMetadata {
+				if cmd.Flags().Changed("source") || cmd.Flags().Changed("source-version") || cmd.Flags().Changed("run-kind") {
+					return fmt.Errorf("legacy metadata cannot be combined with source or run kind")
+				}
+			} else {
+				switch source {
+				case "cli", "codex", "claude_code", "antigravity", "copilot", "kiro":
+				default:
+					return fmt.Errorf("unsupported --source")
+				}
+				if runKind != "work" && runKind != "test" {
+					return fmt.Errorf("--run-kind must be work or test")
+				}
+				if !utf8.ValidString(sourceVersion) || utf8.RuneCountInString(sourceVersion) > 64 || strings.IndexFunc(sourceVersion, unicode.IsControl) >= 0 {
+					return fmt.Errorf("invalid --source-version")
+				}
+				if source != "cli" && (!cmd.Flags().Changed("source-version") || strings.TrimSpace(sourceVersion) == "") {
+					return fmt.Errorf("plugin capture requires --source-version")
+				}
+				body["source"] = source
+				body["sourceVersion"] = sourceVersion
+				body["runKind"] = runKind
+			}
 			if order != "" {
 				if err := aiWorkUUID(order); err != nil {
 					return err
@@ -38,6 +65,11 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 	start.Flags().StringVar(&id, "id", "", "stable work UUID (required; keep across retries)")
 	start.Flags().StringVar(&title, "title", "", "agreed work objective, at most 160 characters")
 	start.Flags().StringVar(&order, "work-order", "", "optional canonical work-order UUID")
+	start.Flags().StringVar(&source, "source", "cli", "reporter: cli, codex, claude_code, antigravity, copilot or kiro (client declaration)")
+	start.Flags().StringVar(&sourceVersion, "source-version", version.Version, "reporter version (plugins must supply their own version)")
+	start.Flags().StringVar(&runKind, "run-kind", "work", "work or test; use test only for explicit validation/demo/probe runs")
+	start.Flags().BoolVar(&legacyMetadata, "legacy-metadata", false, "replay a pre-metadata declaration without inventing its origin or purpose")
+	_ = start.Flags().MarkHidden("legacy-metadata")
 	get := jsonByDefault(&cobra.Command{Use: "get <work-id>", Short: "Read the current result and authenticated capture history", Args: aiWorkIDArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return aiWorkRequest(f, cmd, http.MethodGet, "/api/ai-work/capture/units/"+args[0], nil)

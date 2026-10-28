@@ -472,3 +472,7 @@ to replay unchanged declarations without inventing origin or purpose. It cannot
 be combined with metadata flags. Classification corrections and acceptance stay
 in the authenticated web UI. Tests are excluded from default analytics; all
 booked credits remain separately unfiltered because there is no run-cost linkage.
+
+### Task-description context discovery
+
+`zensu knowledge context-search --query "Fix account login" --json` returns up to five distinct feature candidates with canonical feature/product IDs and bounded excerpts. It performs one organization-scoped search and at most five feature-item reads, creates no context receipt, and never selects by search score. The agent matches the task and repository/product scope, asks when ambiguous, then calls `knowledge context-pack <feature-id> --agent <host>` and correlates required source reads with `--context-load`. Optional `--product <UUID>` filters the bounded candidates; no matches do not prove absence. The query is sent to the configured backend; its existing semantic search/full-text fallback is used without answer generation.

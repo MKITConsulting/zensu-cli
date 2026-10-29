@@ -26,4 +26,4 @@ cover:
 
 # Cross-platform snapshot via goreleaser (no publish).
 snapshot:
-	goreleaser release --snapshot --clean
+	goreleaser release --snapshot --clean --skip=sign

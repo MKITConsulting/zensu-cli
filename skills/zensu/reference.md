@@ -14,7 +14,8 @@ authoritative.
 | Prebuilt binaries / Docker / Go | see the [repository README](https://github.com/MKITConsulting/zensu-cli) |
 
 The macOS binary is Developer-ID signed and notarized. Pin a version with
-`ZENSU_VERSION`, change the target dir with `ZENSU_INSTALL_DIR`.
+`ZENSU_VERSION`, change the target dir with `ZENSU_INSTALL_DIR`. Update an
+existing install with `zensu update` (see [update](#update)).
 
 ## Auth & configuration
 
@@ -110,6 +111,7 @@ terminal.
 | `org` | Organization users |
 | `doc` | Documentation context and CLAUDE.md templates |
 | `meta` | Informational stubs only — these verbs live in the Zensu MCP server / agent plugins, not the REST API |
+| `update` | Update the CLI itself, the way it was installed |
 | `completion` | Shell completion (bash/zsh/fish/powershell) |
 
 ## Commands and verified flags
@@ -534,6 +536,25 @@ zensu doc gen-context <feature-id> --doc-type <type>   # rich context for doc au
 
 `claude-md` variants: `full` (active feature development), `minimal`
 (library/infra repos), `ci-only` (CI/CD integration only).
+
+### update
+
+```
+zensu update                    # update to the latest release, the way zensu was installed
+zensu update --check --json     # report only: currentVersion, latestVersion, updateAvailable, installMethod, updateCommand, updated
+```
+
+Homebrew cask installs run `brew update --quiet && brew upgrade --cask mkitconsulting/tap/zensu`
+with the `brew` of the Homebrew installation that owns zensu, then confirm the new version.
+Install-script and archive installs download the release, verify its Ed25519-signed
+checksums and the archive SHA-256, run the new binary once and replace it in place
+(`sudo zensu update` when the install directory is not writable). When a newer release
+exists, the Docker image, the retired Homebrew formula and system packages change
+nothing and exit `1`: the image and the formula name the command that updates them,
+system packages point to their package manager. A development build always exits `1`
+with the `go install` command.
+Updating changes the user's installation: suggest `zensu update`, do not run it
+unasked.
 
 ## Enum vocabularies
 

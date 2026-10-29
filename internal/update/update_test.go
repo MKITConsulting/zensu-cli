@@ -132,6 +132,9 @@ func TestNoticeFetchesWhenNoCache(t *testing.T) {
 	if !strings.Contains(got, "v1.3.0") || !strings.Contains(got, "you have 1.2.3") {
 		t.Errorf("notice = %q, want mention of v1.3.0 and 1.2.3", got)
 	}
+	if !strings.HasSuffix(got, "run: zensu update") || strings.Contains(got, "install.sh") {
+		t.Errorf("notice = %q, want it to point at zensu update instead of an installer", got)
+	}
 	if n := atomic.LoadUint32(hits); n != 1 {
 		t.Errorf("expected 1 fetch, got %d", n)
 	}
@@ -285,6 +288,7 @@ func TestStartRunsCheckWhenInteractive(t *testing.T) {
 	oldTTY := isTerminalStderr
 	isTerminalStderr = func() bool { return true }
 	t.Cleanup(func() { isTerminalStderr = oldTTY })
+	stubRoot(t, false)
 	oldArgs := osArgs
 	osArgs = func() []string { return []string{"auth", "status"} }
 	t.Cleanup(func() { osArgs = oldArgs })
@@ -305,6 +309,35 @@ func TestStartRunsCheckWhenInteractive(t *testing.T) {
 	}
 }
 
+func TestStartSuppressedAsRoot(t *testing.T) {
+	t.Setenv("ZENSU_CONFIG_DIR", t.TempDir())
+	for _, e := range []string{"ZENSU_NO_UPDATE_CHECK", "CI", "NO_UPDATE_NOTIFIER"} {
+		t.Setenv(e, "")
+	}
+	oldTTY := isTerminalStderr
+	isTerminalStderr = func() bool { return true }
+	t.Cleanup(func() { isTerminalStderr = oldTTY })
+	stubRoot(t, true)
+	hits := fakeGitHub(t, "v3.0.0", http.StatusOK)
+
+	ch, cancel := Start("1.2.3")
+	defer cancel()
+	select {
+	case got := <-ch:
+		if got != "" {
+			t.Errorf("Start as root yielded %q, want no notice", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Start did not yield")
+	}
+	if n := atomic.LoadUint32(hits); n != 0 {
+		t.Errorf("the background check must not run as root (sudo zensu update), got %d requests", n)
+	}
+	if _, err := loadCache(); err == nil {
+		t.Error("the background check must not write a root-owned version cache")
+	}
+}
+
 func TestSaveCacheErrorsWhenDirUnusable(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "regular")
@@ -321,8 +354,109 @@ func TestFetchLatestNetworkError(t *testing.T) {
 	old := githubAPIBase
 	githubAPIBase = "http://127.0.0.1:0"
 	t.Cleanup(func() { githubAPIBase = old })
-	if _, err := fetchLatest(context.Background(), "1.2.3"); err == nil {
+	if _, err := fetchLatest(context.Background(), httpClient, "1.2.3"); err == nil {
 		t.Error("fetchLatest should error on an unreachable host")
+	}
+}
+
+func stubRoot(t *testing.T, root bool) {
+	t.Helper()
+	old := isRoot
+	isRoot = func() bool { return root }
+	t.Cleanup(func() { isRoot = old })
+}
+
+func TestLatestReleaseIgnoresFreshCacheAndRefreshesIt(t *testing.T) {
+	t.Setenv("ZENSU_CONFIG_DIR", t.TempDir())
+	stubRoot(t, false)
+	hits := fakeGitHub(t, "1.3.0", http.StatusOK)
+	if err := saveCache(cache{CheckedAt: time.Now(), LatestVersion: "v1.2.9"}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := LatestRelease(context.Background(), "1.2.3")
+	if err != nil || got != "v1.3.0" {
+		t.Fatalf("LatestRelease = %q, %v; want v1.3.0", got, err)
+	}
+	if n := atomic.LoadUint32(hits); n != 1 {
+		t.Errorf("LatestRelease must always ask GitHub, got %d requests", n)
+	}
+	if c, err := loadCache(); err != nil || c.LatestVersion != "1.3.0" {
+		t.Errorf("cache = %q, %v; want the fetched tag", c.LatestVersion, err)
+	}
+}
+
+func TestLatestReleaseAsRootLeavesCacheAlone(t *testing.T) {
+	t.Setenv("ZENSU_CONFIG_DIR", t.TempDir())
+	stubRoot(t, true)
+	fakeGitHub(t, "v1.3.0", http.StatusOK)
+	if _, err := LatestRelease(context.Background(), "1.2.3"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadCache(); err == nil {
+		t.Error("LatestRelease as root must not create a root-owned version cache")
+	}
+}
+
+func TestLatestReleaseErrors(t *testing.T) {
+	t.Setenv("ZENSU_CONFIG_DIR", t.TempDir())
+	stubRoot(t, false)
+	fakeGitHub(t, "", http.StatusForbidden)
+	if _, err := LatestRelease(context.Background(), "1.2.3"); err == nil || !strings.Contains(err.Error(), "rate limit") {
+		t.Errorf("403 error = %v, want a rate limit hint", err)
+	}
+	fakeGitHub(t, "v1.3.0\x1b[2J", http.StatusOK)
+	if _, err := LatestRelease(context.Background(), "1.2.3"); err == nil || !strings.Contains(err.Error(), "invalid tag") {
+		t.Errorf("malicious tag error = %v, want an invalid tag refusal", err)
+	}
+}
+
+func TestFetchLatestRefusesCrossHostRedirect(t *testing.T) {
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"tag_name": "v9.9.9"})
+	}))
+	t.Cleanup(elsewhere.Close)
+	redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+r.URL.Path, http.StatusFound)
+	}))
+	t.Cleanup(redirecting.Close)
+	old := githubAPIBase
+	githubAPIBase = redirecting.URL
+	t.Cleanup(func() { githubAPIBase = old })
+
+	if _, err := fetchLatest(context.Background(), commandClient, "1.2.3"); err == nil || !strings.Contains(err.Error(), "refusing cross-host redirect") {
+		t.Errorf("fetchLatest error = %v, want a cross-host redirect refusal", err)
+	}
+}
+
+func TestFetchLatestRejectsMalformedBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("{not json"))
+	}))
+	t.Cleanup(srv.Close)
+	old := githubAPIBase
+	githubAPIBase = srv.URL
+	t.Cleanup(func() { githubAPIBase = old })
+
+	if _, err := fetchLatest(context.Background(), commandClient, "1.2.3"); err == nil {
+		t.Error("fetchLatest must reject a body that is not the release JSON")
+	}
+}
+
+func TestIsNewer(t *testing.T) {
+	tests := []struct {
+		latest, current string
+		want            bool
+	}{
+		{"v1.3.0", "1.2.3", true},
+		{"v1.2.3", "1.2.3", false},
+		{"v1.2.2", "1.2.3", false},
+		{"v2.0.0", "1.99.99", true},
+	}
+	for _, tt := range tests {
+		if got := IsNewer(tt.latest, tt.current); got != tt.want {
+			t.Errorf("IsNewer(%q, %q) = %v, want %v", tt.latest, tt.current, got, tt.want)
+		}
 	}
 }
 

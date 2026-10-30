@@ -104,6 +104,7 @@ func NewRootCmd() *cobra.Command {
 		NewPlanCmd(f),
 		NewMetaCmd(f),
 		NewOrgCmd(f),
+		NewUpdateCmd(f),
 	)
 	root.InitDefaultCompletionCmd()
 	augmentCompletionHelp(root)

@@ -46,6 +46,10 @@ zensu auth status   # authenticated? against which host?
   or `curl -fsSL https://zensu.dev/install.sh | sh`. Windows:
   `irm https://zensu.dev/install.ps1 | iex`. More options in
   [reference.md](reference.md).
+- **Outdated** (stderr shows `update available: zensu …`) → tell the user:
+  `zensu update` updates the CLI the way it was installed, and
+  `zensu update --check --json` only reports. It changes the user's
+  installation, so suggest it and do not run it unasked.
 - **Not authenticated** → run `zensu auth login` (browser OAuth2 + PKCE). In
   CI / headless environments use an API key:
   `echo "$ZENSU_API_KEY" | zensu auth login --with-token -`
@@ -312,7 +316,7 @@ curl -sH "Authorization: Bearer $(zensu auth token)" "$ZENSU_API_URL/api/..."
 
 ## Full command map
 
-Twenty-one command groups: `auth products features subfeatures tiers roadmap
+Twenty-two command groups: `auth products features subfeatures tiers roadmap
 journeys security ghost pulse ai-work work plan link knowledge design mocks wiki org doc
-meta completion`. Per-group commands, verified flag sets, and all enum vocabularies
+meta update completion`. Per-group commands, verified flag sets, and all enum vocabularies
 are in [reference.md](reference.md).

@@ -1,0 +1,228 @@
+BUILD STARTED — zensu update: install-aware, signature-verified self-update | steps: 7
+EXECUTION STARTED
+S1 IMPL completed — files: internal/update/install.go, internal/update/install_test.go
+S1 TESTED — internal/update/install_test.go | go test -race -run 'TestClassify|TestDetectInstall|TestUpdateCommandAndRefusal|TestBrewCommandLine' ./internal/update/ ok
+S2 IMPL completed — files: internal/update/selfupdate.go, internal/update/keys.go, internal/update/selfupdate_test.go | keys.go holds the trusted key list; the production key is added in S6
+S2 TESTED — internal/update/selfupdate_test.go | 8 tests PASS (VerifySignature, ReleaseKeysReturnsCopy, ChecksumFor, ArchiveName, ExtractBinary, ExtractBinaryRejectsOversizeEntry, CheckDownloadRedirect, FetchAsset)
+S3 IMPL completed — files: internal/update/selfupdate.go, internal/update/selfupdate_test.go | deviation: the Windows rename-aside swap is selected with runtime.GOOS inside selfupdate.go instead of replace_windows.go/replace_other.go build-tag files; no OS-only imports are needed, so every branch compiles and is tested on all platforms
+S3 TESTED — internal/update/selfupdate_test.go | 7 tests PASS incl. 17 subtests (SelfUpdateReplacesBinary, SelfUpdateRefusesUnverifiedReleases x7, SelfUpdateUnwritableInstallDir, SelfUpdateAsRootSkipsVersionCache, SelfUpdateRejectsInvalidTag, SmokeTest, ReplaceViaBackup x5, WriteError); go vet ./internal/update/ clean
+S4 IMPL completed — files: internal/cmd/update.go, internal/cmd/root.go, internal/cmd/update_test.go, internal/update/update.go, internal/update/update_test.go | update.go gains LatestRelease (fresh fetch, 30 s client, cache refresh unless root), IsNewer and a 403/429 rate-limit hint; fetchLatest takes the HTTP client
+S4 TESTED — internal/cmd/update_test.go, internal/update/update_test.go | 16 cmd tests PASS (TestUpdate*, TestSkipsUpdateNotice) and 5 update tests PASS (LatestRelease x3, IsNewer, FetchLatestNetworkError); go vet clean on both packages
+S5 WIRED — files: internal/update/update.go, internal/update/update_test.go, cmd/zensu/main.go | notice ends with 'run: zensu update'; main.go skips update.Finish when cmd.SkipsUpdateNotice(ran) (annotation on zensu update only); the background check is also suppressed when running as root so 'sudo zensu update' cannot create a root-owned version cache; go test -race ./internal/update/ ok, go build ./... ok
+S6 IMPL completed — files: internal/tools/releasesign/main.go, internal/tools/releasesign/main_test.go, internal/update/keys.go, .goreleaser.yaml, .github/workflows/release.yml | production key pair generated with releasesign keygen; private key only in a 0600 file in the maintainer's home directory (never printed), public key embedded in keys.go; a sign+verify probe against the embedded key printed 'signature OK'; goreleaser check validated the config
+S6 TESTED — internal/tools/releasesign/main_test.go | 6 tests PASS (round trip, never prints/overwrites the private key, two-key rotation, missing/malformed keys, default embedded keys, unknown commands); go test -race ./internal/update/ ok with the production key
+S7 WIRED — files: README.md, skills/zensu/SKILL.md, skills/zensu/reference.md | Updates section rewritten for zensu update (per-method table, signature/checksum/smoke-test guarantees, unsigned <= v0.15.0 note, --json fields), maintainer release-signing section, command tables gain update, SKILL.md outdated-CLI bullet and 22-group command map; 7 docs tests PASS (TestSkillDocs_*, TestReadme_GroupTableMatchesRootCommands)
+S1-S7 CHECKPOINT — PASS | cmd: go test -race ./internal/update/... ./internal/cmd/... ./internal/tools/... ./cmd/... && go vet ./... && GOOS=windows go vet ./... | scope: 4 suites over internal/update, internal/cmd, internal/tools/releasesign, cmd/zensu
+EVIDENCE RUN — scope=full exit=0 duration=3.6s tree=38d656c310e9 record=er1_1793306584036_120e33f508ff | cmd: go test -race ./...
+EVIDENCE RUN — scope=lint exit=0 duration=0.4s tree=n/a record=er1_1793306593397_796b19218179 | cmd: go vet ./... && GOOS=windows go vet ./...
+W1 IMPL completed — files: internal/update/selfupdate_test.go, internal/update/update_test.go, internal/tools/releasesign/main_test.go | coverage gap tests: release without this platform's checksum entry, archive missing from the release, API cross-host redirect refusal, malformed API body, releasesign flag and file errors
+COVERAGE BELOW THRESHOLD on 2 files: internal/update/update.go (88.9%), internal/tools/releasesign/main.go (89.7%) | decision: no extra cycle — the residual is the untestable main() wrapper and defensive I/O error branches (pre-existing saveCache/cachePath/loadCache), the category the user accepted for update.go at 88.7% in .zensu/plans/2026-06-17-1500_tdd-update-check-notify.md; the project sets no threshold; other changed files: install.go 100%, root.go 97.8%, cmd/update.go 91.7%, selfupdate.go 90.9%
+DISCIPLINE AUDIT SKIPPED — vanilla mode
+PRECONDITION DRIFT AUDIT — PASS | no CLI precondition carries an install or substitute decision (go, goreleaser, brew, gh: present, n/a); the ZENSU_RELEASE_SIGNING_KEY secret substitution (ephemeral test key) applies to the goreleaser snapshot in acceptance verification
+CROSS-LAYER AUDIT SKIPPED — vanilla mode
+REQUIREMENTS COVERAGE — PASS | every step (S1-S7, W1) names Covers; all 17 IDs (AC-001..AC-009, FR-001..FR-008) are covered by at least one step
+EVIDENCE RUN — scope=acceptance exit=0 duration=2.4s tree=280da75d9399 record=er1_1793307155515_a69df40fb58f | cmd: bash <project>/.zensu/verify-feature-runs/run-jITVUy/checks/ac001.sh
+ACCEPTANCE — AC-001 pass | driver=cli observed er1_1793307155515_a69df40fb58f | tree=280da75d9399 | record=av1_1793307167969_615bf72384c0 | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: A worktree build at version 0.14.1, pointed at a loopback release API that reports v0.99.0, ran 'zensu update --check --json': exit 0, exactly one JSON object with currentVersion 0.14.1, latestVersio…
+EVIDENCE RUN — scope=acceptance exit=0 duration=2.3s tree=280da75d9399 record=er1_1793307178698_0f955fd26777 | cmd: bash <project>/.zensu/verify-feature-runs/run-jITVUy/checks/ac002.sh
+ACCEPTANCE — AC-002 pass | driver=cli observed er1_1793307178698_0f955fd26777 | tree=280da75d9399 | record=av1_1793307190480_36d969487a9e | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: A worktree build at 0.14.1, installed as a plain binary and trusting only a run-generated test key via a build overlay, ran 'zensu update' against a loopback release v0.99.0 whose checksums were sign…
+EVIDENCE RUN — scope=acceptance exit=0 duration=3.4s tree=280da75d9399 record=er1_1793307201994_d81101d3fe4f | cmd: bash <project>/.zensu/verify-feature-runs/run-jITVUy/checks/ac003.sh
+ACCEPTANCE — AC-003 pass | driver=cli observed er1_1793307201994_d81101d3fe4f | tree=280da75d9399 | record=av1_1793307215968_18b98fe1a5b7 | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: Five loopback releases drove 'zensu update' on a 0.14.1 build: unsigned (no .sig), signed by an untrusted key, archive altered after signing, a release binary reporting 0.98.0, and a read-only instal…
+EVIDENCE RUN — scope=acceptance exit=0 duration=2.1s tree=280da75d9399 record=er1_1793307224850_b1471373915b | cmd: bash <project>/.zensu/verify-feature-runs/run-jITVUy/checks/ac004.sh
+ACCEPTANCE — AC-004 pass | driver=cli observed er1_1793307224850_b1471373915b | tree=280da75d9399 | record=av1_1793307238884_770401f4d164 | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: A 0.14.1 build installed in a Homebrew layout (bin/zensu symlinked into Caskroom/zensu/0.14.1) ran 'zensu update' with a recording stand-in brew first on PATH: exit 0, brew was called exactly with 'u…
+EVIDENCE RUN — scope=acceptance exit=0 duration=2.9s tree=280da75d9399 record=er1_1793307251758_c78da6b535a1 | cmd: bash <project>/.zensu/verify-feature-runs/run-jITVUy/checks/ac005.sh
+ACCEPTANCE — AC-005 pass | driver=cli observed er1_1793307251758_c78da6b535a1 | tree=280da75d9399 | record=av1_1793307264512_91d57a06d791 | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: 'zensu update' with an update available exited 1 with the matching instruction and left the binary unchanged in all three cases: a development build (no version stamp) named the go install command; a…
+EVIDENCE RUN — scope=acceptance exit=0 duration=1.6s tree=280da75d9399 record=er1_1793307276739_c0fd97ab99fd | cmd: bash <project>/.zensu/verify-feature-runs/run-jITVUy/checks/ac006.sh
+ACCEPTANCE — AC-006 pass | driver=cli observed er1_1793307276739_c0fd97ab99fd | tree=280da75d9399 | record=av1_1793307288073_8bfe9604b583 | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: A 0.14.1 build ran under a pseudo-terminal (script) with a fresh version cache naming v0.99.0: after 'zensu --version' and after 'zensu features update <id> --title verify' the terminal showed 'updat…
+EVIDENCE RUN — scope=acceptance exit=0 duration=2.0s tree=280da75d9399 record=er1_1793307298722_6f350373d8ee | cmd: bash <project>/.zensu/verify-feature-runs/run-jITVUy/checks/ac007.sh
+ACCEPTANCE — AC-007 pass | driver=cli observed er1_1793307298722_6f350373d8ee | tree=280da75d9399 | record=av1_1793307312927_cffc499c7e27 | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: A 0.99.0 build ran 'zensu update' against a loopback release API whose latest is v0.99.0: exit 0, stdout exactly 'zensu 0.99.0 is up to date', binary unchanged; with --json it reported updateAvailabl…
+EVIDENCE RUN — scope=acceptance exit=0 duration=12.0s tree=280da75d9399 record=er1_1793307322987_5d8ac7175cce | cmd: bash <project>/.zensu/verify-feature-runs/run-jITVUy/checks/ac008.sh
+ACCEPTANCE — AC-008 pass | driver=cli observed er1_1793307322987_5d8ac7175cce | tree=280da75d9399 | record=av1_1793307353075_4b9ef4065f52 | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: 'goreleaser release --snapshot --clean --skip=docker' with ZENSU_RELEASE_SIGNING_KEY set to a run-generated test seed exited 0 and its signing step ran 'go' on the checksums file; dist held zensu_0.1…
+EVIDENCE RUN — scope=acceptance exit=0 duration=3.7s tree=280da75d9399 record=er1_1793307358924_5222a46768a7 | cmd: bash <project>/.zensu/verify-feature-runs/run-jITVUy/checks/ac009.sh
+ACCEPTANCE — AC-009 pass | driver=cli observed er1_1793307358924_5222a46768a7 | tree=280da75d9399 | record=av1_1793307373248_84e8d85bc978 | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: 'go test -count=1 -run TestSkillDocs|TestReadme ./internal/cmd/' passed on this tree (group tables, documented invocations and flags, --json rule, command map), and the README command table, the refe…
+LIVE ACCEPTANCE — 9/9 active criteria pass on tree 280da75d9399 (cli driver, loopback release server, test key via go build -overlay, stand-in brew, alpine containers); run resources torn down (teardown=complete), run directory removed | limitation: production key and real GitHub endpoints not exercised end to end because no signed release exists yet; Windows swap covered by unit tests only
+VANILLA COMPLETE — 8/8 implemented (S1-S4, S6 [I]; S5, S7, W1 [W]) | Build: ✓ passed (make build) | Coverage: 4/6 files >= 90% (update.go 88.9%, releasesign/main.go 89.7% accepted: untestable main() and defensive I/O branches)
+REVIEW ROUND 1 — panel lean (correctness, design, security; 0 aspects skipped, no custom personas) + judge pair; merged 23 findings: 1 CRITICAL (R1-F1), 13 IMPORTANT (R1-F2..F9, F18..F21, F23), 9 SUGGESTION (R1-F10..F17, F22); JUDGE-B2 raised R1-F21 to IMPORTANT, JUDGE-B3 joined R1-F22
+FINDING VERIFICATION — 23 verified, 0 unsupported, 0 phantom, 0 off-changeset
+FINDING LEDGER — R1-F1 routed CRITICAL internal/update/install.go:55 | any container is treated as the official image, blocking script-install updates
+FINDING LEDGER — R1-F2 parked IMPORTANT .github/workflows/release.yml:37 | release signing secret lacks environment protection
+FINDING LEDGER — R1-F3 parked IMPORTANT .goreleaser.yaml:66 | always-on signing breaks the local snapshot target without the key
+FINDING LEDGER — R1-F4 parked IMPORTANT README.md:113 | documented key generation leaves private key material in the work tree
+FINDING LEDGER — R1-F5 parked IMPORTANT internal/cmd/update.go:107 | homebrew path reports updated without confirming the installed version
+FINDING LEDGER — R1-F6 parked IMPORTANT internal/update/install.go:53 | formula installs are sent the cask-only upgrade command
+FINDING LEDGER — R1-F7 parked IMPORTANT internal/update/selfupdate.go:106 | release naming contract with the goreleaser config is untested
+FINDING LEDGER — R1-F8 parked IMPORTANT internal/update/selfupdate.go:112 | unsigned-release refusal points users to an unverified install path
+FINDING LEDGER — R1-F9 parked IMPORTANT internal/update/selfupdate.go:158 | windows swap lacks retry on transient file locks
+FINDING LEDGER — R1-F10 deferred SUGGESTION .github/workflows/release.yml:32 | release tool version floats while the step holds a secret
+FINDING LEDGER — R1-F11 deferred SUGGESTION cmd/zensu/main.go:13 | background version check runs before the command is known
+FINDING LEDGER — R1-F12 deferred SUGGESTION internal/cmd/update.go:75 | development refusal depends on an unused release lookup
+FINDING LEDGER — R1-F13 deferred SUGGESTION internal/cmd/update.go:102 | refusal path fails open for unknown install methods
+FINDING LEDGER — R1-F14 deferred SUGGESTION internal/update/selfupdate.go:35 | exported result type is unused by its caller
+FINDING LEDGER — R1-F15 deferred SUGGESTION internal/update/selfupdate.go:190 | sudo hint may not resolve where secure_path omits the install dir
+FINDING LEDGER — R1-F16 deferred SUGGESTION skills/zensu/SKILL.md:319 | command group count does not match the listed names
+FINDING LEDGER — R1-F17 deferred SUGGESTION skills/zensu/reference.md:550 | docs overstate exit codes for docker and package installs
+FINDING LEDGER — R1-F18 parked IMPORTANT internal/update/selfupdate.go:95 | failed restore notice is lost behind the permission hint
+FINDING LEDGER — R1-F19 parked IMPORTANT internal/tools/releasesign/main.go:81 | signer does not check its key against the trusted key list
+FINDING LEDGER — R1-F20 parked IMPORTANT internal/update/install.go:55 | official image without runtime markers is treated as a plain binary
+FINDING LEDGER — R1-F21 parked IMPORTANT internal/cmd/update.go:112 | brew is resolved from PATH instead of the prefix owning the install
+FINDING LEDGER — R1-F22 deferred SUGGESTION internal/update/selfupdate.go:74 | interrupted update leaves a temporary binary in the install dir
+FINDING LEDGER — R1-F23 parked IMPORTANT internal/update/selfupdate.go:180 | same defect as R1-F18 at the error formatter
+EVIDENCE RUN — scope=scoped exit=0 duration=15.6s tree=66a31dae2663 record=er1_1793310417998_ebe40cf92202 | cmd: go test -race ./internal/update/... ./internal/cmd/... && go vet ./... && GOOS=windows go vet ./...
+R1-F1 IMPL completed — files: internal/update/install.go, internal/update/install_test.go, Dockerfile, README.md
+R1-F1 CHECKPOINT — PASS | cmd: go test -race ./internal/update/... ./internal/cmd/... && go vet ./... && GOOS=windows go vet ./... | record=er1_1793310417998_ebe40cf92202 | scope: internal/update, internal/cmd
+EDIT LANDING AUDIT STARTED — round fix-1
+EDIT LANDING AUDIT — claims=30 landed=30 not_landed=0 unverified=0 pending=0 exempt_ignored=0 exempt_verified=0
+ROUND LANDING — R1-F1: unresolved (files=4 changed=0 unchanged=0 unresolved=4 failed=0)
+ROUND LANDING UNAVAILABLE — no round-start snapshot (missing), so no claim of this round could be attributed and no fixed line was written
+ASPECT SKIPPED — design (re-review-lean-panel)
+ASPECT SKIPPED — security (re-review-lean-panel)
+FINDING LEDGER — R1-F1 fixed CRITICAL internal/update/install.go:55 | only an image-declared install marker selects the container refusal; other containers classify by path
+FINDING VERIFICATION — 5 verified, 0 unsupported, 0 phantom, 0 off-changeset
+REVIEW ROUND 2 — re-review after fix round 1, panel lean (correctness; design and security skipped: re-review-lean-panel), no judge on a lean re-review; merged 5 findings: 0 CRITICAL, 1 IMPORTANT (R2-F1), 4 SUGGESTION (R2-F2..F5); review convergence status=ok, all 5 retitled [Deferred — do not fix]
+FINDING LEDGER — R2-F1 parked IMPORTANT internal/update/install.go:53 | formula installs still get the cask-only upgrade (same defect as R1-F6)
+FINDING LEDGER — R2-F2 deferred SUGGESTION Dockerfile:7 | no test ties the image install-method marker to the value the code reads
+FINDING LEDGER — R2-F3 deferred SUGGESTION internal/tools/releasesign/main.go:81 | signer does not check its key against the trusted key list (same as R1-F19)
+FINDING LEDGER — R2-F4 deferred SUGGESTION internal/update/install.go:44 | images derived from the official one inherit the marker for every zensu path
+FINDING LEDGER — R2-F5 deferred SUGGESTION internal/update/selfupdate.go:74 | interrupted update leaves a temporary binary in the install dir (same as R1-F22)
+EVIDENCE RUN — scope=full exit=0 duration=1.1s tree=66a31dae2663 record=er1_1793311587279_dc4e63f4cbb8 | cmd: go test -race ./...
+SELF-REVIEW PASS 1 — must-fix: R1-F2, R1-F3, R1-F4, R1-F5, R1-F6 (with R2-F1), R1-F7, R1-F8, R1-F9, R1-F18, R1-F19 (with R2-F3), R1-F21, R1-F23 from the ledger, plus R2-F4 (with R2-F2), R1-F13 and R1-F22 (with R2-F5) by self-review classification, and R1-F17 with the touched docs paragraph; R1-F20 no longer supported by its region (resolved by the R1-F1 marker); advisory and left open: R1-F10, R1-F11, R1-F12, R1-F14, R1-F15, R1-F16 | acceptance re-verification runs once in pass 2 because this fix round edits the tree and would leave records taken now stale
+EVIDENCE RUN — scope=scoped exit=1 duration=13.6s tree=3cd6ecf23c4a record=er1_1793312622897_ce3c8e83a323 | cmd: go test -race ./internal/update/... ./internal/cmd/... ./internal/tools/... ./cmd/... && go vet ./... && GOOS=windows go vet ./...
+EVIDENCE RUN — scope=scoped exit=0 duration=17.4s tree=a5a07ada4d25 record=er1_1793312732617_57ca91fb5440 | cmd: go test -race ./internal/update/... ./internal/cmd/... ./internal/tools/... ./cmd/... && go vet ./... && GOOS=windows go vet ./...
+SR-R1-F2 IMPL completed — files: .github/workflows/release.yml, README.md
+SR-R1-F3 IMPL completed — files: Makefile, README.md
+SR-R1-F4 IMPL completed — files: README.md, .gitignore
+SR-R1-F5 IMPL completed — files: internal/cmd/update.go, internal/cmd/update_test.go, internal/update/selfupdate.go, internal/update/selfupdate_test.go
+SR-R1-F6 IMPL completed — files: internal/update/install.go, internal/update/install_test.go, internal/cmd/update_test.go, README.md, skills/zensu/reference.md, .zensu/plans/2026-10-29-2118_build-zensu-update.md
+SR-R2-F1 IMPL completed — files: internal/update/install.go, internal/update/install_test.go
+SR-R1-F7 IMPL completed — files: internal/update/selfupdate.go, internal/update/release_contract_test.go
+SR-R1-F8 IMPL completed — files: internal/update/selfupdate.go, internal/update/selfupdate_test.go
+SR-R1-F9 IMPL completed — files: internal/update/selfupdate.go, internal/update/selfupdate_test.go
+SR-R1-F13 IMPL completed — files: internal/update/install.go, internal/update/install_test.go, internal/cmd/update.go, internal/cmd/update_test.go
+SR-R1-F17 IMPL completed — files: skills/zensu/reference.md, README.md, internal/cmd/update.go
+SR-R1-F18 IMPL completed — files: internal/update/selfupdate.go, internal/update/selfupdate_test.go
+SR-R1-F23 IMPL completed — files: internal/update/selfupdate.go, internal/update/selfupdate_test.go
+SR-R1-F19 IMPL completed — files: internal/tools/releasesign/main.go, internal/tools/releasesign/main_test.go, README.md
+SR-R2-F3 IMPL completed — files: internal/tools/releasesign/main.go, internal/tools/releasesign/main_test.go
+SR-R1-F21 IMPL completed — files: internal/update/install.go, internal/cmd/update.go, internal/cmd/update_test.go, README.md, skills/zensu/reference.md
+SR-R2-F4 IMPL completed — files: internal/update/install.go, internal/update/install_test.go
+SR-R2-F2 IMPL completed — files: internal/update/release_contract_test.go
+SR-R1-F22 IMPL completed — files: internal/cmd/update.go, internal/cmd/update_test.go, internal/update/selfupdate_test.go
+SR-R2-F5 IMPL completed — files: internal/cmd/update.go, internal/cmd/update_test.go, internal/update/selfupdate_test.go
+PLAN AMENDED — AC-004 (brew of the owning prefix, confirmed version), AC-005 (adds the retired Homebrew formula), FR-001 (image-declared install method) and the context table rows for Homebrew and Docker, following review findings R1-F1, R1-F5, R1-F6 and R1-F21
+SR CHECKPOINT — PASS | cmd: go test -race ./internal/update/... ./internal/cmd/... ./internal/tools/... ./cmd/... && go vet ./... && GOOS=windows go vet ./... | record=er1_1793312732617_57ca91fb5440 | the first attempt (er1_1793312622897_ce3c8e83a323, exit 1) ended the cmd test binary with a real SIGINT test; replaced by a notifyContext seam
+EVIDENCE RUN — scope=full exit=0 duration=0.4s tree=a5a07ada4d25 record=er1_1793312789835_d87d9ac020e0 | cmd: go test -race ./...
+EDIT LANDING AUDIT STARTED — round self-review
+PENDING PREDICATE — SR-R1-F2: .github/workflows/release.yml was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F2: README.md was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F3: README.md was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F4: README.md was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F5: internal/cmd/update.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F5: internal/cmd/update_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F5: internal/update/selfupdate.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F5: internal/update/selfupdate_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F6: internal/update/install.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F6: internal/update/install_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F6: internal/cmd/update_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F6: README.md was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F6: skills/zensu/reference.md was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F6: .zensu/plans/2026-10-29-2118_build-zensu-update.md was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R2-F1: internal/update/install.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R2-F1: internal/update/install_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F7: internal/update/selfupdate.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F8: internal/update/selfupdate.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F8: internal/update/selfupdate_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F9: internal/update/selfupdate.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F9: internal/update/selfupdate_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F13: internal/update/install.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F13: internal/update/install_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F13: internal/cmd/update.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F13: internal/cmd/update_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F17: skills/zensu/reference.md was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F17: README.md was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F17: internal/cmd/update.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F18: internal/update/selfupdate.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F18: internal/update/selfupdate_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F23: internal/update/selfupdate.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F23: internal/update/selfupdate_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F19: internal/tools/releasesign/main.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F19: internal/tools/releasesign/main_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F19: README.md was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R2-F3: internal/tools/releasesign/main.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R2-F3: internal/tools/releasesign/main_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F21: internal/update/install.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F21: internal/cmd/update.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F21: internal/cmd/update_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F21: README.md was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F21: skills/zensu/reference.md was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R2-F4: internal/update/install.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R2-F4: internal/update/install_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F22: internal/cmd/update.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F22: internal/cmd/update_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R1-F22: internal/update/selfupdate_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R2-F5: internal/cmd/update.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R2-F5: internal/cmd/update_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+PENDING PREDICATE — SR-R2-F5: internal/update/selfupdate_test.go was already dirty before this round; union membership is not evidence — re-read the target predicate
+EDIT LANDING AUDIT — claims=84 landed=4 not_landed=0 unverified=0 pending=80 exempt_ignored=0 exempt_verified=0
+ROUND LANDING — SR-R1-F2: unresolved (files=2 changed=1 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — SR-R1-F3: unresolved (files=2 changed=1 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — SR-R1-F4: unresolved (files=2 changed=1 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — SR-R1-F5: unresolved (files=4 changed=0 unchanged=0 unresolved=4 failed=0 shared=4)
+ROUND LANDING — SR-R1-F6: unresolved (files=6 changed=1 unchanged=0 unresolved=5 failed=0 shared=5)
+ROUND LANDING — SR-R2-F1: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — SR-R1-F7: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — SR-R1-F8: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — SR-R1-F9: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — SR-R1-F13: unresolved (files=4 changed=0 unchanged=0 unresolved=4 failed=0 shared=4)
+ROUND LANDING — SR-R1-F17: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+ROUND LANDING — SR-R1-F18: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — SR-R1-F23: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — SR-R1-F19: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+ROUND LANDING — SR-R2-F3: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — SR-R1-F21: unresolved (files=5 changed=0 unchanged=0 unresolved=5 failed=0 shared=5)
+ROUND LANDING — SR-R2-F4: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — SR-R2-F2: unresolved (files=1 changed=0 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — SR-R1-F22: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+ROUND LANDING — SR-R2-F5: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+PREDICATES RE-READ — all 80 pending predicates of round self-review checked by hand: each claimed new string is present and each replaced string is gone (55 grep checks, 0 failures); the claimed files were already dirty before the round, so union membership could not grade them
+FINDING LEDGER — R1-F2 fixed IMPORTANT .github/workflows/release.yml:37 | release signing secret lacks environment protection
+FINDING LEDGER — R1-F3 fixed IMPORTANT .goreleaser.yaml:66 | always-on signing breaks the local snapshot target without the key
+FINDING LEDGER — R1-F4 fixed IMPORTANT README.md:113 | documented key generation leaves private key material in the work tree
+FINDING LEDGER — R1-F5 fixed IMPORTANT internal/cmd/update.go:107 | homebrew path reports updated without confirming the installed version
+FINDING LEDGER — R1-F6 fixed IMPORTANT internal/update/install.go:53 | formula installs are sent the cask-only upgrade command
+FINDING LEDGER — R2-F1 fixed IMPORTANT internal/update/install.go:53 | formula installs still get the cask-only upgrade (same defect as R1-F6)
+FINDING LEDGER — R1-F7 fixed IMPORTANT internal/update/selfupdate.go:106 | release naming contract with the goreleaser config is untested
+FINDING LEDGER — R1-F8 fixed IMPORTANT internal/update/selfupdate.go:112 | unsigned-release refusal points users to an unverified install path
+FINDING LEDGER — R1-F9 fixed IMPORTANT internal/update/selfupdate.go:158 | windows swap lacks retry on transient file locks
+FINDING LEDGER — R1-F13 fixed SUGGESTION internal/cmd/update.go:102 | refusal path fails open for unknown install methods
+FINDING LEDGER — R1-F17 fixed SUGGESTION skills/zensu/reference.md:550 | docs overstate exit codes for docker and package installs
+FINDING LEDGER — R1-F18 fixed IMPORTANT internal/update/selfupdate.go:95 | failed restore notice is lost behind the permission hint
+FINDING LEDGER — R1-F23 fixed IMPORTANT internal/update/selfupdate.go:180 | same defect as R1-F18 at the error formatter
+FINDING LEDGER — R1-F19 fixed IMPORTANT internal/tools/releasesign/main.go:81 | signer does not check its key against the trusted key list
+FINDING LEDGER — R2-F3 fixed SUGGESTION internal/tools/releasesign/main.go:81 | signer does not check its key against the trusted key list (same as R1-F19)
+FINDING LEDGER — R1-F21 fixed IMPORTANT internal/cmd/update.go:112 | brew is resolved from PATH instead of the prefix owning the install
+FINDING LEDGER — R2-F4 fixed SUGGESTION internal/update/install.go:44 | images derived from the official one inherit the marker for every zensu path
+FINDING LEDGER — R2-F2 fixed SUGGESTION Dockerfile:7 | no test ties the image install-method marker to the value the code reads
+FINDING LEDGER — R1-F22 fixed SUGGESTION internal/update/selfupdate.go:74 | interrupted update leaves a temporary binary in the install dir
+FINDING LEDGER — R2-F5 fixed SUGGESTION internal/update/selfupdate.go:74 | interrupted update leaves a temporary binary in the install dir (same as R1-F22)
+EVIDENCE RUN — scope=acceptance exit=1 duration=2.8s tree=a5a07ada4d25 record=er1_1793313394168_8ee76d105506 | cmd: bash <project>/.zensu/verify-feature-runs/run-lei8xy/checks/ac001.sh
+EVIDENCE RUN — scope=acceptance exit=0 duration=1.7s tree=a5a07ada4d25 record=er1_1793313425069_f86fb4535e93 | cmd: bash <project>/.zensu/verify-feature-runs/run-lei8xy/checks/ac001.sh
+ACCEPTANCE — AC-001 pass | driver=cli observed er1_1793313425069_f86fb4535e93 | tree=a5a07ada4d25 | record=av1_1793313436592_79e3077e3d8e | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: A worktree build at 0.14.1, installed as a plain binary and pointed at a loopback release API reporting v0.99.0, ran 'zensu update --check --json': exit 0, exactly one JSON object with currentVersion…
+EVIDENCE RUN — scope=acceptance exit=0 duration=2.0s tree=a5a07ada4d25 record=er1_1793313447096_be4b43587ba5 | cmd: bash <project>/.zensu/verify-feature-runs/run-lei8xy/checks/ac002.sh
+ACCEPTANCE — AC-002 pass | driver=cli observed er1_1793313447096_be4b43587ba5 | tree=a5a07ada4d25 | record=av1_1793313458206_bb241ac9007e | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: A 0.14.1 worktree build installed as a plain binary, trusting only a run-generated release key through a build overlay, ran 'zensu update' against a loopback v0.99.0 release whose checksums file was …
+EVIDENCE RUN — scope=acceptance exit=0 duration=4.2s tree=a5a07ada4d25 record=er1_1793313468395_ccace8106317 | cmd: bash <project>/.zensu/verify-feature-runs/run-lei8xy/checks/ac003.sh
+ACCEPTANCE — AC-003 pass | driver=cli observed er1_1793313468395_ccace8106317 | tree=a5a07ada4d25 | record=av1_1793313484646_67c0baa43259 | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: Five loopback releases drove 'zensu update' on a 0.14.1 plain install: no .sig file, a signature from an untrusted key, an archive altered after signing, a correctly signed archive whose binary repor…
+EVIDENCE RUN — scope=acceptance exit=0 duration=4.5s tree=a5a07ada4d25 record=er1_1793313493739_3a9cc1e87e2f | cmd: bash <project>/.zensu/verify-feature-runs/run-lei8xy/checks/ac004.sh
+ACCEPTANCE — AC-004 pass | driver=cli observed er1_1793313493739_3a9cc1e87e2f | tree=a5a07ada4d25 | record=av1_1793313510204_f596cc5bf74b | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: A 0.14.1 build in a Homebrew cask layout (bin/zensu symlinked into Caskroom/zensu/0.14.1) ran 'zensu update' with a recording stand-in brew in that prefix's bin: brew was run by its absolute prefix p…
+EVIDENCE RUN — scope=acceptance exit=1 duration=5.3s tree=a5a07ada4d25 record=er1_1793313518965_e468fc7bc262 | cmd: bash <project>/.zensu/verify-feature-runs/run-lei8xy/checks/ac005.sh
+EVIDENCE RUN — scope=acceptance exit=0 duration=6.4s tree=a5a07ada4d25 record=er1_1793313559417_cba0921c74da | cmd: bash <project>/.zensu/verify-feature-runs/run-lei8xy/checks/ac005.sh
+ACCEPTANCE — AC-005 pass | driver=cli observed er1_1793313559417_cba0921c74da | tree=a5a07ada4d25 | record=av1_1793313581455_8fb31ca6c697 | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: 'zensu update' with an update available exited 1, changed nothing and named the matching instruction for: a Homebrew formula layout (Cellar/zensu, switch to the cask, no brew run), a development buil…
+EVIDENCE RUN — scope=acceptance exit=1 duration=2.7s tree=a5a07ada4d25 record=er1_1793313596571_63cd57345f52 | cmd: bash <project>/.zensu/verify-feature-runs/run-lei8xy/checks/ac006.sh
+EVIDENCE RUN — scope=acceptance exit=0 duration=4.1s tree=a5a07ada4d25 record=er1_1793313633144_e990a43e0aa8 | cmd: bash <project>/.zensu/verify-feature-runs/run-lei8xy/checks/ac006.sh
+ACCEPTANCE — AC-006 pass | driver=cli observed er1_1793313633144_e990a43e0aa8 | tree=a5a07ada4d25 | record=av1_1793313651971_bbf3819142f4 | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: A 0.14.1 build ran under a pseudo-terminal (script) with a fresh version cache naming v0.99.0: after 'zensu --version' and after 'zensu features update <id> --title verify' (which failed against the …
+EVIDENCE RUN — scope=acceptance exit=0 duration=2.8s tree=a5a07ada4d25 record=er1_1793313663398_aac08db866a8 | cmd: bash <project>/.zensu/verify-feature-runs/run-lei8xy/checks/ac007.sh
+ACCEPTANCE — AC-007 pass | driver=cli observed er1_1793313663398_aac08db866a8 | tree=a5a07ada4d25 | record=av1_1793313677973_1bcda2ffab28 | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: A 0.99.0 build ran 'zensu update' against a loopback release API whose latest is v0.99.0: exit 0, stdout exactly 'zensu 0.99.0 is up to date', binary unchanged; with --json it reported updated false,…
+EVIDENCE RUN — scope=acceptance exit=1 duration=3.7s tree=a5a07ada4d25 record=er1_1793313691359_8ccd0f898078 | cmd: bash <project>/.zensu/verify-feature-runs/run-lei8xy/checks/ac008.sh
+EVIDENCE RUN — scope=acceptance exit=0 duration=6.0s tree=a5a07ada4d25 record=er1_1793313730617_3676f2d9ad28 | cmd: bash <project>/.zensu/verify-feature-runs/run-lei8xy/checks/ac008.sh
+ACCEPTANCE — AC-008 pass | driver=cli observed er1_1793313730617_3676f2d9ad28 | tree=a5a07ada4d25 | record=av1_1793313748721_38012ff7ed6e | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: 'goreleaser release --snapshot --clean --skip=docker' with ZENSU_RELEASE_SIGNING_KEY set to a run-generated test seed, made trusted for this run only by a GOFLAGS build overlay of internal/update/key…
+EVIDENCE RUN — scope=acceptance exit=0 duration=3.6s tree=a5a07ada4d25 record=er1_1793313755349_4dae4286ed8b | cmd: bash <project>/.zensu/verify-feature-runs/run-lei8xy/checks/ac009.sh
+ACCEPTANCE — AC-009 pass | driver=cli observed er1_1793313755349_4dae4286ed8b | tree=a5a07ada4d25 | record=av1_1793313771533_7ebb354ce91a | plan: .zensu/plans/2026-10-29-2118_build-zensu-update.md | evidence: 'go test -count=1 -run TestSkillDocs|TestReadme ./internal/cmd/' passed on this tree (group tables, documented invocations and flags, --json rule, command map), and the README command table, the refe…
+LIVE ACCEPTANCE — 9/9 active criteria pass on tree a5a07ada4d25 (cli driver; out-of-tree builds with -ldflags and a GOFLAGS/-overlay test key; loopback release server; stand-in brew in a cask layout; alpine:3.21 containers emulating the image's runtime contract, tied to the Dockerfile by its contract test; goreleaser snapshot) | three harness defects (time bound placed after env twice, an in-container responder echoing into stdout, a version-prefix assertion) failed runs before or beside zensu and were fixed in the harness only | teardown=complete, 8 containers and 1 server removed, run directory and dist removed | limitation: production key, real GitHub endpoints and a real Homebrew installation were not exercised; Windows swap covered by unit tests only

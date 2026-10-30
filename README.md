@@ -18,7 +18,8 @@ brew install --cask mkitconsulting/tap/zensu
 ```
 
 Taps `MKITConsulting/homebrew-tap` and installs the latest release. Upgrade with
-`brew upgrade --cask zensu`. The macOS binary is signed with an Apple Developer ID
+`zensu update`, which runs Homebrew for you, or with `brew upgrade --cask zensu`.
+The macOS binary is signed with an Apple Developer ID
 and notarized by Apple, so it runs without a Gatekeeper prompt.
 
 ### Install script (Linux / macOS)
@@ -69,21 +70,67 @@ make install      # -> $GOBIN/zensu
 
 ## Updates
 
-To update, re-run whichever method installed `zensu` — each one overwrites the
-binary in place with the latest release:
-
 ```bash
-curl -fsSL https://zensu.dev/install.sh | sh        # Linux / macOS
-irm https://zensu.dev/install.ps1 | iex             # Windows / PowerShell
-go install github.com/MKITConsulting/zensu-cli/cmd/zensu@latest
-docker pull ghcr.io/mkitconsulting/zensu-cli:latest
+zensu update           # update to the latest release, the way zensu was installed
+zensu update --check   # only report: current and latest version, install method, update command
 ```
 
+`zensu update` finds out how it was installed and updates accordingly:
+
+| Installed with | What `zensu update` does |
+| --- | --- |
+| Homebrew cask | runs `brew update --quiet`, then `brew upgrade --cask mkitconsulting/tap/zensu` with the `brew` of the Homebrew installation that owns zensu, and checks that the new version is installed |
+| Install script or prebuilt archive (also inside a container) | downloads the latest release, verifies it and replaces the binary in place |
+| The `ghcr.io/mkitconsulting/zensu-cli` image | prints `docker pull ghcr.io/mkitconsulting/zensu-cli:latest` |
+| The retired Homebrew formula (`Cellar/zensu`) | prints the switch to the cask: `brew uninstall --formula zensu && brew install --cask mkitconsulting/tap/zensu` |
+| A system package manager (`/usr/bin`, Nix, Snap) | asks you to update with that package manager |
+| Go toolchain (`go install`) or a source build | prints `go install github.com/MKITConsulting/zensu-cli/cmd/zensu@latest` |
+
+When a newer release exists, `zensu update` changes nothing for the image, the
+formula and system packages and exits `1`; a development build always exits `1`.
+
+An in-place update only installs a release whose checksum file carries a valid
+Ed25519 signature from a zensu release key built into the CLI, and only an archive
+whose SHA-256 matches that file. It runs the new binary once (`--version`) before
+swapping it in, never calls `sudo` itself (re-run `sudo zensu update` when the
+install directory is not writable) and leaves the installed binary untouched when
+any check fails. Releases up to v0.15.0 are unsigned: update from those once by
+re-running the installer you used, then `zensu update` takes over. `--json` prints
+`currentVersion`, `latestVersion`, `updateAvailable`, `installMethod`,
+`updateCommand` and `updated`.
+
 `zensu` checks GitHub for a newer release at most once every 24 hours and, when
-one exists, prints a one-line hint to stderr after your command finishes. The
-check is cached, never blocks the command, and is automatically skipped in
-non-interactive contexts (pipes, redirects, CI). Opt out entirely by setting
-`ZENSU_NO_UPDATE_CHECK` (or the conventional `NO_UPDATE_NOTIFIER`).
+one exists, prints a one-line hint (`run: zensu update`) to stderr after your
+command finishes. The check is cached, never blocks the command, and is
+automatically skipped in non-interactive contexts (pipes, redirects, CI) and when
+running as root. Opt out entirely by setting `ZENSU_NO_UPDATE_CHECK` (or the
+conventional `NO_UPDATE_NOTIFIER`).
+
+### Release signing (maintainers)
+
+Every release signs `zensu_<version>_checksums.txt` into
+`zensu_<version>_checksums.txt.sig` with the Ed25519 key in the
+`ZENSU_RELEASE_SIGNING_KEY` secret of the `release` environment; the release fails
+without it. `internal/update/keys.go` lists the public keys `zensu update` trusts,
+and `releasesign sign` refuses a key that file does not list. `make snapshot` skips
+signing.
+
+Generate the key outside the repository; `keygen` prints the public key for
+`keys.go`. Store the private key in the `release` environment and allow only `v*`
+tags to deploy to it (Settings → Environments), so no other branch or workflow can
+read it:
+
+```bash
+go run ./internal/tools/releasesign keygen --private-key ~/zensu-release-signing.key
+gh secret set ZENSU_RELEASE_SIGNING_KEY --env release --repo MKITConsulting/zensu-cli < ~/zensu-release-signing.key
+go run ./internal/tools/releasesign verify --in zensu_<version>_checksums.txt --sig zensu_<version>_checksums.txt.sig
+```
+
+Keep an offline copy of the private key, then delete `~/zensu-release-signing.key`.
+
+To rotate the key, add the new public key to `keys.go` and ship a release; then put
+both private keys into the secret, one per line, so releases carry both signatures
+until no supported CLI depends on the old key alone.
 
 ## Authentication
 
@@ -153,6 +200,7 @@ and flags of each group.
 | `org` | Inspect the organization |
 | `doc` | Generate documentation context and CLAUDE.md templates |
 | `meta` | Agent integration and workflow guidance helpers |
+| `update` | Update `zensu` itself (see [Updates](#updates)) |
 | `completion` | Shell completion scripts (see [Shell completion](#shell-completion)) |
 
 Context retrieval receipts are explicit: `zensu knowledge context-pack ZEN-42 --json --agent codex`

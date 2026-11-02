@@ -511,8 +511,8 @@ After the user explicitly confirms the product for this repository:
 
 ```bash
 zensu ai-work bind --product <product-uuid> --confirm
-zensu ai-work context
-zensu ai-work start --id <goal-uuid> --title <objective>
+zensu ai-work context --feature <feature-uuid>
+zensu ai-work start --id <goal-uuid> --title <objective> --feature <feature-uuid>
 ```
 
 The private binding lives under the Git common directory and applies to its
@@ -524,7 +524,12 @@ creates no work. Git repositories without an origin cannot bind automatic captur
 A malformed binding requires inspection and removal of that private binding file
 before explicit re-confirmation; never edit session receipts to bypass a conflict.
 
-Manual starts may specify `--product <uuid>`. Plugin sources must match the
+Each goal requires an explicitly selected `--feature <uuid>`; the server derives
+its product. Optional `--feature-revision <uuid>` must belong to that feature.
+For product maintenance, explicitly use `--maintenance-reason <reason>` instead.
+A repository binding alone never selects a feature. Missing goal scope blocks
+capture, not development. Manual starts may specify `--product <uuid>` together
+with the feature or maintenance reason. Plugin sources must match the
 confirmed binding. Only explicitly requested cross-product goals may use
 `--cross-product-reason <reason>` (1–500 characters), without a product or Work
 Order. This is a per-goal choice, never a saved default. `context --cross-product`

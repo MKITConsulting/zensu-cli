@@ -29,13 +29,16 @@ type aiWorkBinding struct {
 	OrganizationID string `json:"organizationId"`
 }
 type aiWorkContext struct {
-	APIURL         string `json:"apiUrl"`
-	Ready          bool   `json:"ready"`
-	WorkScope      string `json:"workScope"`
-	ProductID      string `json:"productId,omitempty"`
-	ProductName    string `json:"productName,omitempty"`
-	UserID         string `json:"reportingUserId,omitempty"`
-	OrganizationID string `json:"organizationId,omitempty"`
+	FeatureID         string `json:"featureId,omitempty"`
+	FeatureRevisionID string `json:"featureRevisionId,omitempty"`
+	FeatureTitle      string `json:"featureTitle,omitempty"`
+	APIURL            string `json:"apiUrl"`
+	Ready             bool   `json:"ready"`
+	WorkScope         string `json:"workScope"`
+	ProductID         string `json:"productId,omitempty"`
+	ProductName       string `json:"productName,omitempty"`
+	UserID            string `json:"reportingUserId,omitempty"`
+	OrganizationID    string `json:"organizationId,omitempty"`
 }
 
 func aiWorkClient(f *Factory, cmd *cobra.Command) (*client.Client, error) {
@@ -53,14 +56,33 @@ func aiWorkClient(f *Factory, cmd *cobra.Command) (*client.Client, error) {
 	return c, nil
 }
 func aiWorkServerContext(cmd *cobra.Command, c *client.Client, product string) (aiWorkContext, error) {
+	return aiWorkServerGoalContext(cmd, c, product, "", "")
+}
+
+func aiWorkServerGoalContext(cmd *cobra.Command, c *client.Client, product, feature, revision string) (aiWorkContext, error) {
 	out := aiWorkContext{APIURL: c.BaseURL, Ready: true, WorkScope: "cross_product"}
 	route := "/api/ai-work/capture/context"
+	query := url.Values{}
 	if product != "" {
 		if err := aiWorkUUID(product); err != nil {
 			return out, err
 		}
-		route += "?productId=" + product
+		query.Set("productId", product)
 		out.WorkScope = "product"
+	}
+	for key, id := range map[string]string{"featureId": feature, "featureRevisionId": revision} {
+		if id != "" {
+			if err := aiWorkUUID(id); err != nil {
+				return out, err
+			}
+			query.Set(key, id)
+		}
+	}
+	if revision != "" && feature == "" {
+		return out, fmt.Errorf("a feature revision requires --feature")
+	}
+	if len(query) > 0 {
+		route += "?" + query.Encode()
 	}
 	raw, err := readResponse(c.Do(cmd.Context(), http.MethodGet, route, nil))
 	if err != nil {
@@ -68,15 +90,22 @@ func aiWorkServerContext(cmd *cobra.Command, c *client.Client, product string) (
 	}
 	// Decode only server identity fields; readiness and host are client-owned.
 	var identity struct {
-		ProductID      string `json:"productId"`
-		ProductName    string `json:"productName"`
-		UserID         string `json:"reportingUserId"`
-		OrganizationID string `json:"organizationId"`
+		FeatureID         string `json:"featureId"`
+		FeatureRevisionID string `json:"featureRevisionId"`
+		FeatureTitle      string `json:"featureTitle"`
+		ProductID         string `json:"productId"`
+		ProductName       string `json:"productName"`
+		UserID            string `json:"reportingUserId"`
+		OrganizationID    string `json:"organizationId"`
 	}
-	if json.Unmarshal(raw, &identity) != nil || identity.ProductID != product || aiWorkUUID(identity.UserID) != nil || aiWorkUUID(identity.OrganizationID) != nil {
+	if json.Unmarshal(raw, &identity) != nil || (product != "" && identity.ProductID != product) || (feature == "" && identity.ProductID != product) || identity.FeatureID != feature || identity.FeatureRevisionID != revision || (feature != "" && aiWorkUUID(identity.ProductID) != nil) || aiWorkUUID(identity.UserID) != nil || aiWorkUUID(identity.OrganizationID) != nil {
 		return out, fmt.Errorf("capture identity was not confirmed; update the server")
 	}
 	out.ProductID = identity.ProductID
+	if identity.ProductID != "" {
+		out.WorkScope = "product"
+	}
+	out.FeatureID, out.FeatureRevisionID, out.FeatureTitle = identity.FeatureID, identity.FeatureRevisionID, identity.FeatureTitle
 	out.ProductName = identity.ProductName
 	out.UserID = identity.UserID
 	out.OrganizationID = identity.OrganizationID
@@ -165,7 +194,14 @@ func aiWorkBoundContext(f *Factory, cmd *cobra.Command) (aiWorkContext, error) {
 }
 func newAIWorkContextCmd(f *Factory) *cobra.Command {
 	var cross bool
+	var feature, revision string
 	cmd := jsonByDefault(&cobra.Command{Use: "context", Short: "Revalidate a confirmed repository product; never creates work", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		if cross && (feature != "" || revision != "") {
+			return fmt.Errorf("cross-product context cannot select a feature")
+		}
+		if revision != "" && feature == "" {
+			return fmt.Errorf("--feature-revision requires --feature")
+		}
 		var out aiWorkContext
 		var err error
 		if cross {
@@ -176,6 +212,18 @@ func newAIWorkContextCmd(f *Factory) *cobra.Command {
 			}
 		} else {
 			out, err = aiWorkBoundContext(f, cmd)
+			if err == nil && out.Ready && feature != "" {
+				var c *client.Client
+				c, err = aiWorkClient(f, cmd)
+				if err == nil {
+					var goal aiWorkContext
+					goal, err = aiWorkServerGoalContext(cmd, c, out.ProductID, feature, revision)
+					if err == nil && (goal.UserID != out.UserID || goal.OrganizationID != out.OrganizationID) {
+						err = fmt.Errorf("capture account changed while validating feature")
+					}
+					out = goal
+				}
+			}
 		}
 		if err != nil {
 			return err
@@ -187,6 +235,8 @@ func newAIWorkContextCmd(f *Factory) *cobra.Command {
 		return printJSON(f.Out, raw)
 	}})
 	cmd.Flags().BoolVar(&cross, "cross-product", false, "read the current identity for an explicitly requested cross-product goal")
+	cmd.Flags().StringVar(&feature, "feature", "", "validate this goal's feature against the confirmed product")
+	cmd.Flags().StringVar(&revision, "feature-revision", "", "validate an optional revision of the selected feature")
 	return cmd
 }
 func newAIWorkBindCmd(f *Factory) *cobra.Command {

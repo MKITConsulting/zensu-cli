@@ -476,3 +476,31 @@ booked credits remain separately unfiltered because there is no run-cost linkage
 ### Task-description context discovery
 
 `zensu knowledge context-search --query "Fix account login" --json` returns up to five distinct feature candidates with canonical feature/product IDs and bounded excerpts. It performs one organization-scoped search and at most five feature-item reads, creates no context receipt, and never selects by search score. The agent matches the task and repository/product scope, asks when ambiguous, then calls `knowledge context-pack <feature-id> --agent <host>` and correlates required source reads with `--context-load`. Optional `--product <UUID>` filters the bounded candidates; no matches do not prove absence. The query is sent to the configured backend; its existing semantic search/full-text fallback is used without answer generation.
+
+
+### Result review context
+
+`zensu ai-work submit <work-id> --event-id <uuid> --expected-version <version>
+--artifact <immutable-reference> --criteria-version <version> --review-file review.json`
+submits authored review content for the exact result. Keep the event ID and the
+file contents unchanged on retry. The optional UTF-8 JSON file is at most 32 KiB:
+
+```json
+{
+  "summary": "Implemented the review dialog.",
+  "acceptanceCriteria": [{"text": "Shows implementation and evidence", "status": "met"}],
+  "evidence": [{"label": "Tests", "description": "18 focused tests passed locally"}],
+  "limitations": "Manual production verification pending"
+}
+```
+
+Criteria statuses are reported `met`, `not_met` or `not_checked`, not human
+acceptance. Evidence may include an HTTP(S) `url` without embedded credentials;
+each item needs a URL or description. The server bounds and validates content:
+summary/limitations 4000 characters each, at most 20 criteria (1000 characters)
+and 20 evidence items (200-character label, 2000-character URL/description).
+No file is discovered automatically; submit only content authorized for the
+selected API host. Unknown fields, malformed or oversized files fail locally.
+Deploy the backend's reviewDetails support before using the flag. Legacy calls
+without a file remain valid, with missing context visible in the web dialog.
+Changing the report requires a new event ID and a fresh human decision.

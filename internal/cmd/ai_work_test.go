@@ -3,6 +3,9 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/MKITConsulting/zensu-cli/internal/client"
@@ -98,5 +101,57 @@ func TestAIWorkContext(t *testing.T) {
 		} else if out.Len() != 0 {
 			t.Fatal("refused context exposed output")
 		}
+	}
+}
+
+func TestAIWorkReviewFile(t *testing.T) {
+	const id = "9e733c18-b6b7-4a18-a17d-4dfd2d15f21a"
+	const event = "891419fa-f7e4-4a52-8123-2bef791876dd"
+	path := "/api/ai-work/capture/units/" + id + "/submissions"
+	valid := `{"summary":"Added review context","acceptanceCriteria":[{"text":"Shows criteria","status":"met"}],"evidence":[{"label":"Tests","description":"12 passed"}],"limitations":"Manual review pending"}`
+	for _, tc := range []struct {
+		name, content string
+		valid         bool
+	}{
+		{"valid", valid, true}, {"unknown field", `{"summary":"x","transcript":"private"}`, false},
+		{"nested unknown", `{"summary":"x","evidence":[{"label":"Tests","secret":"private"}]}`, false},
+		{"missing summary", `{}`, false}, {"null", `null`, false}, {"trailing object", valid + `{}`, false},
+		{"malformed", `{`, false}, {"oversize", strings.Repeat(" ", 32769), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "review.json")
+			if err := os.WriteFile(file, []byte(tc.content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{"POST " + path: reply(200, map[string]any{"id": event})})
+			f, _ := testFactory(srv)
+			f.NewClient = func(context.Context) (*client.Client, error) {
+				return client.New(&config.Config{AccessToken: "personal-login"}, srv.URL, "", client.WithHTTPClient(srv.Client())), nil
+			}
+			err := runCmd(t, NewAIWorkCmd(f), "submit", id, "--event-id", event, "--expected-version", "2", "--artifact", "commit:abc", "--criteria-version", "v1", "--review-file", file)
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v err=%v", tc.valid, err)
+			}
+			if !tc.valid {
+				if len(api.calls()) != 0 {
+					t.Fatal("invalid file sent a request")
+				}
+				return
+			}
+			got := api.only(t, "POST", path)
+			var want any
+			_ = json.Unmarshal([]byte(valid), &want)
+			a, _ := json.Marshal(got.Body["reviewDetails"])
+			b, _ := json.Marshal(want)
+			if string(a) != string(b) {
+				t.Fatalf("details=%s want=%s", a, b)
+			}
+		})
+	}
+	if _, err := readAIWorkReviewFile(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Fatal("missing file accepted")
+	}
+	if _, err := readAIWorkReviewFile(t.TempDir()); err == nil {
+		t.Fatal("directory accepted")
 	}
 }

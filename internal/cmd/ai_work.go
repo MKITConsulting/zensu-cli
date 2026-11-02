@@ -154,6 +154,7 @@ func aiWorkRequest(f *Factory, cmd *cobra.Command, method, path string, body any
 
 // Explicitly supplied review content only; never collect a transcript or diff.
 type aiWorkReviewDetails struct {
+	ArtifactURL        string `json:"artifactUrl,omitempty"`
 	Summary            string `json:"summary"`
 	AcceptanceCriteria []struct {
 		Text   string `json:"text"`

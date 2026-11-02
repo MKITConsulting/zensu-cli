@@ -488,11 +488,19 @@ file contents unchanged on retry. The optional UTF-8 JSON file is at most 32 KiB
 ```json
 {
   "summary": "Implemented the review dialog.",
+  "artifactUrl": "https://git.example.test/team/repo/commit/0123456789012345678901234567890123456789",
   "acceptanceCriteria": [{"text": "Shows implementation and evidence", "status": "met"}],
   "evidence": [{"label": "Tests", "description": "18 focused tests passed locally"}],
   "limitations": "Manual production verification pending"
 }
 ```
+
+Optional `artifactUrl` links the exact submitted artifact in its source system.
+Use the immutable commit/document URL, including for self-hosted systems; never a
+branch URL. It has the same 2000-character HTTP(S), no-credentials constraints as
+evidence links. It is explicit report content, not collected from Git remotes.
+Upgrade the backend before sending this field; older servers reject it. Changing
+the URL creates a new report version rather than rewriting accepted history.
 
 Criteria statuses are reported `met`, `not_met` or `not_checked`, not human
 acceptance. Evidence may include an HTTP(S) `url` without embedded credentials;

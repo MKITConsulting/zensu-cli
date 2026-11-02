@@ -110,12 +110,12 @@ func TestAIWorkReviewFile(t *testing.T) {
 	const id = "9e733c18-b6b7-4a18-a17d-4dfd2d15f21a"
 	const event = "891419fa-f7e4-4a52-8123-2bef791876dd"
 	path := "/api/ai-work/capture/units/" + id + "/submissions"
-	valid := `{"summary":"Added review context","acceptanceCriteria":[{"text":"Shows criteria","status":"met"}],"evidence":[{"label":"Tests","description":"12 passed"}],"limitations":"Manual review pending"}`
+	valid := `{"artifactUrl":"https://git.example.test/team/repo/commit/abc","summary":"Added review context","acceptanceCriteria":[{"text":"Shows criteria","status":"met"}],"evidence":[{"label":"Tests","description":"12 passed"}],"limitations":"Manual review pending"}`
 	for _, tc := range []struct {
 		name, content string
 		valid         bool
 	}{
-		{"valid", valid, true}, {"unknown field", `{"summary":"x","transcript":"private"}`, false},
+		{"valid", valid, true}, {"legacy without source link", strings.Replace(valid, `"artifactUrl":"https://git.example.test/team/repo/commit/abc",`, "", 1), true}, {"invalid source link type", `{"summary":"x","artifactUrl":7}`, false}, {"unknown field", `{"summary":"x","transcript":"private"}`, false},
 		{"nested unknown", `{"summary":"x","evidence":[{"label":"Tests","secret":"private"}]}`, false},
 		{"missing summary", `{}`, false}, {"null", `null`, false}, {"trailing object", valid + `{}`, false},
 		{"malformed", `{`, false}, {"oversize", strings.Repeat(" ", 32769), false},
@@ -142,7 +142,7 @@ func TestAIWorkReviewFile(t *testing.T) {
 			}
 			got := api.only(t, "POST", path)
 			var want any
-			_ = json.Unmarshal([]byte(valid), &want)
+			_ = json.Unmarshal([]byte(tc.content), &want)
 			a, _ := json.Marshal(got.Body["reviewDetails"])
 			b, _ := json.Marshal(want)
 			if string(a) != string(b) {

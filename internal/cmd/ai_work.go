@@ -3,11 +3,14 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/MKITConsulting/zensu-cli/internal/version"
+	"io"
 	"net/http"
+	"os"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/MKITConsulting/zensu-cli/internal/version"
 
 	"github.com/MKITConsulting/zensu-cli/internal/client"
 	"github.com/spf13/cobra"
@@ -78,7 +81,7 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return aiWorkRequest(f, cmd, http.MethodGet, "/api/ai-work/capture/units/"+args[0], nil)
 		}})
-	var event, artifact, criteria string
+	var event, artifact, criteria, reviewFile string
 	var expected int32
 	submit := jsonByDefault(&cobra.Command{Use: "submit <work-id>", Short: "Submit an immutable result version; never accepts it", Args: aiWorkIDArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -88,12 +91,21 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 			if expected < 1 || strings.TrimSpace(artifact) == "" || strings.TrimSpace(criteria) == "" {
 				return fmt.Errorf("--expected-version, --artifact and --criteria-version are required")
 			}
-			return aiWorkRequest(f, cmd, http.MethodPost, "/api/ai-work/capture/units/"+args[0]+"/submissions", map[string]any{"id": event, "expectedVersion": expected, "artifactRef": artifact, "criteriaVersion": criteria})
+			body := map[string]any{"id": event, "expectedVersion": expected, "artifactRef": artifact, "criteriaVersion": criteria}
+			if reviewFile != "" {
+				details, err := readAIWorkReviewFile(reviewFile)
+				if err != nil {
+					return err
+				}
+				body["reviewDetails"] = details
+			}
+			return aiWorkRequest(f, cmd, http.MethodPost, "/api/ai-work/capture/units/"+args[0]+"/submissions", body)
 		}})
 	submit.Flags().StringVar(&event, "event-id", "", "stable submission UUID (required; keep across retries)")
 	submit.Flags().Int32Var(&expected, "expected-version", 0, "observed work version; stale writes conflict")
 	submit.Flags().StringVar(&artifact, "artifact", "", "immutable commit or document version reference")
 	submit.Flags().StringVar(&criteria, "criteria-version", "", "version or digest of the agreed acceptance criteria")
+	submit.Flags().StringVar(&reviewFile, "review-file", "", "explicit JSON file containing implementation summary, acceptanceCriteria, evidence and optional limitations (max 32 KiB)")
 	root.AddCommand(start, get, submit, newAIWorkContextCmd(f), newAIWorkBindCmd(f))
 	return root
 }
@@ -130,4 +142,41 @@ func aiWorkRequest(f *Factory, cmd *cobra.Command, method, path string, body any
 		return err
 	}
 	return printJSON(f.Out, raw)
+}
+
+// Explicitly supplied review content only; never collect a transcript or diff.
+type aiWorkReviewDetails struct {
+	Summary            string `json:"summary"`
+	AcceptanceCriteria []struct {
+		Text   string `json:"text"`
+		Status string `json:"status"`
+	} `json:"acceptanceCriteria"`
+	Evidence []struct {
+		Label       string `json:"label"`
+		URL         string `json:"url,omitempty"`
+		Description string `json:"description,omitempty"`
+	} `json:"evidence"`
+	Limitations string `json:"limitations,omitempty"`
+}
+
+func readAIWorkReviewFile(path string) (*aiWorkReviewDetails, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read --review-file")
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() > 32768 {
+		return nil, fmt.Errorf("--review-file must be a regular JSON file of at most 32 KiB")
+	}
+	decoder := json.NewDecoder(io.LimitReader(file, 32769))
+	decoder.DisallowUnknownFields()
+	var details aiWorkReviewDetails
+	if err := decoder.Decode(&details); err != nil {
+		return nil, fmt.Errorf("invalid --review-file JSON or unknown fields")
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF || strings.TrimSpace(details.Summary) == "" {
+		return nil, fmt.Errorf("--review-file requires one JSON object with a summary")
+	}
+	return &details, nil
 }

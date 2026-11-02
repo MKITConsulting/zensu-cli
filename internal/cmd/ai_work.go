@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/MKITConsulting/zensu-cli/internal/version"
 	"net/http"
-	"net/url"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -20,7 +19,7 @@ import (
 func NewAIWorkCmd(f *Factory) *cobra.Command {
 	root := &cobra.Command{Use: "ai-work", Short: "Capture work and result versions using your personal OAuth login",
 		Long: "Capture work for My work and Organization. API keys and work-order session tokens are refused. Submission is not acceptance; review and decide the exact result in the web application."}
-	var id, title, order, source, sourceVersion, runKind string
+	var id, title, order, source, sourceVersion, runKind, product, crossReason string
 	var legacyMetadata bool
 	start := jsonByDefault(&cobra.Command{Use: "start", Short: "Declare an agreed work objective (retry with the same ID)", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -60,10 +59,15 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 				}
 				body["workOrderId"] = order
 			}
+			if err := aiWorkStartScope(f, cmd, body, product, crossReason, source, legacyMetadata); err != nil {
+				return err
+			}
 			return aiWorkRequest(f, cmd, http.MethodPost, "/api/ai-work/capture/units", body)
 		}})
 	start.Flags().StringVar(&id, "id", "", "stable work UUID (required; keep across retries)")
 	start.Flags().StringVar(&title, "title", "", "agreed work objective, at most 160 characters")
+	start.Flags().StringVar(&product, "product", "", "explicit product UUID; plugins must match a confirmed repository binding")
+	start.Flags().StringVar(&crossReason, "cross-product-reason", "", "explicit reason for this cross-product goal; never a repository default")
 	start.Flags().StringVar(&order, "work-order", "", "optional canonical work-order UUID")
 	start.Flags().StringVar(&source, "source", "cli", "reporter: cli, codex, claude_code, antigravity, copilot or kiro (client declaration)")
 	start.Flags().StringVar(&sourceVersion, "source-version", version.Version, "reporter version (plugins must supply their own version)")
@@ -90,25 +94,7 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 	submit.Flags().Int32Var(&expected, "expected-version", 0, "observed work version; stale writes conflict")
 	submit.Flags().StringVar(&artifact, "artifact", "", "immutable commit or document version reference")
 	submit.Flags().StringVar(&criteria, "criteria-version", "", "version or digest of the agreed acceptance criteria")
-	contextCmd := jsonByDefault(&cobra.Command{Use: "context", Short: "Show the selected capture host without credentials", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		c, err := f.NewClient(cmd.Context())
-		if err != nil {
-			return err
-		}
-		if c.AuthMode() != client.AuthModeLogin {
-			return fmt.Errorf("AI work capture requires a personal OAuth login")
-		}
-		u, err := url.Parse(c.BaseURL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			return fmt.Errorf("AI work capture requires an HTTP(S) API URL without credentials, query or fragment")
-		}
-		b, err := json.Marshal(map[string]string{"apiUrl": c.BaseURL})
-		if err != nil {
-			return err
-		}
-		return printJSON(f.Out, b)
-	}})
-	root.AddCommand(start, get, submit, contextCmd)
+	root.AddCommand(start, get, submit, newAIWorkContextCmd(f), newAIWorkBindCmd(f))
 	return root
 }
 

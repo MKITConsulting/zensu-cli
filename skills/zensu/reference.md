@@ -221,8 +221,11 @@ on the very first scan of an empty product.
 ### ai-work
 
 ```bash
+zensu ai-work bind --product <product-uuid> --confirm
 zensu ai-work context
-zensu ai-work start --id <work-uuid> --title "Agreed objective" [--work-order <uuid>]
+zensu ai-work context --cross-product
+zensu ai-work start --id <work-uuid> --title "Agreed objective" [--product <product-uuid>] [--work-order <uuid>]
+zensu ai-work start --id <work-uuid> --title "Shared goal" --cross-product-reason "Explicitly requested work spanning products"
 zensu ai-work get <work-uuid>
 zensu ai-work submit <work-uuid> --event-id <event-uuid> --expected-version 1 --artifact "commit:<immutable-sha>" --criteria-version "sha256:<criteria-digest>"
 ```
@@ -237,6 +240,16 @@ The CLI has no accept/revoke/assign command: only an explicit authenticated web
 decision accepts a concrete result. The reporting account is not an authorship
 claim. Native plugins automate begin/checkpoint and persist retry receipts;
 Pulse and credit billing remain independent.
+
+Obtain the user's explicit confirmation of the repository's product before `bind`.
+Automatic starts require this private Git-common-directory binding, revalidated
+against host, current personal account, organization, product access and origin.
+Missing bindings return `ready=false` from `context`; skip capture and continue
+coding. Never infer consent from repo names/config or automatically bind a product.
+Manual starts can explicitly name a product; plugin sources must match the binding.
+Cross-product work requires explicit human intent and a reason for each goal;
+it is never a fallback or repository default. Legacy unassigned records remain
+in the separate Unassigned web view and cannot receive new automatic submissions.
 
 ### pulse
 

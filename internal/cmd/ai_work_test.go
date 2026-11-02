@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"os/exec"
 	"testing"
 
 	"github.com/MKITConsulting/zensu-cli/internal/client"
@@ -17,8 +18,8 @@ func TestAIWorkCommands(t *testing.T) {
 		args               []string
 		body               map[string]any
 	}{
-		{"start", "POST", "/api/ai-work/capture/units", []string{"start", "--id", id, "--title", "Agreed goal", "--work-order", event}, map[string]any{"id": id, "title": "Agreed goal", "workOrderId": event, "source": "cli", "sourceVersion": "dev", "runKind": "work"}},
-		{"plugin test", "POST", "/api/ai-work/capture/units", []string{"start", "--id", id, "--title", "Probe", "--source", "copilot", "--source-version", "1.2.3", "--run-kind", "test"}, map[string]any{"id": id, "title": "Probe", "source": "copilot", "sourceVersion": "1.2.3", "runKind": "test"}},
+		{"start", "POST", "/api/ai-work/capture/units", []string{"start", "--id", id, "--title", "Agreed goal", "--work-order", event, "--product", id}, map[string]any{"id": id, "title": "Agreed goal", "workOrderId": event, "productId": id, "source": "cli", "sourceVersion": "dev", "runKind": "work"}},
+		{"plugin test", "POST", "/api/ai-work/capture/units", []string{"start", "--id", id, "--title", "Probe", "--source", "copilot", "--source-version", "1.2.3", "--run-kind", "test", "--cross-product-reason", "Explicit shared validation"}, map[string]any{"id": id, "title": "Probe", "crossProductReason": "Explicit shared validation", "source": "copilot", "sourceVersion": "1.2.3", "runKind": "test"}},
 		{"legacy replay", "POST", "/api/ai-work/capture/units", []string{"start", "--id", id, "--title", "Old goal", "--legacy-metadata"}, map[string]any{"id": id, "title": "Old goal"}},
 		{"get", "GET", "/api/ai-work/capture/units/" + id, []string{"get", id}, nil},
 		{"submit", "POST", "/api/ai-work/capture/units/" + id + "/submissions", []string{"submit", id, "--event-id", event, "--expected-version", "2", "--artifact", "commit:abc", "--criteria-version", "sha256:def"}, map[string]any{"id": event, "expectedVersion": float64(2), "artifactRef": "commit:abc", "criteriaVersion": "sha256:def"}},
@@ -70,6 +71,7 @@ func TestAIWorkCommands(t *testing.T) {
 }
 
 func TestAIWorkContext(t *testing.T) {
+	aiWorkTestRepo(t)
 	for _, tc := range []struct {
 		url     string
 		cfg     config.Config
@@ -91,12 +93,22 @@ func TestAIWorkContext(t *testing.T) {
 			t.Fatalf("allowed=%t error=%v", tc.allowed, err)
 		}
 		if tc.allowed {
-			var result map[string]string
-			if json.Unmarshal(out.Bytes(), &result) != nil || len(result) != 1 || result["apiUrl"] != tc.url {
-				t.Fatal("context did not return only the selected host")
+			var result map[string]any
+			if json.Unmarshal(out.Bytes(), &result) != nil || len(result) != 3 || result["apiUrl"] != tc.url {
+				t.Fatal("context did not return an unassigned context without network or implicit binding")
 			}
 		} else if out.Len() != 0 {
 			t.Fatal("refused context exposed output")
+		}
+	}
+}
+
+func aiWorkTestRepo(t *testing.T) {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	for _, args := range [][]string{{"init", "--quiet"}, {"remote", "add", "origin", "https://example.test/repo.git"}} {
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git: %s %v", out, err)
 		}
 	}
 }

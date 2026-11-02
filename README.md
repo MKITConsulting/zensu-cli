@@ -460,7 +460,7 @@ may make you hold.
 
 ### Work capture metadata
 
-`zensu ai-work start --id <uuid> --title <objective>` declares source `cli`, the
+`zensu ai-work start --id <uuid> --title <objective> --product <product-uuid>` declares source `cli`, the
 installed CLI version and run kind `work`. Explicit validation/demo/probe goals
 use `--run-kind test`; implementing tests for a product remains normal work.
 Plugins supply `--source` (`codex`, `claude_code`, `antigravity`, `copilot`, `kiro`)
@@ -476,3 +476,31 @@ booked credits remain separately unfiltered because there is no run-cost linkage
 ### Task-description context discovery
 
 `zensu knowledge context-search --query "Fix account login" --json` returns up to five distinct feature candidates with canonical feature/product IDs and bounded excerpts. It performs one organization-scoped search and at most five feature-item reads, creates no context receipt, and never selects by search score. The agent matches the task and repository/product scope, asks when ambiguous, then calls `knowledge context-pack <feature-id> --agent <host>` and correlates required source reads with `--context-load`. Optional `--product <UUID>` filters the bounded candidates; no matches do not prove absence. The query is sent to the configured backend; its existing semantic search/full-text fallback is used without answer generation.
+
+### Confirmed AI-work product binding
+
+After the user explicitly confirms the product for this repository:
+
+```bash
+zensu ai-work bind --product <product-uuid> --confirm
+zensu ai-work context
+zensu ai-work start --id <goal-uuid> --title <objective>
+```
+
+The private binding lives under the Git common directory and applies to its
+worktrees. It binds API URL, personal OAuth account, organization, product and an
+origin fingerprint. No credentials or remote URL are stored. Each automatic start
+and plugin checkpoint revalidates it; changed account/host/origin/product access
+fails closed. A missing binding returns `ready=false`, `workScope=unassigned` and
+creates no work. Git repositories without an origin cannot bind automatic capture.
+A malformed binding requires inspection and removal of that private binding file
+before explicit re-confirmation; never edit session receipts to bypass a conflict.
+
+Manual starts may specify `--product <uuid>`. Plugin sources must match the
+confirmed binding. Only explicitly requested cross-product goals may use
+`--cross-product-reason <reason>` (1–500 characters), without a product or Work
+Order. This is a per-goal choice, never a saved default. `context --cross-product`
+reads the current authenticated identity without creating work or a binding.
+The backend rejects unassigned new starts; old exact retries remain idempotent.
+Existing unassigned history is shown separately in the web UI and cannot receive
+new automatic submissions. Upgrade the backend before this CLI and the plugins.

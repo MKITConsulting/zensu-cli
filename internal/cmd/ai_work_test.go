@@ -21,7 +21,7 @@ func TestAIWorkCommands(t *testing.T) {
 		args               []string
 		body               map[string]any
 	}{
-		{"start", "POST", "/api/ai-work/capture/units", []string{"start", "--id", id, "--title", "Agreed goal", "--work-order", event, "--product", id}, map[string]any{"id": id, "title": "Agreed goal", "workOrderId": event, "productId": id, "source": "cli", "sourceVersion": "dev", "runKind": "work"}},
+		{"start", "POST", "/api/ai-work/capture/units", []string{"start", "--id", id, "--title", "Agreed goal", "--maintenance-reason", "Upgrade build tooling", "--product", id}, map[string]any{"id": id, "title": "Agreed goal", "maintenanceReason": "Upgrade build tooling", "productId": id, "source": "cli", "sourceVersion": "dev", "runKind": "work"}},
 		{"plugin test", "POST", "/api/ai-work/capture/units", []string{"start", "--id", id, "--title", "Probe", "--source", "copilot", "--source-version", "1.2.3", "--run-kind", "test", "--cross-product-reason", "Explicit shared validation"}, map[string]any{"id": id, "title": "Probe", "crossProductReason": "Explicit shared validation", "source": "copilot", "sourceVersion": "1.2.3", "runKind": "test"}},
 		{"legacy replay", "POST", "/api/ai-work/capture/units", []string{"start", "--id", id, "--title", "Old goal", "--legacy-metadata"}, map[string]any{"id": id, "title": "Old goal"}},
 		{"get", "GET", "/api/ai-work/capture/units/" + id, []string{"get", id}, nil},

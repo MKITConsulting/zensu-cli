@@ -23,6 +23,7 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 	root := &cobra.Command{Use: "ai-work", Short: "Capture work and result versions using your personal OAuth login",
 		Long: "Capture work for My work and Organization. API keys and work-order session tokens are refused. Submission is not acceptance; review and decide the exact result in the web application."}
 	var id, title, order, source, sourceVersion, runKind, product, crossReason string
+	var feature, revision, maintenance string
 	var legacyMetadata bool
 	start := jsonByDefault(&cobra.Command{Use: "start", Short: "Declare an agreed work objective (retry with the same ID)", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -62,7 +63,11 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 				}
 				body["workOrderId"] = order
 			}
-			if err := aiWorkStartScope(f, cmd, body, product, crossReason, source, legacyMetadata); err != nil {
+			goalProduct, err := aiWorkStartGoal(f, cmd, body, product, crossReason, feature, revision, maintenance, legacyMetadata)
+			if err != nil {
+				return err
+			}
+			if err := aiWorkStartScope(f, cmd, body, goalProduct, crossReason, source, legacyMetadata); err != nil {
 				return err
 			}
 			return aiWorkRequest(f, cmd, http.MethodPost, "/api/ai-work/capture/units", body)
@@ -70,6 +75,9 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 	start.Flags().StringVar(&id, "id", "", "stable work UUID (required; keep across retries)")
 	start.Flags().StringVar(&title, "title", "", "agreed work objective, at most 160 characters")
 	start.Flags().StringVar(&product, "product", "", "explicit product UUID; plugins must match a confirmed repository binding")
+	start.Flags().StringVar(&feature, "feature", "", "explicitly chosen feature UUID for this goal; determines its product")
+	start.Flags().StringVar(&revision, "feature-revision", "", "optional revision UUID belonging to the chosen feature")
+	start.Flags().StringVar(&maintenance, "maintenance-reason", "", "explicit reason for product maintenance without a feature, for this goal only")
 	start.Flags().StringVar(&crossReason, "cross-product-reason", "", "explicit reason for this cross-product goal; never a repository default")
 	start.Flags().StringVar(&order, "work-order", "", "optional canonical work-order UUID")
 	start.Flags().StringVar(&source, "source", "cli", "reporter: cli, codex, claude_code, antigravity, copilot or kiro (client declaration)")

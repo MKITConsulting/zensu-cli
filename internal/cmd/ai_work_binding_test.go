@@ -65,14 +65,14 @@ func TestAIWorkConfirmedBinding(t *testing.T) {
 	if json.Unmarshal(out.Bytes(), &bound) != nil || !bound.Ready || bound.ProductID != product || bound.UserID != user {
 		t.Fatalf("bound context %s", out.Bytes())
 	}
-	if err := run("start", "--id", org, "--title", "Confirmed", "--source", "codex", "--source-version", "1"); err != nil {
+	if err := run("start", "--id", org, "--title", "Confirmed", "--maintenance-reason", "Upgrade build tooling", "--source", "codex", "--source-version", "1"); err != nil {
 		t.Fatal(err)
 	}
 	got := api.only(t, "POST", "/api/ai-work/capture/units")
 	if got.Body["productId"] != product {
 		t.Fatalf("wrong scope: %v", got.Body)
 	}
-	if run("start", "--id", org, "--title", "Wrong product", "--product", org, "--source", "codex", "--source-version", "1") == nil {
+	if run("start", "--id", org, "--title", "Wrong product", "--maintenance-reason", "Upgrade build tooling", "--product", org, "--source", "codex", "--source-version", "1") == nil {
 		t.Fatal("plugin overrode the confirmed product")
 	}
 	api.only(t, "POST", "/api/ai-work/capture/units")

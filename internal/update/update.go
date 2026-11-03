@@ -17,25 +17,27 @@ import (
 )
 
 const (
-	repo          = "MKITConsulting/zensu-cli"
-	cacheFileName = "version-check.json"
-	checkInterval = 24 * time.Hour
-	fetchTimeout  = 2 * time.Second
-	maxResponse   = 1 << 20
-	cacheDirPerm  = 0o700
-	cacheFilePerm = 0o600
+	repo           = "MKITConsulting/zensu-cli"
+	cacheFileName  = "version-check.json"
+	checkInterval  = 24 * time.Hour
+	fetchTimeout   = 2 * time.Second
+	releaseTimeout = 30 * time.Second
+	maxResponse    = 1 << 20
+	cacheDirPerm   = 0o700
+	cacheFilePerm  = 0o600
 )
 
 var githubAPIBase = "https://api.github.com"
 
-var httpClient = &http.Client{
-	Timeout: fetchTimeout,
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if len(via) > 0 && req.URL.Host != via[0].URL.Host {
-			return fmt.Errorf("refusing cross-host redirect to %s", req.URL.Host)
-		}
-		return nil
-	},
+var httpClient = &http.Client{Timeout: fetchTimeout, CheckRedirect: refuseCrossHostRedirect}
+
+var commandClient = &http.Client{Timeout: releaseTimeout, CheckRedirect: refuseCrossHostRedirect}
+
+func refuseCrossHostRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) > 0 && req.URL.Host != via[0].URL.Host {
+		return fmt.Errorf("refusing cross-host redirect to %s", req.URL.Host)
+	}
+	return nil
 }
 
 var graceWait = 300 * time.Millisecond
@@ -80,7 +82,7 @@ func Notice(ctx context.Context, current string, now time.Time) string {
 	if c, err := loadCache(); err == nil && c.LatestVersion != "" && now.Sub(c.CheckedAt) < checkInterval {
 		latest = c.LatestVersion
 	} else {
-		fetched, err := fetchLatest(ctx, current)
+		fetched, err := fetchLatest(ctx, httpClient, current)
 		if err != nil || fetched == "" {
 			return ""
 		}
@@ -91,13 +93,13 @@ func Notice(ctx context.Context, current string, now time.Time) string {
 		return ""
 	}
 	return fmt.Sprintf(
-		"update available: zensu %s (you have %s) — curl -fsSL https://zensu.dev/install.sh | sh",
+		"update available: zensu %s (you have %s) — run: zensu update",
 		normalize(latest), strings.TrimPrefix(normalize(current), "v"),
 	)
 }
 
 func suppressed(current string, args []string) bool {
-	return envSuppressed(current, args) || !isTerminalStderr()
+	return envSuppressed(current, args) || !isTerminalStderr() || isRoot()
 }
 
 var isTerminalStderr = func() bool { return isTerminal(os.Stderr) }
@@ -181,7 +183,22 @@ func saveCache(c cache) error {
 	return os.Rename(tmpName, filepath.Join(dir, cacheFileName))
 }
 
-func fetchLatest(ctx context.Context, current string) (string, error) {
+func LatestRelease(ctx context.Context, current string) (string, error) {
+	tag, err := fetchLatest(ctx, commandClient, current)
+	if err != nil {
+		return "", err
+	}
+	if !isRoot() {
+		_ = saveCache(cache{CheckedAt: time.Now(), LatestVersion: tag})
+	}
+	return normalize(tag), nil
+}
+
+func IsNewer(latest, current string) bool {
+	return compareSemver(latest, current) > 0
+}
+
+func fetchLatest(ctx context.Context, client *http.Client, current string) (string, error) {
 	url := strings.TrimRight(githubAPIBase, "/") + "/repos/" + repo + "/releases/latest"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -189,11 +206,14 @@ func fetchLatest(ctx context.Context, current string) (string, error) {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "zensu-cli/"+current)
-	resp, err := httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+		return "", fmt.Errorf("github releases API: status %d (possibly the GitHub API rate limit; try again later)", resp.StatusCode)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("github releases API: status %d", resp.StatusCode)
 	}

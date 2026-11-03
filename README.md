@@ -94,7 +94,7 @@ Ed25519 signature from a zensu release key built into the CLI, and only an archi
 whose SHA-256 matches that file. It runs the new binary once (`--version`) before
 swapping it in, never calls `sudo` itself (re-run `sudo zensu update` when the
 install directory is not writable) and leaves the installed binary untouched when
-any check fails. Releases up to v0.15.0 are unsigned: update from those once by
+any check fails. Releases up to v0.18.0 are unsigned: update from those once by
 re-running the installer you used, then `zensu update` takes over. `--json` prints
 `currentVersion`, `latestVersion`, `updateAvailable`, `installMethod`,
 `updateCommand` and `updated`.

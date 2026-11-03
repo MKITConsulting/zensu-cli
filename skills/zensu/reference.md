@@ -253,6 +253,27 @@ Cross-product work requires explicit human intent and a reason for each goal;
 it is never a fallback or repository default. Legacy unassigned records remain
 in the separate Unassigned web view and cannot receive new automatic submissions.
 
+Local recovery is the offline exception: it does not authenticate, contact a
+server or change attribution. Use the exact plugin-provided capture key in the
+affected worktree. Inspection returns the receipt digests needed for mutations:
+
+```bash
+zensu ai-work recover --session <capture-key>
+zensu ai-work recover --session <capture-key> --archive <active-receipt-sha256> --confirm
+zensu ai-work recover --session <capture-key> --restore <archived-receipt-sha256> --confirm
+```
+
+Archive preserves every byte before freeing the active slot. Restore requires an
+empty slot, verifies the digest and retains the original archive byte-for-byte.
+The restored working copy has `capturePaused=true`, honored by existing plugins,
+and requires an explicit validated `begin` before Stop can report again. All other
+JSON values, including unknown fields and large numbers, remain unchanged. Both share the capture
+lock and reject unsafe paths. Neither operation makes legacy scope valid or
+automatically retries a report. A restored paused receipt needs an explicit begin
+for its original goal; missing scope requires a new explicitly scoped goal. A
+pending request may already have reached the server after a lost response: check
+its history before manual resubmission and preserve its original event ID.
+
 ### pulse
 
 ```

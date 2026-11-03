@@ -114,7 +114,7 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 	submit.Flags().StringVar(&artifact, "artifact", "", "immutable commit or document version reference")
 	submit.Flags().StringVar(&criteria, "criteria-version", "", "version or digest of the agreed acceptance criteria")
 	submit.Flags().StringVar(&reviewFile, "review-file", "", "explicit JSON file containing implementation summary, acceptanceCriteria, evidence and optional limitations (max 32 KiB)")
-	root.AddCommand(start, get, submit, newAIWorkContextCmd(f), newAIWorkBindCmd(f))
+	root.AddCommand(start, get, submit, newAIWorkContextCmd(f), newAIWorkBindCmd(f), newAIWorkRecoverCmd(f))
 	return root
 }
 

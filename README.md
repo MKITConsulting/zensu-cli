@@ -1,5 +1,26 @@
 # Zensu CLI
 
+## Local AI-work recovery
+
+`zensu ai-work recover --session <capture-key>` inspects this worktree's active
+receipt and that session's archives without authentication or network requests.
+Use the exact key supplied by the plugin. To free a blocked slot while preserving
+every byte, run `zensu ai-work recover --session <capture-key> --archive <active-receipt-sha256> --confirm`.
+The digest comes from inspection and prevents archiving a changed receipt.
+
+`zensu ai-work recover --session <capture-key> --restore <archived-receipt-sha256> --confirm`
+checks the archive digest and creates a paused working copy in an empty active
+slot, retaining the original archive byte-for-byte. It only sets `capturePaused`
+using the flag already honored by all five plugins; unknown JSON values remain
+unchanged. An explicit validated `begin` is required before reporting resumes. An occupied slot, held lock, symlink or damaged archive is refused.
+Archives use `<git-dir>/zensu-ai-work-v1/recovery/<capture-key>/<sha256>.json`.
+The CLI preserves opaque bytes, including legacy fields and frozen pending events.
+It never assigns a product/feature, submits a report, accepts a result or deletes
+server history. A legacy receipt still requires a new explicitly scoped goal;
+every restored valid receipt requires an explicit original-goal begin before retrying.
+A pending request may already exist on the server after a lost response: check
+the original work history before manual resubmission and retain its event ID.
+
 A GitHub-CLI-style command-line tool for [Zensu](https://zensu.dev) — manage
 products, features, and authentication from your terminal. Cross-platform
 (Linux / macOS / Windows).
@@ -593,3 +614,5 @@ reads the current authenticated identity without creating work or a binding.
 The backend rejects unassigned new starts; old exact retries remain idempotent.
 Existing unassigned history is shown separately in the web UI and cannot receive
 new automatic submissions. Upgrade the backend before this CLI and the plugins.
+
+CLI setup and troubleshooting: [Install or update the CLI, including `zensu update` and older-version recovery](docs/cli-install-update.md).

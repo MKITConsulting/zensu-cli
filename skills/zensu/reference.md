@@ -262,7 +262,10 @@ zensu ai-work recover --session <capture-key> --restore <archived-receipt-sha256
 ```
 
 Archive preserves every byte before freeing the active slot. Restore requires an
-empty slot, verifies the digest and retains the archive. Both share the capture
+empty slot, verifies the digest and retains the original archive byte-for-byte.
+The restored working copy has `capturePaused=true`, honored by existing plugins,
+and requires an explicit validated `begin` before Stop can report again. All other
+JSON values, including unknown fields and large numbers, remain unchanged. Both share the capture
 lock and reject unsafe paths. Neither operation makes legacy scope valid or
 automatically retries a report. A restored paused receipt needs an explicit begin
 for its original goal; missing scope requires a new explicitly scoped goal. A

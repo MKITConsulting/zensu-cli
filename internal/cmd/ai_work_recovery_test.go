@@ -82,7 +82,7 @@ func TestAIWorkRecoveryOfflineAndLossless(t *testing.T) {
 	if data, _ := os.ReadFile(archive); string(data) != string(raw) {
 		t.Fatal("archive changed original bytes")
 	}
-	if st, _ := os.Stat(archive); st.Mode().Perm()&0077 != 0 {
+	if st, _ := os.Stat(archive); runtime.GOOS != "windows" && st.Mode().Perm()&0077 != 0 {
 		t.Fatal("archive is not private")
 	}
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
@@ -96,13 +96,34 @@ func TestAIWorkRecoveryOfflineAndLossless(t *testing.T) {
 	if err != nil || got["status"] != "restored" {
 		t.Fatalf("restore: %v %v", got, err)
 	}
-	if data, _ := os.ReadFile(file); string(data) != string(raw) {
-		t.Fatal("restoration changed bytes")
+	restored, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
 	}
+	var before, after map[string]json.RawMessage
+	if json.Unmarshal(raw, &before) != nil || json.Unmarshal(restored, &after) != nil {
+		t.Fatal("invalid restored JSON")
+	}
+	if string(after["capturePaused"]) != "true" {
+		t.Fatal("restored receipt could automatically submit at Stop")
+	}
+	delete(after, "capturePaused")
+	for key, value := range before {
+		if string(after[key]) != string(value) {
+			t.Fatalf("changed original value %s", key)
+		}
+	}
+	if len(after) != len(before) {
+		t.Fatal("lost unknown receipt fields")
+	}
+	if data, _ := os.ReadFile(archive); string(data) != string(raw) {
+		t.Fatal("changed original archive bytes")
+	}
+	restoredDigest := got["active"].(map[string]any)["receipt"].(string)
 	if _, err = run("--restore", digest, "--confirm"); err == nil {
 		t.Fatal("restoration overwrote an active goal")
 	}
-	if _, err = run("--archive", digest, "--confirm"); err != nil {
+	if _, err = run("--archive", restoredDigest, "--confirm"); err != nil {
 		t.Fatal(err)
 	}
 	if err = os.WriteFile(archive, []byte("corrupt"), 0600); err != nil {
@@ -306,5 +327,23 @@ func TestAIWorkRecoveryArchiveIntegrityAndIsolation(t *testing.T) {
 	}
 	if run() == nil {
 		t.Fatal("recovery accepted a non-repository")
+	}
+}
+
+func TestAIWorkRecoveryPausedCopy(t *testing.T) {
+	for _, raw := range []string{"broken JSON", "null", "[]", "true"} {
+		got, err := capturePausedCopy([]byte(raw))
+		if err != nil || string(got) != raw {
+			t.Fatalf("changed opaque malformed receipt: %q %v", got, err)
+		}
+	}
+	raw := []byte(`{"future":9007199254740993123456789,"capturePaused":false}`)
+	got, err := capturePausedCopy(raw)
+	if err != nil || !strings.Contains(string(got), `"future":9007199254740993123456789`) || !strings.Contains(string(got), `"capturePaused":true`) {
+		t.Fatalf("unsafe working copy: %s %v", got, err)
+	}
+	oversize := []byte(`{"future":"` + strings.Repeat("x", captureReceiptLimit-13) + `"}`)
+	if _, err := capturePausedCopy(oversize); err == nil {
+		t.Fatal("accepted oversized paused copy")
 	}
 }

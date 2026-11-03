@@ -9,13 +9,15 @@ every byte, run `zensu ai-work recover --session <capture-key> --archive <active
 The digest comes from inspection and prevents archiving a changed receipt.
 
 `zensu ai-work recover --session <capture-key> --restore <archived-receipt-sha256> --confirm`
-checks the archive digest and copies it into an empty active slot, retaining the
-archive. An occupied slot, held lock, symlink or damaged archive is refused.
+checks the archive digest and creates a paused working copy in an empty active
+slot, retaining the original archive byte-for-byte. It only sets `capturePaused`
+using the flag already honored by all five plugins; unknown JSON values remain
+unchanged. An explicit validated `begin` is required before reporting resumes. An occupied slot, held lock, symlink or damaged archive is refused.
 Archives use `<git-dir>/zensu-ai-work-v1/recovery/<capture-key>/<sha256>.json`.
 The CLI preserves opaque bytes, including legacy fields and frozen pending events.
 It never assigns a product/feature, submits a report, accepts a result or deletes
 server history. A legacy receipt still requires a new explicitly scoped goal;
-a paused valid receipt requires an explicit original-goal begin before retrying.
+every restored valid receipt requires an explicit original-goal begin before retrying.
 A pending request may already exist on the server after a lost response: check
 the original work history before manual resubmission and retain its event ID.
 

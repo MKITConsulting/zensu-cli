@@ -27,7 +27,7 @@ type captureReceiptInfo struct {
 }
 
 // Recovery is local-only. It neither initializes an API client nor changes any
-// receipt's contents, attribution, event IDs or human acceptance.
+// archive's contents, attribution, event IDs or human acceptance.
 func newAIWorkRecoverCmd(f *Factory) *cobra.Command {
 	var session, archive, restore string
 	var confirm bool
@@ -95,7 +95,13 @@ func newAIWorkRecoverCmd(f *Factory) *cobra.Command {
 					if raw == nil || captureDigest(raw) != restore {
 						return fmt.Errorf("archive is missing or its checksum does not match")
 					}
-					if err = capturePublish(file, raw); err != nil {
+					// Preserve the original archive; only the restored working copy is
+					// paused. Existing plugin versions already honor this flag at Stop.
+					paused, err := capturePausedCopy(raw)
+					if err != nil {
+						return err
+					}
+					if err = capturePublish(file, paused); err != nil {
 						return err
 					}
 					status = "restored"
@@ -137,7 +143,7 @@ func newAIWorkRecoverCmd(f *Factory) *cobra.Command {
 		}})
 	cmd.Flags().StringVar(&session, "session", "", "exact capture key supplied by the plugin; never another conversation's key")
 	cmd.Flags().StringVar(&archive, "archive", "", "archive the active receipt only if its SHA-256 still matches; retains every byte")
-	cmd.Flags().StringVar(&restore, "restore", "", "copy this archived SHA-256 receipt into an empty active slot; archive is retained")
+	cmd.Flags().StringVar(&restore, "restore", "", "restore a paused working copy into an empty active slot; original archive is retained")
 	cmd.Flags().BoolVar(&confirm, "confirm", false, "explicitly authorize this local change; never submits or repairs scope")
 	return cmd
 }
@@ -246,4 +252,23 @@ func capturePublish(file string, raw []byte) error {
 		return err
 	}
 	return os.Link(f.Name(), file)
+}
+
+// Keep unknown values as raw JSON to avoid rounding IDs or future numeric fields.
+// Malformed/non-object receipts already fail closed in every capture helper.
+func capturePausedCopy(raw []byte) ([]byte, error) {
+	var receipt map[string]json.RawMessage
+	if json.Unmarshal(raw, &receipt) != nil || receipt == nil {
+		return raw, nil
+	}
+	receipt["capturePaused"] = json.RawMessage("true")
+	paused, err := json.Marshal(receipt)
+	if err != nil {
+		return nil, err
+	}
+	paused = append(paused, '\n')
+	if len(paused) > captureReceiptLimit {
+		return nil, fmt.Errorf("paused working copy exceeds receipt limit; original archive retained")
+	}
+	return paused, nil
 }

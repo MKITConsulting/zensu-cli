@@ -558,3 +558,5 @@ reads the current authenticated identity without creating work or a binding.
 The backend rejects unassigned new starts; old exact retries remain idempotent.
 Existing unassigned history is shown separately in the web UI and cannot receive
 new automatic submissions. Upgrade the backend before this CLI and the plugins.
+
+CLI setup and troubleshooting: [Install or update the CLI, including `zensu update` and older-version recovery](docs/cli-install-update.md).

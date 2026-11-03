@@ -1,5 +1,24 @@
 # Zensu CLI
 
+## Local AI-work recovery
+
+`zensu ai-work recover --session <capture-key>` inspects this worktree's active
+receipt and that session's archives without authentication or network requests.
+Use the exact key supplied by the plugin. To free a blocked slot while preserving
+every byte, run `zensu ai-work recover --session <capture-key> --archive <active-receipt-sha256> --confirm`.
+The digest comes from inspection and prevents archiving a changed receipt.
+
+`zensu ai-work recover --session <capture-key> --restore <archived-receipt-sha256> --confirm`
+checks the archive digest and copies it into an empty active slot, retaining the
+archive. An occupied slot, held lock, symlink or damaged archive is refused.
+Archives use `<git-dir>/zensu-ai-work-v1/recovery/<capture-key>/<sha256>.json`.
+The CLI preserves opaque bytes, including legacy fields and frozen pending events.
+It never assigns a product/feature, submits a report, accepts a result or deletes
+server history. A legacy receipt still requires a new explicitly scoped goal;
+a paused valid receipt requires an explicit original-goal begin before retrying.
+A pending request may already exist on the server after a lost response: check
+the original work history before manual resubmission and retain its event ID.
+
 A GitHub-CLI-style command-line tool for [Zensu](https://zensu.dev) — manage
 products, features, and authentication from your terminal. Cross-platform
 (Linux / macOS / Windows).

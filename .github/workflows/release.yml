@@ -12,6 +12,7 @@ permissions:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    environment: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,6 +35,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          ZENSU_RELEASE_SIGNING_KEY: ${{ secrets.ZENSU_RELEASE_SIGNING_KEY }}
           MACOS_SIGN_P12: ${{ secrets.APPLE_CERTIFICATE }}
           MACOS_SIGN_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           MACOS_NOTARY_KEY: ${{ secrets.APPLE_API_KEY_CONTENT }}

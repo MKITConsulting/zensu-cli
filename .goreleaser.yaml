@@ -63,6 +63,19 @@ checksum:
   name_template: "zensu_{{ .Version }}_checksums.txt"
   algorithm: sha256
 
+signs:
+  - id: checksums
+    artifacts: checksum
+    cmd: go
+    args:
+      - run
+      - ./internal/tools/releasesign
+      - sign
+      - --in
+      - "${artifact}"
+      - --out
+      - "${signature}"
+
 homebrew_casks:
   - name: zensu
     repository:

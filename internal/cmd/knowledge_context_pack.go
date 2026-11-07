@@ -30,7 +30,7 @@ func newKnowledgeContextPackCmd(f *Factory) *cobra.Command {
 			"Read layers first; related_layers contains additional relationships, not automatic dependencies. " +
 			"Inspect each item's relevance, reason and directed path. Older backends without related_layers do not provide this separation. " +
 			"Do not bulk-fetch either group: choose real items needed for a specific task question, then use knowledge get <item-id> --json. " +
-			"Inspect truncated and use targeted knowledge search --query <question> --json when needed. " +
+			"Inspect truncated and use targeted knowledge search --query <terms> --json when needed. " +
 			"A file URI may only be a reference: read the actual file from the authorized checkout. " +
 			"With --agent, record an authenticated retrieval receipt and retain load_id for knowledge get --context-load. " +
 			"The agent label is client-declared; receipts prove retrieval, not model comprehension. Without --agent no receipt is recorded.",

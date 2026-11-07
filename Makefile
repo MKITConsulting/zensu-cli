@@ -1,4 +1,4 @@
-.PHONY: build test vet cover snapshot install
+.PHONY: build test vet cover snapshot install commands
 
 VERSION ?= dev
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -23,6 +23,9 @@ vet:
 cover:
 	go test -coverprofile=cover.out ./...
 	go tool cover -func=cover.out
+
+commands:
+	go run ./internal/tools/cmdtree
 
 # Cross-platform snapshot via goreleaser (no publish).
 snapshot:

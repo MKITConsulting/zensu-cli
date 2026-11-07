@@ -87,6 +87,7 @@ go install github.com/MKITConsulting/zensu-cli/cmd/zensu@latest
 ```bash
 make build        # -> bin/zensu
 make install      # -> $GOBIN/zensu
+make commands     # -> docs/commands.json, see docs/commands.md
 ```
 
 ## Updates
@@ -616,3 +617,5 @@ Existing unassigned history is shown separately in the web UI and cannot receive
 new automatic submissions. Upgrade the backend before this CLI and the plugins.
 
 CLI setup and troubleshooting: [Install or update the CLI, including `zensu update` and older-version recovery](docs/cli-install-update.md).
+
+Command contract for documentation checks: [docs/commands.json](docs/commands.json), described in [docs/commands.md](docs/commands.md).

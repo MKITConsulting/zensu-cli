@@ -240,7 +240,7 @@ needs more evidence. Both groups retain `relevance`, `reason` and the full direc
 `path`; sharing a document or container does not establish a dependency. The CLI
 does not eagerly fetch either group's sources. Choose individual items and use
 `knowledge get --context-load` with the same receipt. If `truncated` is true, use
-targeted `knowledge search --query "<question>" --json` and correlated item reads;
+targeted `knowledge search --query "<terms>" --json` and correlated item reads;
 increasing depth does not prove completeness. Older backends without `related_layers`
 return unseparated context and require an explicit relevance assessment by the agent.
 
@@ -544,7 +544,7 @@ booked credits remain separately unfiltered because there is no run-cost linkage
 
 ### Task-description context discovery
 
-`zensu knowledge context-search --query "Fix account login" --json` returns up to five distinct feature candidates with canonical feature/product IDs and bounded excerpts. It performs one organization-scoped search and at most five feature-item reads, creates no context receipt, and never selects by search score. The agent matches the task and repository/product scope, asks when ambiguous, then calls `knowledge context-pack <feature-id> --agent <host>` and correlates required source reads with `--context-load`. Optional `--product <UUID>` filters the bounded candidates; no matches do not prove absence. The query is sent to the configured backend; its existing semantic search/full-text fallback is used without answer generation.
+`zensu knowledge context-search --query "Fix account login" --json` returns up to five distinct feature candidates with canonical feature/product IDs and bounded excerpts. It performs one organization-scoped search and at most five feature-item reads, creates no context receipt, and never selects by search score. The agent matches the task and repository/product scope, asks when ambiguous, then calls `knowledge context-pack <feature-id> --agent <host>` and correlates required source reads with `--context-load`. Optional `--product <UUID>` filters the bounded candidates; no matches do not prove absence. The query is sent to the configured backend, whose knowledge search ranks by full-text keyword match unless the server has an embedding model configured (then hybrid, falling back to full-text when the embedding endpoint fails); no answer is generated.
 
 
 ### Result review context

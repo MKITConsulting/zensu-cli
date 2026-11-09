@@ -149,10 +149,6 @@ func invocationTokens(line string) []string {
 	return tokens
 }
 
-var requiredFlagRe = regexp.MustCompile(`(?:\(|[;,] )required\)$`)
-
-const placeholderArg = "6f1c2b7e-3d4a-4b5c-9d8e-7f6a5b4c3d2e"
-
 type documentedArg struct {
 	text     string
 	optional bool
@@ -227,7 +223,7 @@ walk:
 		return problems
 	}
 	cmd.LocalFlags().VisitAll(func(flag *pflag.Flag) {
-		if requiredFlagRe.MatchString(flag.Usage) && !shown[flag.Name] {
+		if IsRequiredFlag(flag) && !shown[flag.Name] {
 			problems = append(problems, fmt.Sprintf("required flag --%s of %q is missing or shown as optional", flag.Name, cmd.CommandPath()))
 		}
 	})
@@ -235,7 +231,7 @@ walk:
 	for _, arg := range args {
 		value := arg.text
 		if strings.HasPrefix(value, "<") {
-			value = placeholderArg
+			value = PlaceholderArg
 		}
 		full = append(full, value)
 		if !arg.optional {
@@ -389,22 +385,13 @@ var commandsWithoutResponseData = []string{
 	"work repositories remove",
 }
 
-func visitRunnableCommands(cmd *cobra.Command, visit func(*cobra.Command)) {
-	for _, child := range cmd.Commands() {
-		if child.Name() == "help" {
-			continue
-		}
-		if child.Runnable() {
-			visit(child)
-		}
-		visitRunnableCommands(child, visit)
-	}
-}
-
 func TestSkillDocs_EveryCommandThatReturnsDataAcceptsJSON(t *testing.T) {
 	root := NewRootCmd()
 	seen := map[string]bool{}
-	visitRunnableCommands(root, func(cmd *cobra.Command) {
+	VisitCommands(root, func(cmd *cobra.Command) {
+		if cmd.Name() == "help" || !cmd.Runnable() {
+			return
+		}
 		path := strings.TrimPrefix(cmd.CommandPath(), root.Name()+" ")
 		group, _, _ := strings.Cut(path, " ")
 		if slices.Contains(groupsWithoutJSON, group) {

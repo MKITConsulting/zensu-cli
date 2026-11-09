@@ -142,7 +142,7 @@ func newProductsCreateCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "product name (required)")
 	cmd.Flags().StringVar(&productType, "type", "", "product type (public|internal|hybrid)")
 	cmd.Flags().StringVar(&slug, "slug", "", "product slug")
-	cmd.Flags().StringVar(&description, "description", "", "product description")
+	cmd.Flags().StringVar(&description, "description", "", "product description (Markdown)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
 }
@@ -233,7 +233,8 @@ func newProductsBootstrapApplyCmd(f *Factory) *cobra.Command {
 		Long: "Apply bootstrap result from vision analysis. Pass the structured components " +
 			"and features as JSON via --result. Schema: " +
 			`{"components":[{"name":"...","slug":"...","description":"..."}],"features":[{"title":"...","slug":"...","description":"...","component":"<component-slug>","priority":"critical|high|medium|low","estimatedEffort":"S|M|L|XL","securityClassification":"public|internal|confidential|restricted","securityReasoning":"...","featureScope":"public_facing|internal_only","subfeatures":[...]}]}. ` +
-			"The component field must reference a slug from the components array.",
+			"The component field must reference a slug from the components array. " +
+			"Component, feature and sub-feature descriptions are Markdown.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

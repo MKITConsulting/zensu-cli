@@ -104,6 +104,31 @@ zensu auth status   # authenticated? against which host?
    user asks for that decision, never on your own initiative.
 9. **Help output is authoritative.** For any flag detail not listed here, run
    `zensu <group> [<command>] --help`.
+10. **Pass Markdown, plain-text and JSON values from a file.** Flags whose
+    `--help` says `(Markdown)` take Markdown, flags whose `--help` says
+    `(plain text)` take plain text, and several flags take JSON. Inside double
+    quotes the shell still runs backquoted inline code and expands `$(…)` and
+    `$name`; inside single quotes an apostrophe ends the value. Write the value
+    to a file, then pass the file's content. Prefer your host's file-writing
+    tool, because the shell never parses what it writes. Otherwise use a
+    quoted heredoc whose delimiter is a fresh random token, new for every
+    value and equal to no line of it: the first line equal to the delimiter
+    ends the heredoc, and the shell runs every later line as a command. The
+    token in the example below only shows the shape; never reuse it. Chain
+    the steps with `&&` and write with `>|`, so a failed write never sends an
+    empty value, not even under `noclobber`. A heredoc inside `$(…)` is not
+    safe either: bash 3.2, the macOS default, misreads an apostrophe in it.
+    Every Markdown, text or JSON placeholder in this skill and in
+    [reference.md](reference.md) stands for a value passed like this:
+
+```bash
+desc="$(mktemp)" &&
+cat >| "$desc" <<'ZENSU_VALUE_8D2F61' &&
+Adds a `--csv` switch; it's opt-in.
+ZENSU_VALUE_8D2F61
+zensu features update <feature-id> --description "$(cat "$desc")"
+rm -f "$desc"
+```
 
 ## Orientation
 
@@ -159,7 +184,7 @@ zensu features status <feature-id> in-progress          # 3. start work
 zensu link test <feature-id> --file src/auth/login.test.ts \
   --test-type unit --last-run-status passed             # 4. link artifacts
 zensu link source <feature-id> --file src/auth/login.ts
-zensu link docs <feature-id> --doc-type user_facing --content "..."
+zensu link docs <feature-id> --doc-type user_facing --content "<markdown>"
 zensu features status <feature-id> testing              # 5. hand to testing
 zensu security validate <feature-id> --json             # 6. release gates green?
 zensu features status <feature-id> released             # 7. only after gates pass
@@ -174,7 +199,7 @@ zensu security suggest-tests <feature-id> --json    # context for picking tests
 zensu security add-test <feature-id> --file tests/security/login_test.go \
   --type injection [--owasp-id A03:2021] [--last-run-status passed]
 zensu security review <feature-id> --reviewer <who> --status approved \
-  [--type manual|automated|external] [--findings "..."]
+  [--type manual|automated|external] [--findings "<markdown>"]
 zensu security score <feature-id> --json            # score + release-gate state
 zensu security posture <product-id> --json          # product-wide overview
 zensu security threat-model <feature-id> --json     # STRIDE context data
@@ -199,7 +224,7 @@ zensu ghost candidates <scan-id> --product <id>  # JSON array, by confidence
 # present candidates to the user, then:
 zensu ghost batch <scan-id> --product <id> \
   --approve-ids '["<uuid>", ...]' --reject-ids '["<uuid>", ...]' \
-  [--reject-reason "..."]
+  [--reject-reason "<text>"]
 zensu ghost apply <scan-id> --product <id> --enrich-existing
 ```
 

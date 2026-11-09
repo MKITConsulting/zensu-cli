@@ -32,9 +32,15 @@ func newGhostScanCmd(f *Factory) *cobra.Command {
 	var product, candidates, components, repoURL, branch, source string
 	var asJSON bool
 	cmd := &cobra.Command{
-		Use:          "scan",
-		Short:        "Create a Ghost scan with discovered feature candidates",
-		Long:         "Create a Ghost scan with feature candidates discovered from repository analysis (optionally deepened by a multi-perspective fan-out of read-only analysis lenses to raise recall). Candidates are created in 'pending' review status for user approval. Populate detectedSourceFiles, detectedTestFiles, and detectedDocFiles per candidate - tests and docs are first-class scan data, linked on apply.",
+		Use:   "scan",
+		Short: "Create a Ghost scan with discovered feature candidates",
+		Long: "Create a Ghost scan with feature candidates discovered from repository analysis (optionally deepened by a multi-perspective fan-out of read-only analysis lenses to raise recall). Candidates are created in 'pending' review status for user approval. Populate detectedSourceFiles, detectedTestFiles, and detectedDocFiles per candidate - tests and docs are first-class scan data, linked on apply. " +
+			"Schema: --candidates " +
+			`[{"slug":"...","title":"...","description":"...","componentSlug":"<component-slug>","confidenceScore":<0-1>,"detectedTestFiles":["<path>"],"detectedSourceFiles":["<path>"],"detectedDocFiles":["<path>"],"priority":"critical|high|medium|low","estimatedEffort":"S|M|L|XL","securityClassification":"public|internal|confidential|restricted","sourceFileAnalyses":[...]}]` +
+			", --components " +
+			`[{"slug":"...","name":"...","description":"..."}]. ` +
+			"Every candidate needs slug and title. On apply, a candidate that creates a feature needs componentSlug; " +
+			"a component the product lacks is created, named from its --components entry when there is one.",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if product == "" {
@@ -92,8 +98,8 @@ func newGhostScanCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	cmd.Flags().StringVar(&candidates, "candidates", "", "JSON array of candidate objects (required)")
-	cmd.Flags().StringVar(&components, "components", "", "optional JSON array of component objects")
+	cmd.Flags().StringVar(&candidates, "candidates", "", `JSON array of candidate objects; each "description" is Markdown (required)`)
+	cmd.Flags().StringVar(&components, "components", "", `optional JSON array of component objects; each "description" is Markdown`)
 	cmd.Flags().StringVar(&repoURL, "repo-url", "", "repository URL")
 	cmd.Flags().StringVar(&branch, "branch", "", "branch name")
 	cmd.Flags().StringVar(&source, "source", "api", "scan source: api, mcp, or web_ui")
@@ -198,7 +204,7 @@ func newGhostRejectCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	cmd.Flags().StringVar(&reason, "reason", "", "rejection reason")
+	cmd.Flags().StringVar(&reason, "reason", "", "rejection reason (plain text)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
 }
@@ -266,7 +272,7 @@ func newGhostBatchCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
 	cmd.Flags().StringVar(&approveIDs, "approve-ids", "", "JSON array of candidate UUIDs to approve")
 	cmd.Flags().StringVar(&rejectIDs, "reject-ids", "", "JSON array of candidate UUIDs to reject")
-	cmd.Flags().StringVar(&rejectReason, "reject-reason", "", "reason for rejecting candidates (applies to all rejected)")
+	cmd.Flags().StringVar(&rejectReason, "reject-reason", "", "reason for rejecting candidates (plain text) (applies to all rejected)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
 }

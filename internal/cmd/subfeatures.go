@@ -149,7 +149,7 @@ func newSubfeaturesAddCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&feature, "feature", "", "parent feature ID (required; or pass as positional arg)")
 	cmd.Flags().StringVar(&title, "title", "", "sub-feature title (required)")
 	cmd.Flags().StringVar(&slug, "slug", "", "URL-safe identifier (derived from --title if omitted)")
-	cmd.Flags().StringVar(&description, "description", "", "sub-feature description")
+	cmd.Flags().StringVar(&description, "description", "", "sub-feature description (Markdown)")
 	cmd.Flags().StringVar(&status, "status", "", "initial status (default: planned)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority: critical|high|medium|low")
 	cmd.Flags().StringVar(&assignee, "assignee", "", "assignee identifier")

@@ -121,7 +121,7 @@ terminal.
 ```
 zensu products list [--json]
 zensu products get <product-id> [--json]            # response embeds components[]
-zensu products create --name <name> [--slug s] [--type public|internal|hybrid] [--description d]
+zensu products create --name <name> [--slug s] [--type public|internal|hybrid] [--description markdown]
 zensu products import <product-id> --repo-url <url> [--repo-type github|gitlab|bitbucket|local]
 zensu products vision-create --title <t> --content <markdown>
     [--product <uuid>] [--source studio|import|claude-code]   # omit --product for greenfield visions
@@ -130,6 +130,7 @@ zensu products bootstrap-apply <vision-id> --result '<json>'   # payload: {"comp
                                                     #   "features":[{title,slug,description,component,
                                                     #   priority,estimatedEffort,securityClassification,
                                                     #   securityReasoning,featureScope,subfeatures}]}
+                                                    #   component, feature and sub-feature descriptions are Markdown
 zensu products bootstrap-step <vision-id> <step>    # mark a post-bootstrap step completed
 ```
 
@@ -139,21 +140,21 @@ zensu products bootstrap-step <vision-id> <step>    # mark a post-bootstrap step
 zensu features list --product <id> [--status planned|in-progress|testing|released] [--json]
 zensu features get <feature-id> [--json]
 zensu features create --product <id> --component <id> --title <t> [--slug s] [--status s] [--json]
-zensu features update <feature-id> [--title t] [--description d] [--priority low|medium|high|critical]
+zensu features update <feature-id> [--title t] [--description markdown] [--priority low|medium|high|critical]
 zensu features status <feature-id> <new-status> [--json]   # dedicated transition command; --json prints the updated feature
 zensu features history <feature-id> [--json]
-zensu features revision <feature-id> --scope-summary <s> [--scope-details d]
+zensu features revision <feature-id> --scope-summary <text> [--scope-details text]
     [--estimated-effort S|M|L|XL] [--coverage-target 0-100] [--docs-required]
     [--target-release v] [--assignee a] [--created-by api|mcp|web-ui|github-sync]
-zensu features merge <target-feature-id> --source '<json-uuid-array>' --title <t> --slug <s> [--reason r]
-zensu features split <feature-id> --children '<json>' [--reason r]   # children: [{title, slug}]
-zensu features deprecate <feature-id> [--reason r] [--replacement <uuid>] [--removal-planned-at RFC3339]
+zensu features merge <target-feature-id> --source '<json-uuid-array>' --title <t> --slug <s> [--reason text]
+zensu features split <feature-id> --children '<json>' [--reason text]   # children: [{title, slug}]
+zensu features deprecate <feature-id> [--reason text] [--replacement <uuid>] [--removal-planned-at RFC3339]
 ```
 
 ### subfeatures
 
 ```
-zensu subfeatures add <feature-id> --title <t> [--slug s] [--description d]
+zensu subfeatures add <feature-id> --title <t> [--slug s] [--description markdown]
     [--priority critical|high|medium|low] [--status s] [--assignee a]   # status defaults to planned
 zensu subfeatures list <feature-id> [--compact]     # compact: fewer fields per row, listed below
 zensu subfeatures promote [feature-id] <subfeature-id>   # promote to top-level feature
@@ -189,7 +190,7 @@ zensu security add-test <feature-id> --file <path>
     --type auth-bypass|injection|access-control|rate-limit|input-validation|data-exposure|header-security|dependency-scan|csrf|xss|ssrf
     [--owasp-id A01:2021] [--last-run-status passed|failed|skipped|error]
 zensu security review <feature-id> --reviewer <who> --status approved|rejected|conditional
-    [--type manual|automated|external] [--findings f] [--conditions c]
+    [--type manual|automated|external] [--findings markdown] [--conditions markdown]
 zensu security score <feature-id>                   # score + release-gate state
 zensu security validate <feature-id>                # release requirements met?
 zensu security analyze <feature-id>                 # detailed single-feature analysis
@@ -206,12 +207,12 @@ attributes and recalculates the security score automatically.
 
 ```
 zensu ghost scan --product <id> --candidates '<json-array>' [--components '<json-array>']
-    [--repo-url u] [--branch b] [--source api|mcp|web_ui]   # see --help for the candidate shape
+    [--repo-url u] [--branch b] [--source api|mcp|web_ui]   # see --help for the candidate shape; descriptions are Markdown
 zensu ghost candidates <scan-id> --product <id>     # JSON array, by confidence
 zensu ghost approve <scan-id> <candidate-id> --product <id>
-zensu ghost reject <scan-id> <candidate-id> --product <id> [--reason r]
+zensu ghost reject <scan-id> <candidate-id> --product <id> [--reason text]
 zensu ghost batch <scan-id> --product <id> [--approve-ids '<json-uuids>']
-    [--reject-ids '<json-uuids>'] [--reject-reason r]
+    [--reject-ids '<json-uuids>'] [--reject-reason text]
 zensu ghost apply <scan-id> --product <id> [--enrich-existing]
 ```
 
@@ -450,17 +451,17 @@ example.
 
 ```
 zensu tiers create --product <id> --name <n> --slug <s> --tier-order <int>
-    [--description d] [--color c] [--default]       # tier-order: 1 = lowest, ascending
+    [--description text] [--color c] [--default]    # tier-order: 1 = lowest, ascending
 zensu tiers list --product <id>
 zensu tiers matrix --product <id>                   # complete tier matrix
 zensu tiers set-feature <feature-id> --tiers '<json>'
     # entries: [{"tierId": ..., "gatingType": "hard|soft|preview", "tierLimits": {...}?}]
 
 zensu roadmap create --product <id> --title <t> [--period '2026-Q2'] [--goal g]...
-    [--description d] [--status draft|active|completed|archived]
+    [--description markdown] [--status draft|active|completed|archived]
 zensu roadmap list --product <id>
 zensu roadmap get <roadmap-id>
-zensu roadmap update <roadmap-id> --title <t> [--period p] [--goal g]... [--description d] [--status s]
+zensu roadmap update <roadmap-id> --title <t> [--period p] [--goal g]... [--description markdown] [--status s]
 zensu roadmap delete <roadmap-id>                   # linked features survive, membership only
 zensu roadmap add-feature <roadmap-id> --feature <id>
     [--start-period '2026-Q2'] [--end-period '2026-Q4'] [--sort-order n]
@@ -469,17 +470,17 @@ zensu roadmap milestone-create <roadmap-id> --title <t> [--period '2026-Q3'] [--
 zensu roadmap milestone-list <roadmap-id>
 zensu roadmap milestone-delete <roadmap-id> <milestone-id>
 
-zensu journeys create --product <id> --title <t> [--slug s] [--description d]
+zensu journeys create --product <id> --title <t> [--slug s] [--description markdown]
     [--persona p] [--priority critical|high|medium|low]
     [--type critical|happy_path|edge_case|error_path|onboarding] [--tier <uuid>]
 zensu journeys list --product <id>
 zensu journeys get <journey-id> --product <id>
 zensu journeys step <journey-id> --product <id> --title <t> --step-order <int>
-    [--description d] [--expected-result r] [--feature <uuid>] [--critical]
+    [--description text] [--expected-result text] [--feature <uuid>] [--critical]
     [--interaction-type action|navigation|input|validation|output|wait]
 zensu journeys steps <journey-id> --product <id>    # list steps
 zensu journeys step-update <journey-id> <step-id> --product <id> [--title t] [--step-order <int>]
-    [--description d] [--expected-result r] [--feature <uuid>] [--critical]
+    [--description text] [--expected-result text] [--feature <uuid>] [--critical]
     [--interaction-type action|navigation|input|validation|output|wait]
     # read-modify-write, last writer wins; omitted flags are resent unchanged
 zensu journeys step-delete <journey-id> <step-id> --product <id>

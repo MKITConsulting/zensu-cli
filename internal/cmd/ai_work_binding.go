@@ -291,7 +291,7 @@ func newAIWorkBindCmd(f *Factory) *cobra.Command {
 		return printJSON(f.Out, result)
 	}})
 	cmd.Flags().StringVar(&product, "product", "", "confirmed product UUID (required)")
-	cmd.Flags().BoolVar(&confirm, "confirm", false, "confirm the user's explicit choice of this product")
+	cmd.Flags().BoolVar(&confirm, "confirm", false, "confirm the user's explicit choice of this product (required)")
 	return cmd
 }
 func aiWorkStartScope(f *Factory, cmd *cobra.Command, body map[string]any, product, reason, source string, legacy bool) error {

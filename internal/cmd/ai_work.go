@@ -72,8 +72,8 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 			}
 			return aiWorkRequest(f, cmd, http.MethodPost, "/api/ai-work/capture/units", body)
 		}})
-	start.Flags().StringVar(&id, "id", "", "stable work UUID (required; keep across retries)")
-	start.Flags().StringVar(&title, "title", "", "agreed work objective, at most 160 characters")
+	start.Flags().StringVar(&id, "id", "", "stable work UUID, kept across retries (required)")
+	start.Flags().StringVar(&title, "title", "", "agreed work objective, at most 160 characters (required)")
 	start.Flags().StringVar(&product, "product", "", "explicit product UUID; plugins must match a confirmed repository binding")
 	start.Flags().StringVar(&feature, "feature", "", "explicitly chosen feature UUID for this goal; determines its product")
 	start.Flags().StringVar(&revision, "feature-revision", "", "optional revision UUID belonging to the chosen feature")
@@ -109,10 +109,10 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 			}
 			return aiWorkRequest(f, cmd, http.MethodPost, "/api/ai-work/capture/units/"+args[0]+"/submissions", body)
 		}})
-	submit.Flags().StringVar(&event, "event-id", "", "stable submission UUID (required; keep across retries)")
-	submit.Flags().Int32Var(&expected, "expected-version", 0, "observed work version; stale writes conflict")
-	submit.Flags().StringVar(&artifact, "artifact", "", "immutable commit or document version reference")
-	submit.Flags().StringVar(&criteria, "criteria-version", "", "version or digest of the agreed acceptance criteria")
+	submit.Flags().StringVar(&event, "event-id", "", "stable submission UUID, kept across retries (required)")
+	submit.Flags().Int32Var(&expected, "expected-version", 0, "observed work version; stale writes conflict (required)")
+	submit.Flags().StringVar(&artifact, "artifact", "", "immutable commit or document version reference (required)")
+	submit.Flags().StringVar(&criteria, "criteria-version", "", "version or digest of the agreed acceptance criteria (required)")
 	submit.Flags().StringVar(&reviewFile, "review-file", "", "explicit JSON file containing implementation summary, acceptanceCriteria, evidence and optional limitations (max 32 KiB)")
 	root.AddCommand(start, get, submit, newAIWorkContextCmd(f), newAIWorkBindCmd(f), newAIWorkRecoverCmd(f))
 	return root

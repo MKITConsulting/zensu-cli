@@ -98,7 +98,7 @@ func newKnowledgeContextSearchCmd(f *Factory) *cobra.Command {
 			return printJSON(f.Out, data)
 		},
 	}
-	cmd.Flags().StringVar(&query, "query", "", "task description to search (required; sent to the configured Zensu backend)")
+	cmd.Flags().StringVar(&query, "query", "", "task description to search, sent to the configured Zensu backend (required)")
 	cmd.Flags().StringVar(&product, "product", "", "restrict candidates to this product UUID within the bounded search results")
 	return jsonByDefault(cmd)
 }

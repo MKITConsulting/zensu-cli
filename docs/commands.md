@@ -78,13 +78,15 @@ The contract includes what cobra adds when the CLI runs: the `help` command,
 A flag is `required` when cobra marks it required (`MarkFlagRequired`) or when
 its usage text ends in exactly one of this repository's markers: `(required)`,
 `(…, required)` or `(…; required)`. The skill-docs tests in `internal/cmd` apply
-the same rule to `skills/zensu/*.md`.
+the same rule to `skills/zensu/*.md`. A flag that its command always rejects when
+missing carries one of these markers; give every new flag of that kind one too.
 
 `false` does not mean optional. A command can still reject a missing flag when it
 runs, and the contract cannot see that check: a conditional requirement such as
 `(required unless --blocking)`, a marker followed by more text such as
-`(required; keep across retries)`, and a flag whose usage names no requirement at
-all, such as `--title` of `zensu ai-work start`.
+`(required; or pass as positional arg)`, and a flag whose usage names no
+requirement at all, such as `--approve-ids` of `zensu ghost batch`, which the
+command needs unless `--reject-ids` is given.
 
 ## Positional arguments
 

@@ -141,7 +141,7 @@ func newAIWorkRecoverCmd(f *Factory) *cobra.Command {
 			}
 			return json.NewEncoder(f.Out).Encode(map[string]any{"status": status, "active": active, "archives": archives, "localOnly": true})
 		}})
-	cmd.Flags().StringVar(&session, "session", "", "exact capture key supplied by the plugin; never another conversation's key")
+	cmd.Flags().StringVar(&session, "session", "", "exact capture key supplied by the plugin; never another conversation's key (required)")
 	cmd.Flags().StringVar(&archive, "archive", "", "archive the active receipt only if its SHA-256 still matches; retains every byte")
 	cmd.Flags().StringVar(&restore, "restore", "", "restore a paused working copy into an empty active slot; original archive is retained")
 	cmd.Flags().BoolVar(&confirm, "confirm", false, "explicitly authorize this local change; never submits or repairs scope")

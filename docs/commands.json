@@ -126,7 +126,7 @@
         "confirm": {
           "shorthand": "",
           "takesValue": false,
-          "required": false,
+          "required": true,
           "persistent": false,
           "hidden": false,
           "deprecated": false
@@ -320,7 +320,7 @@
         "session": {
           "shorthand": "",
           "takesValue": true,
-          "required": false,
+          "required": true,
           "persistent": false,
           "hidden": false,
           "deprecated": false
@@ -382,7 +382,7 @@
         "id": {
           "shorthand": "",
           "takesValue": true,
-          "required": false,
+          "required": true,
           "persistent": false,
           "hidden": false,
           "deprecated": false
@@ -446,7 +446,7 @@
         "title": {
           "shorthand": "",
           "takesValue": true,
-          "required": false,
+          "required": true,
           "persistent": false,
           "hidden": false,
           "deprecated": false
@@ -484,7 +484,7 @@
         "artifact": {
           "shorthand": "",
           "takesValue": true,
-          "required": false,
+          "required": true,
           "persistent": false,
           "hidden": false,
           "deprecated": false
@@ -492,7 +492,7 @@
         "criteria-version": {
           "shorthand": "",
           "takesValue": true,
-          "required": false,
+          "required": true,
           "persistent": false,
           "hidden": false,
           "deprecated": false
@@ -500,7 +500,7 @@
         "event-id": {
           "shorthand": "",
           "takesValue": true,
-          "required": false,
+          "required": true,
           "persistent": false,
           "hidden": false,
           "deprecated": false
@@ -508,7 +508,7 @@
         "expected-version": {
           "shorthand": "",
           "takesValue": true,
-          "required": false,
+          "required": true,
           "persistent": false,
           "hidden": false,
           "deprecated": false
@@ -2982,7 +2982,7 @@
         "query": {
           "shorthand": "",
           "takesValue": true,
-          "required": false,
+          "required": true,
           "persistent": false,
           "hidden": false,
           "deprecated": false

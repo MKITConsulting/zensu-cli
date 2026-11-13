@@ -143,7 +143,7 @@ func newRoadmapCreateCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
 	cmd.Flags().StringVar(&title, "title", "", "roadmap title (required)")
 	cmd.Flags().StringVar(&period, "period", "", "anchor/start period — quarter (2026-Q2), month (2026-06), week (2026-W23), or day (2026-06-15)")
-	cmd.Flags().StringVar(&description, "description", "", "roadmap description")
+	cmd.Flags().StringVar(&description, "description", "", "roadmap description (Markdown)")
 	cmd.Flags().StringArrayVar(&goals, "goal", nil, "goal string (repeatable)")
 	cmd.Flags().StringVar(&status, "status", "", "roadmap status: draft|active|completed|archived (default draft)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
@@ -193,7 +193,7 @@ func newRoadmapUpdateCmd(f *Factory) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&title, "title", "", "roadmap title (required)")
 	cmd.Flags().StringVar(&period, "period", "", "time period — quarter (2026-Q2), month (2026-06), week (2026-W23), or day (2026-06-15)")
-	cmd.Flags().StringVar(&description, "description", "", "roadmap description")
+	cmd.Flags().StringVar(&description, "description", "", "roadmap description (Markdown)")
 	cmd.Flags().StringArrayVar(&goals, "goal", nil, "goal string (repeatable)")
 	cmd.Flags().StringVar(&status, "status", "", "roadmap status: draft|active|completed|archived")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")

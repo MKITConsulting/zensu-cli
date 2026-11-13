@@ -96,7 +96,7 @@ func newTiersCreateCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&slug, "slug", "", "URL-safe identifier, e.g. free, pro, enterprise (required)")
 	cmd.Flags().StringVar(&name, "name", "", "display name, e.g. Free, Pro, Enterprise (required)")
 	cmd.Flags().IntVar(&tierOrder, "tier-order", 0, "sort order, 1=lowest tier, ascending (required)")
-	cmd.Flags().StringVar(&description, "description", "", "tier description")
+	cmd.Flags().StringVar(&description, "description", "", "tier description (plain text)")
 	cmd.Flags().BoolVar(&isDefault, "default", false, "whether this is the default tier")
 	cmd.Flags().StringVar(&color, "color", "", "display color for the tier")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")

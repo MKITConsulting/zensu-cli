@@ -265,7 +265,7 @@ func newFeaturesUpdateCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&title, "title", "", "new title")
-	cmd.Flags().StringVar(&description, "description", "", "new description")
+	cmd.Flags().StringVar(&description, "description", "", "new description (Markdown)")
 	cmd.Flags().StringVar(&priority, "priority", "", "new priority (low|medium|high|critical)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
@@ -350,7 +350,7 @@ func newFeaturesDeprecateCmd(f *Factory) *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&reason, "reason", "", "reason for deprecation")
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for deprecation (plain text)")
 	cmd.Flags().StringVar(&replacement, "replacement", "", "UUID of the replacement feature")
 	cmd.Flags().StringVar(&removalPlannedAt, "removal-planned-at", "", "planned removal date (RFC3339)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
@@ -394,7 +394,7 @@ func newFeaturesSplitCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&children, "children", "", "JSON array of child features, each with 'title' and 'slug' (required)")
-	cmd.Flags().StringVar(&reason, "reason", "", "reason for splitting")
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for splitting (plain text)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
 }
@@ -442,7 +442,7 @@ func newFeaturesMergeCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&sources, "source", "", "JSON array of source feature UUIDs to merge (required)")
 	cmd.Flags().StringVar(&title, "title", "", "title for the merged feature (required)")
 	cmd.Flags().StringVar(&slug, "slug", "", "slug for the merged feature (required)")
-	cmd.Flags().StringVar(&reason, "reason", "", "reason for merging")
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for merging (plain text)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
 }
@@ -503,8 +503,8 @@ func newFeaturesRevisionCmd(f *Factory) *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&scopeSummary, "scope-summary", "", "brief summary of the revision scope (required)")
-	cmd.Flags().StringVar(&scopeDetails, "scope-details", "", "detailed scope description")
+	cmd.Flags().StringVar(&scopeSummary, "scope-summary", "", "brief summary of the revision scope (plain text) (required)")
+	cmd.Flags().StringVar(&scopeDetails, "scope-details", "", "detailed scope description (plain text)")
 	cmd.Flags().StringVar(&targetRelease, "target-release", "", "target release version")
 	cmd.Flags().StringVar(&estimatedEffort, "estimated-effort", "", "estimated effort: S|M|L|XL")
 	cmd.Flags().StringVar(&assignee, "assignee", "", "assignee identifier")

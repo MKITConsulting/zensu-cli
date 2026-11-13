@@ -234,8 +234,8 @@ func newSecurityReviewCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&reviewer, "reviewer", "", "reviewer identifier (required)")
 	cmd.Flags().StringVar(&reviewStatus, "status", "", "review status (approved|rejected|conditional) (required)")
 	cmd.Flags().StringVar(&reviewType, "type", "manual", "review type (manual|automated|external)")
-	cmd.Flags().StringVar(&findings, "findings", "", "review findings")
-	cmd.Flags().StringVar(&conditions, "conditions", "", "conditions for conditional approval")
+	cmd.Flags().StringVar(&findings, "findings", "", "review findings (Markdown)")
+	cmd.Flags().StringVar(&conditions, "conditions", "", "conditions for conditional approval (Markdown)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
 }

@@ -154,7 +154,7 @@ func newSubfeaturesAddCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&priority, "priority", "", "priority: critical|high|medium|low")
 	cmd.Flags().StringVar(&assignee, "assignee", "", "assignee identifier")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
-	return cmd
+	return withValueFiles(cmd, textFile("description"))
 }
 
 func newSubfeaturesPromoteCmd(f *Factory) *cobra.Command {

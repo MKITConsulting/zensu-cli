@@ -112,7 +112,7 @@ func newWikiCreateCmd(f *Factory) *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if product == "" || title == "" || content == "" {
-				return fmt.Errorf("--product, --title and --content are required")
+				return fmt.Errorf("--product, --title and --content (or --content-file) are required")
 			}
 			payload := map[string]any{
 				"productId":  product,
@@ -154,14 +154,14 @@ func newWikiCreateCmd(f *Factory) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product UUID (required)")
 	cmd.Flags().StringVar(&title, "title", "", "page title (required)")
-	cmd.Flags().StringVar(&content, "content", "", "page content in markdown (required)")
+	cmd.Flags().StringVar(&content, "content", "", "page content in markdown (required unless --content-file)")
 	cmd.Flags().StringVar(&entityType, "entity-type", "", "entity type to link (feature|component|product)")
 	cmd.Flags().StringVar(&entityID, "entity-id", "", "entity UUID to link the page to")
 	cmd.Flags().StringVar(&docType, "doc-type", "", "document type (user_facing|api_reference|tutorial|adr|release_notes|internal|migration_guide|overview)")
 	cmd.Flags().StringVar(&audience, "audience", "", "target audience (end_user|developer|admin|internal)")
 	cmd.Flags().StringVar(&visibility, "visibility", "", "page visibility: public|private (defaults to private)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
-	return cmd
+	return withValueFiles(cmd, textFile("content"))
 }
 
 func wikiPageExistsError(err error) error {
@@ -231,5 +231,5 @@ func newWikiUpdateCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&changeSummary, "change-summary", "", "summary of changes made")
 	cmd.Flags().StringVar(&visibility, "visibility", "", "page visibility: public|private")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
-	return cmd
+	return withValueFiles(cmd, textFile("content"))
 }

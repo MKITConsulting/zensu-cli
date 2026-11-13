@@ -47,7 +47,7 @@ func newGhostScanCmd(f *Factory) *cobra.Command {
 				return fmt.Errorf("--product is required")
 			}
 			if candidates == "" {
-				return fmt.Errorf("--candidates is required")
+				return fmt.Errorf("--candidates or --candidates-file is required")
 			}
 			var candidatesData json.RawMessage
 			if err := json.Unmarshal([]byte(candidates), &candidatesData); err != nil {
@@ -98,13 +98,13 @@ func newGhostScanCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
-	cmd.Flags().StringVar(&candidates, "candidates", "", `JSON array of candidate objects; each "description" is Markdown (required)`)
+	cmd.Flags().StringVar(&candidates, "candidates", "", `JSON array of candidate objects; each "description" is Markdown (required unless --candidates-file)`)
 	cmd.Flags().StringVar(&components, "components", "", `optional JSON array of component objects; each "description" is Markdown`)
 	cmd.Flags().StringVar(&repoURL, "repo-url", "", "repository URL")
 	cmd.Flags().StringVar(&branch, "branch", "", "branch name")
 	cmd.Flags().StringVar(&source, "source", "api", "scan source: api, mcp, or web_ui")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
-	return cmd
+	return withValueFiles(cmd, jsonFile("candidates"), jsonFile("components"))
 }
 
 func newGhostCandidatesCmd(f *Factory) *cobra.Command {

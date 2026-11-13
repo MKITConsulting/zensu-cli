@@ -315,7 +315,7 @@ func newJourneysCreateCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&persona, "persona", "", "target user persona")
 	cmd.Flags().StringVar(&tier, "tier", "", "tier UUID this journey applies to")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
-	return cmd
+	return withValueFiles(cmd, textFile("description"))
 }
 
 func newJourneysStepCmd(f *Factory) *cobra.Command {

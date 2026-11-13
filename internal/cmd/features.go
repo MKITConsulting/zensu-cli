@@ -268,7 +268,7 @@ func newFeaturesUpdateCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&description, "description", "", "new description (Markdown)")
 	cmd.Flags().StringVar(&priority, "priority", "", "new priority (low|medium|high|critical)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
-	return cmd
+	return withValueFiles(cmd, textFile("description"))
 }
 
 func newFeaturesStatusCmd(f *Factory) *cobra.Command {

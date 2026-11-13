@@ -122,7 +122,7 @@ func invocationTokens(line string) []string {
 			substitution = 1
 			cur.WriteString("$(")
 			i++
-		case r == '#' && cur.Len() == 0:
+		case (r == '#' || (r == '<' && i+1 < len(runes) && runes[i+1] == '<')) && cur.Len() == 0:
 			flush()
 			return tokens
 		case r == '<' && cur.Len() == 0:
@@ -353,6 +353,7 @@ func TestInvocationProblems_ReadTheDocumentedNotation(t *testing.T) {
 		{"zensu things get <id> --product p --url <link to the page> --file path[:type[:language]]", nil},
 		{"zensu things get <id> --product p --json | jq -r '.data[].id' --raw-output", nil},
 		{"zensu things get <id> --product p (--url u | --file f) --help", nil},
+		{"zensu things get <id> --product p --file - <<'ZENSU_VALUE_1A2B3C'", nil},
 		{"zensu things get <id> \\\n  --product p", nil},
 		{"zensu things get <id>\n    --product p   # reference.md style continuation", nil},
 		{"zensu things promote [parent] <id>", nil},

@@ -144,7 +144,7 @@ func newProductsCreateCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&slug, "slug", "", "product slug")
 	cmd.Flags().StringVar(&description, "description", "", "product description (Markdown)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
-	return cmd
+	return withValueFiles(cmd, textFile("description"))
 }
 
 type visionItem struct {
@@ -168,7 +168,7 @@ func newProductsVisionCreateCmd(f *Factory) *cobra.Command {
 				return fmt.Errorf("--title is required")
 			}
 			if content == "" {
-				return fmt.Errorf("--content is required")
+				return fmt.Errorf("--content or --content-file is required")
 			}
 			payload := map[string]string{"title": title, "content": content}
 			if product != "" {
@@ -196,10 +196,10 @@ func newProductsVisionCreateCmd(f *Factory) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product UUID (optional — omit for greenfield visions)")
 	cmd.Flags().StringVar(&title, "title", "", "vision title (required)")
-	cmd.Flags().StringVar(&content, "content", "", "vision content, markdown or plain text (required)")
+	cmd.Flags().StringVar(&content, "content", "", "vision content, markdown or plain text (required unless --content-file)")
 	cmd.Flags().StringVar(&source, "source", "", "vision source: studio|import|claude-code")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
-	return cmd
+	return withValueFiles(cmd, textFile("content"))
 }
 
 func newProductsVisionGetCmd(f *Factory) *cobra.Command {
@@ -239,7 +239,7 @@ func newProductsBootstrapApplyCmd(f *Factory) *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if result == "" {
-				return fmt.Errorf("--result is required")
+				return fmt.Errorf("--result or --result-file is required")
 			}
 			var parsed struct {
 				Components []json.RawMessage `json:"components"`
@@ -262,9 +262,9 @@ func newProductsBootstrapApplyCmd(f *Factory) *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&result, "result", "", "bootstrap result JSON with components and features (required)")
+	cmd.Flags().StringVar(&result, "result", "", "bootstrap result JSON with components and features (required unless --result-file)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
-	return cmd
+	return withValueFiles(cmd, jsonFile("result"))
 }
 
 func newProductsBootstrapStepCmd(f *Factory) *cobra.Command {

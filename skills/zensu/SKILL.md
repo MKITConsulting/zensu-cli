@@ -104,30 +104,58 @@ zensu auth status   # authenticated? against which host?
    user asks for that decision, never on your own initiative.
 9. **Help output is authoritative.** For any flag detail not listed here, run
    `zensu <group> [<command>] --help`.
-10. **Pass Markdown, plain-text and JSON values from a file.** Flags whose
-    `--help` says `(Markdown)` take Markdown, flags whose `--help` says
-    `(plain text)` take plain text, and several flags take JSON. Inside double
-    quotes the shell still runs backquoted inline code and expands `$(…)` and
-    `$name`; inside single quotes an apostrophe ends the value. Write the value
-    to a file, then pass the file's content. Prefer your host's file-writing
-    tool, because the shell never parses what it writes. Otherwise use a
-    quoted heredoc whose delimiter is a fresh random token, new for every
-    value and equal to no line of it: the first line equal to the delimiter
-    ends the heredoc, and the shell runs every later line as a command. The
-    token in the example below only shows the shape; never reuse it. Chain
-    the steps with `&&` and write with `>|`, so a failed write never sends an
-    empty value, not even under `noclobber`. A heredoc inside `$(…)` is not
-    safe either: bash 3.2, the macOS default, misreads an apostrophe in it.
-    Every Markdown, text or JSON placeholder in this skill and in
-    [reference.md](reference.md) stands for a value passed like this:
+10. **Pass Markdown, plain-text and JSON values without the shell parsing
+    them.** Flags whose `--help` says `(Markdown)` take Markdown, flags whose
+    `--help` says `(plain text)` take plain text, and several flags take JSON.
+    Inside double quotes the shell still runs backquoted inline code and
+    expands `$(…)` and `$name`; inside single quotes an apostrophe ends the
+    value. The long values have a file flag next to them: `--description-file`,
+    `--findings-file`, `--conditions-file`, `--content-file`,
+    `--candidates-file`, `--components-file` and `--result-file`, on every
+    command whose `--help` lists one. Pass `-` and feed the value to stdin
+    through a quoted heredoc: it leaves no file behind, so prefer it for
+    confidential values such as security review findings. Only one flag per
+    command can read stdin, so put a second value in a file of its own: make a
+    private directory for this one command with `mktemp -d`, write the value
+    into it, with your host's file-writing tool when you can, because the shell
+    never parses what it writes, pass that path, and remove the directory once
+    the command has run, whether it succeeded or not. Never reuse a path for
+    another value and never write to a fixed name in a shared temporary
+    directory: the CLI refuses a missing, unreadable, empty or oversized file
+    (256 KiB for text, 4 MiB for JSON) before it sends anything, but it cannot
+    tell a stale or planted file from a fresh one. Every other free-text flag
+    takes the content of a file the shell wrote. Chain the steps with `&&` and
+    write with `>|`, so a failed write never sends an empty value, not even
+    under `noclobber`. A heredoc's delimiter must be a fresh random token, new
+    for every value and equal to no line of it: the first line equal to the
+    delimiter ends the heredoc, and the shell runs every later line as a
+    command. The tokens in the examples below only show the shape; never reuse
+    them. A heredoc inside `$(…)` is not safe either: bash 3.2, the macOS
+    default, misreads an apostrophe in it. Every Markdown, text or JSON
+    placeholder in this skill and in [reference.md](reference.md) stands for a
+    value passed like this:
 
 ```bash
-desc="$(mktemp)" &&
-cat >| "$desc" <<'ZENSU_VALUE_8D2F61' &&
+zensu features update <feature-id> --description-file - <<'ZENSU_VALUE_8D2F61'
 Adds a `--csv` switch; it's opt-in.
 ZENSU_VALUE_8D2F61
-zensu features update <feature-id> --description "$(cat "$desc")"
-rm -f "$desc"
+
+dir="$(mktemp -d)" &&
+cat >| "$dir/conditions.md" <<'ZENSU_VALUE_51B7C4' &&
+Rotate the signing key before the release; it's tracked separately.
+ZENSU_VALUE_51B7C4
+zensu security review <feature-id> --reviewer <who> --status conditional \
+  --conditions-file "$dir/conditions.md" --findings-file - <<'ZENSU_VALUE_E09D3A'
+The token stays in memory; it's never written to a log.
+ZENSU_VALUE_E09D3A
+rm -rf "$dir"
+
+scope="$(mktemp)" &&
+cat >| "$scope" <<'ZENSU_VALUE_3C9A17' &&
+Add a CSV export to the report page; it's opt-in.
+ZENSU_VALUE_3C9A17
+zensu features revision <feature-id> --scope-summary "$(cat "$scope")"
+rm -f "$scope"
 ```
 
 ## Orientation
@@ -184,7 +212,7 @@ zensu features status <feature-id> in-progress          # 3. start work
 zensu link test <feature-id> --file src/auth/login.test.ts \
   --test-type unit --last-run-status passed             # 4. link artifacts
 zensu link source <feature-id> --file src/auth/login.ts
-zensu link docs <feature-id> --doc-type user_facing --content "<markdown>"
+zensu link docs <feature-id> --doc-type user_facing --content-file <path>
 zensu features status <feature-id> testing              # 5. hand to testing
 zensu security validate <feature-id> --json             # 6. release gates green?
 zensu features status <feature-id> released             # 7. only after gates pass
@@ -199,7 +227,7 @@ zensu security suggest-tests <feature-id> --json    # context for picking tests
 zensu security add-test <feature-id> --file tests/security/login_test.go \
   --type injection [--owasp-id A03:2021] [--last-run-status passed]
 zensu security review <feature-id> --reviewer <who> --status approved \
-  [--type manual|automated|external] [--findings "<markdown>"]
+  [--type manual|automated|external] [--findings-file <path>]
 zensu security score <feature-id> --json            # score + release-gate state
 zensu security posture <product-id> --json          # product-wide overview
 zensu security threat-model <feature-id> --json     # STRIDE context data
@@ -218,8 +246,8 @@ zensu security posture <product-id> --json    # aggregate view
 You analyze the repository yourself and feed the discovered candidates to Zensu:
 
 ```bash
-zensu ghost scan --product <id> --candidates '<json-array>' \
-  [--components '<json-array>'] [--repo-url ...] [--branch ...] --json
+zensu ghost scan --product <id> (--candidates-file <path> | --candidates '<json-array>') \
+  [--components-file <path>] [--repo-url ...] [--branch ...] --json
 zensu ghost candidates <scan-id> --product <id>  # JSON array, by confidence
 # present candidates to the user, then:
 zensu ghost batch <scan-id> --product <id> \
@@ -237,13 +265,13 @@ Omit it only on the very first scan of an empty product.
 
 ```bash
 zensu products create --name "My Product" --type public|internal|hybrid --json
-zensu products vision-create --title "..." --content "<markdown>"   # store the vision
-zensu products bootstrap-apply <vision-id> --result '<json>' --json   # structured components+features payload
+zensu products vision-create --title "..." (--content-file <path> | --content "<markdown>")   # store the vision
+zensu products bootstrap-apply <vision-id> (--result-file <path> | --result '<json>') --json   # structured components+features payload
 zensu products bootstrap-step <vision-id> <step>   # mark post-bootstrap steps done
 ```
 
 `bootstrap-apply` takes a JSON payload of components and features in
-`--result` (with priority `critical|high|medium|low`, effort `S|M|L|XL`,
+`--result` or `--result-file` (with priority `critical|high|medium|low`, effort `S|M|L|XL`,
 security classification, scope, and optional subfeatures) — you derive that
 payload from the vision by your own analysis. See
 `zensu products bootstrap-apply --help` for the documented shape.
@@ -267,12 +295,12 @@ continues the session.
 zensu doc gen-context <feature-id> --doc-type user_facing --json   # aggregated doc-writing context
 # READ THE ACTUAL SOURCE FILES before writing — never document from metadata alone
 zensu link docs <feature-id> --doc-type user_facing --audience end_user \
-  --content "<markdown>"                       # creates/updates the linked wiki page
+  --content-file <path>                        # creates/updates the linked wiki page
 zensu wiki images policy --product <uuid> --json
 zensu wiki images upload --product <uuid> --file ./image.png --json
-zensu wiki create --product <id> --title "..." --content "<markdown>" \
+zensu wiki create --product <id> --title "..." (--content-file <path> | --content "<markdown>") \
   [--doc-type overview] [--entity-type feature --entity-id <uuid>]   # new pages only
-zensu wiki update <page-id> --content "<markdown>"   # changes an existing page
+zensu wiki update <page-id> --content-file <path>   # changes an existing page
 zensu doc claude-md --product <id> --variant full|minimal|ci-only   # CLAUDE.md template
 ```
 

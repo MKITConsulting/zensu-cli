@@ -1762,6 +1762,14 @@
           "hidden": false,
           "deprecated": false
         },
+        "description-file": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
         "help": {
           "shorthand": "h",
           "takesValue": false,
@@ -2134,12 +2142,28 @@
         "candidates": {
           "shorthand": "",
           "takesValue": true,
-          "required": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "candidates-file": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
           "persistent": false,
           "hidden": false,
           "deprecated": false
         },
         "components": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "components-file": {
           "shorthand": "",
           "takesValue": true,
           "required": false,
@@ -2282,6 +2306,14 @@
           "deprecated": false
         },
         "description": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "description-file": {
           "shorthand": "",
           "takesValue": true,
           "required": false,
@@ -3198,6 +3230,14 @@
           "deprecated": false
         },
         "content": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "content-file": {
           "shorthand": "",
           "takesValue": true,
           "required": false,
@@ -4432,7 +4472,15 @@
         "result": {
           "shorthand": "",
           "takesValue": true,
-          "required": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "result-file": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
           "persistent": false,
           "hidden": false,
           "deprecated": false
@@ -4498,6 +4546,14 @@
           "deprecated": false
         },
         "description": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "description-file": {
           "shorthand": "",
           "takesValue": true,
           "required": false,
@@ -4700,7 +4756,15 @@
         "content": {
           "shorthand": "",
           "takesValue": true,
-          "required": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "content-file": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
           "persistent": false,
           "hidden": false,
           "deprecated": false
@@ -5154,6 +5218,14 @@
           "hidden": false,
           "deprecated": false
         },
+        "description-file": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
         "goal": {
           "shorthand": "",
           "takesValue": true,
@@ -5507,6 +5579,14 @@
           "deprecated": false
         },
         "description": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "description-file": {
           "shorthand": "",
           "takesValue": true,
           "required": false,
@@ -5906,7 +5986,23 @@
           "hidden": false,
           "deprecated": false
         },
+        "conditions-file": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
         "findings": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "findings-file": {
           "shorthand": "",
           "takesValue": true,
           "required": false,
@@ -6173,6 +6269,14 @@
           "deprecated": false
         },
         "description": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "description-file": {
           "shorthand": "",
           "takesValue": true,
           "required": false,
@@ -6721,7 +6825,15 @@
         "content": {
           "shorthand": "",
           "takesValue": true,
-          "required": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "content-file": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
           "persistent": false,
           "hidden": false,
           "deprecated": false
@@ -7016,6 +7128,14 @@
           "deprecated": false
         },
         "content": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "content-file": {
           "shorthand": "",
           "takesValue": true,
           "required": false,

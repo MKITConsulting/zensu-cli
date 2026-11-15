@@ -237,7 +237,7 @@ func newSecurityReviewCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&findings, "findings", "", "review findings (Markdown)")
 	cmd.Flags().StringVar(&conditions, "conditions", "", "conditions for conditional approval (Markdown)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
-	return cmd
+	return withValueFiles(cmd, textFile("findings"), textFile("conditions"))
 }
 
 func newSecurityContextCmd(f *Factory, use, short, long string) *cobra.Command {

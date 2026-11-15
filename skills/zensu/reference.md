@@ -44,6 +44,15 @@ zensu auth logout
 
 Global flags on every command: `--api-url <url>`.
 
+Long Markdown, text and JSON values also have a file flag, shown below as
+`--<flag>-file path`. It reads the value from that file, or from stdin when the
+path is `-`, so the shell never parses the value. A missing, unreadable, empty
+or oversized file (over 256 KiB of text or 4 MiB of JSON) stops the command
+before it sends anything. The CLI cannot tell a stale or planted file from a
+fresh one, so write each value to a new file in a private directory made with
+`mktemp -d`, never to a fixed name in a shared temporary directory, and remove
+the directory after the command. See ground rule 10 in [SKILL.md](SKILL.md).
+
 Every command that returns data accepts `--json` for raw JSON output. Commands
 that print JSON anyway, such as `features get`, `products get`, `security score`
 or `work get`, accept it too: their output stays the same, and a failure adds
@@ -121,12 +130,14 @@ terminal.
 ```
 zensu products list [--json]
 zensu products get <product-id> [--json]            # response embeds components[]
-zensu products create --name <name> [--slug s] [--type public|internal|hybrid] [--description markdown]
+zensu products create --name <name> [--slug s] [--type public|internal|hybrid]
+    [--description markdown | --description-file path]
 zensu products import <product-id> --repo-url <url> [--repo-type github|gitlab|bitbucket|local]
-zensu products vision-create --title <t> --content <markdown>
+zensu products vision-create --title <t> (--content <markdown> | --content-file <path>)
     [--product <uuid>] [--source studio|import|claude-code]   # omit --product for greenfield visions
 zensu products vision-get <vision-id>
-zensu products bootstrap-apply <vision-id> --result '<json>'   # payload: {"components":[{name,slug,description}],
+zensu products bootstrap-apply <vision-id> (--result '<json>' | --result-file <path>)
+                                                    # payload: {"components":[{name,slug,description}],
                                                     #   "features":[{title,slug,description,component,
                                                     #   priority,estimatedEffort,securityClassification,
                                                     #   securityReasoning,featureScope,subfeatures}]}
@@ -140,7 +151,8 @@ zensu products bootstrap-step <vision-id> <step>    # mark a post-bootstrap step
 zensu features list --product <id> [--status planned|in-progress|testing|released] [--json]
 zensu features get <feature-id> [--json]
 zensu features create --product <id> --component <id> --title <t> [--slug s] [--status s] [--json]
-zensu features update <feature-id> [--title t] [--description markdown] [--priority low|medium|high|critical]
+zensu features update <feature-id> [--title t] [--description markdown | --description-file path]
+    [--priority low|medium|high|critical]
 zensu features status <feature-id> <new-status> [--json]   # dedicated transition command; --json prints the updated feature
 zensu features history <feature-id> [--json]
 zensu features revision <feature-id> --scope-summary <text> [--scope-details text]
@@ -154,7 +166,7 @@ zensu features deprecate <feature-id> [--reason text] [--replacement <uuid>] [--
 ### subfeatures
 
 ```
-zensu subfeatures add <feature-id> --title <t> [--slug s] [--description markdown]
+zensu subfeatures add <feature-id> --title <t> [--slug s] [--description markdown | --description-file path]
     [--priority critical|high|medium|low] [--status s] [--assignee a]   # status defaults to planned
 zensu subfeatures list <feature-id> [--compact]     # compact: fewer fields per row, listed below
 zensu subfeatures promote [feature-id] <subfeature-id>   # promote to top-level feature
@@ -172,7 +184,7 @@ zensu subfeatures promote [feature-id] <subfeature-id>   # promote to top-level 
 zensu link test <feature-id> --file <path> --test-type unit|integration|e2e|security|performance|accessibility
     [--function name] [--last-run-status passed|failed|skipped|error]
 zensu link docs <feature-id> --doc-type <type> [--audience <a>] [--file path]
-    [--external-url url] [--content markdown]       # --content creates/updates the linked wiki page
+    [--external-url url] [--content markdown | --content-file path]   # --content creates/updates the linked wiki page
 zensu link source <feature-id> --file path[:type[:language]]   # repeatable
 ```
 
@@ -190,7 +202,8 @@ zensu security add-test <feature-id> --file <path>
     --type auth-bypass|injection|access-control|rate-limit|input-validation|data-exposure|header-security|dependency-scan|csrf|xss|ssrf
     [--owasp-id A01:2021] [--last-run-status passed|failed|skipped|error]
 zensu security review <feature-id> --reviewer <who> --status approved|rejected|conditional
-    [--type manual|automated|external] [--findings markdown] [--conditions markdown]
+    [--type manual|automated|external] [--findings markdown | --findings-file path]
+    [--conditions markdown | --conditions-file path]
 zensu security score <feature-id>                   # score + release-gate state
 zensu security validate <feature-id>                # release requirements met?
 zensu security analyze <feature-id>                 # detailed single-feature analysis
@@ -206,7 +219,8 @@ attributes and recalculates the security score automatically.
 ### ghost
 
 ```
-zensu ghost scan --product <id> --candidates '<json-array>' [--components '<json-array>']
+zensu ghost scan --product <id> (--candidates '<json-array>' | --candidates-file <path>)
+    [--components '<json-array>' | --components-file path]
     [--repo-url u] [--branch b] [--source api|mcp|web_ui]   # see --help for the candidate shape; descriptions are Markdown
 zensu ghost candidates <scan-id> --product <id>     # JSON array, by confidence
 zensu ghost approve <scan-id> <candidate-id> --product <id>
@@ -458,10 +472,11 @@ zensu tiers set-feature <feature-id> --tiers '<json>'
     # entries: [{"tierId": ..., "gatingType": "hard|soft|preview", "tierLimits": {...}?}]
 
 zensu roadmap create --product <id> --title <t> [--period '2026-Q2'] [--goal g]...
-    [--description markdown] [--status draft|active|completed|archived]
+    [--description markdown | --description-file path] [--status draft|active|completed|archived]
 zensu roadmap list --product <id>
 zensu roadmap get <roadmap-id>
-zensu roadmap update <roadmap-id> --title <t> [--period p] [--goal g]... [--description markdown] [--status s]
+zensu roadmap update <roadmap-id> --title <t> [--period p] [--goal g]...
+    [--description markdown | --description-file path] [--status s]
 zensu roadmap delete <roadmap-id>                   # linked features survive, membership only
 zensu roadmap add-feature <roadmap-id> --feature <id>
     [--start-period '2026-Q2'] [--end-period '2026-Q4'] [--sort-order n]
@@ -470,7 +485,7 @@ zensu roadmap milestone-create <roadmap-id> --title <t> [--period '2026-Q3'] [--
 zensu roadmap milestone-list <roadmap-id>
 zensu roadmap milestone-delete <roadmap-id> <milestone-id>
 
-zensu journeys create --product <id> --title <t> [--slug s] [--description markdown]
+zensu journeys create --product <id> --title <t> [--slug s] [--description markdown | --description-file path]
     [--persona p] [--priority critical|high|medium|low]
     [--type critical|happy_path|edge_case|error_path|onboarding] [--tier <uuid>]
 zensu journeys list --product <id>
@@ -510,15 +525,15 @@ zensu mocks get <feature-id> <mock-id> [--json | --raw]   # metadata (a JSON rec
 
 zensu wiki images policy --product <uuid> --json
 zensu wiki images upload --product <uuid> --file ./image.png --json
-zensu wiki create --product <uuid> --title <t> --content <markdown>
+zensu wiki create --product <uuid> --title <t> (--content <markdown> | --content-file <path>)
     [--doc-type <type>] [--audience <a>] [--visibility public|private]
     [--entity-type feature|component|product --entity-id <uuid>]   # visibility defaults to private
     # creates new pages only: when a page already exists at the new page's path, it fails,
     # names that page's path and id and leaves it unchanged; change it with wiki update.
     # Needs backend v0.89.2 and wiki v0.15.1 or later; an older server updates the page instead.
 zensu wiki list --product <uuid> [--audience <a>] [--parent <uuid>]   # every page; an older server caps at 50 and the CLI warns
-zensu wiki update <page-id> [--title t] [--content markdown] [--change-summary s]
-    [--visibility public|private]
+zensu wiki update <page-id> [--title t] [--content markdown | --content-file path]
+    [--change-summary s] [--visibility public|private]
 
 zensu org users [--query "name-or-email"]           # omit --query to list all members
 ```

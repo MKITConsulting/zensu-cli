@@ -147,7 +147,7 @@ func newRoadmapCreateCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringArrayVar(&goals, "goal", nil, "goal string (repeatable)")
 	cmd.Flags().StringVar(&status, "status", "", "roadmap status: draft|active|completed|archived (default draft)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
-	return cmd
+	return withValueFiles(cmd, textFile("description"))
 }
 
 func newRoadmapUpdateCmd(f *Factory) *cobra.Command {
@@ -197,7 +197,7 @@ func newRoadmapUpdateCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringArrayVar(&goals, "goal", nil, "goal string (repeatable)")
 	cmd.Flags().StringVar(&status, "status", "", "roadmap status: draft|active|completed|archived")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
-	return cmd
+	return withValueFiles(cmd, textFile("description"))
 }
 
 func newRoadmapDeleteCmd(f *Factory) *cobra.Command {

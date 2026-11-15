@@ -135,7 +135,7 @@ func newLinkDocsCmd(f *Factory) *cobra.Command {
 	cmd.Flags().StringVar(&content, "content", "", "wiki page content (Markdown); creates/updates the linked page. Upload local images with wiki images upload first; use wiki-asset references and optional {width=50%} or {width=360px}; no remote images")
 	cmd.Flags().BoolVar(&publishToWiki, "publish-to-wiki", true, "ensure a linked wiki page exists for this doc (default true)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
-	return cmd
+	return withValueFiles(cmd, textFile("content"))
 }
 
 func newLinkSourceCmd(f *Factory) *cobra.Command {

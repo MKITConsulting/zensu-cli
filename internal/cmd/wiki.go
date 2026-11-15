@@ -196,7 +196,7 @@ func newWikiUpdateCmd(f *Factory) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !cmd.Flags().Changed("title") && !cmd.Flags().Changed("content") &&
 				!cmd.Flags().Changed("change-summary") && !cmd.Flags().Changed("visibility") {
-				return fmt.Errorf("nothing to update: pass --title, --content, --change-summary, or --visibility")
+				return fmt.Errorf("nothing to update: pass --title, --content (or --content-file), --change-summary, or --visibility")
 			}
 			payload := map[string]string{}
 			if cmd.Flags().Changed("title") {

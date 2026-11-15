@@ -24,19 +24,62 @@ func readSkillDoc(t *testing.T, name string) string {
 	return string(b)
 }
 
+type heredoc struct {
+	delimiter string
+	stripTabs bool
+}
+
+func (h heredoc) closedBy(line string) bool {
+	if h.stripTabs {
+		line = strings.TrimLeft(line, "\t")
+	}
+	return line == h.delimiter
+}
+
+var shellFenceLanguages = []string{"", "bash", "sh", "shell", "zsh", "console"}
+
 func fencedLines(doc string) []string {
-	var lines []string
-	inFence := false
+	lines, _ := scanFencedLines(doc)
+	return lines
+}
+
+func scanFencedLines(doc string) (lines, unclosed []string) {
+	inFence, shell := false, false
+	var pending, open []heredoc
+	endBlock := func() {
+		for _, h := range append(open, pending...) {
+			unclosed = append(unclosed, h.delimiter)
+		}
+		pending, open = nil, nil
+	}
 	for _, line := range strings.Split(doc, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+		if fence, ok := strings.CutPrefix(strings.TrimSpace(line), "```"); ok {
+			endBlock()
 			inFence = !inFence
+			shell = slices.Contains(shellFenceLanguages, strings.TrimSpace(fence))
 			continue
 		}
-		if inFence {
-			lines = append(lines, line)
+		if !inFence {
+			continue
+		}
+		if len(open) > 0 {
+			if open[0].closedBy(line) {
+				open = open[1:]
+			}
+			continue
+		}
+		lines = append(lines, line)
+		if !shell {
+			continue
+		}
+		_, opened := lexLine(line)
+		pending = append(pending, opened...)
+		if !strings.HasSuffix(strings.TrimSpace(line), "\\") {
+			open, pending = pending, nil
 		}
 	}
-	return lines
+	endBlock()
+	return lines, unclosed
 }
 
 var subTokenRe = regexp.MustCompile(`^[a-z][a-z-]*$`)
@@ -56,11 +99,13 @@ func documentedInvocations(doc string) []invocation {
 		if !strings.HasPrefix(line, "zensu ") {
 			continue
 		}
-		tokens := invocationTokens(line)
-		for i+1 < len(lines) && continuesInvocation(lines[i], lines[i+1]) {
+		tokens, heredocs := lexLine(line)
+		opened := len(heredocs) > 0
+		for i+1 < len(lines) && continuesInvocation(lines[i], lines[i+1], opened) {
 			i++
 			line = strings.TrimSpace(strings.TrimSuffix(line, "\\")) + " " + strings.TrimSpace(lines[i])
-			tokens = append(tokens, invocationTokens(lines[i])...)
+			more, alsoOpened := lexLine(lines[i])
+			tokens, opened = append(tokens, more...), opened || len(alsoOpened) > 0
 		}
 		if len(tokens) < 2 || !subTokenRe.MatchString(tokens[1]) {
 			continue
@@ -74,17 +119,21 @@ func documentedInvocations(doc string) []invocation {
 	return out
 }
 
-func continuesInvocation(line, next string) bool {
+func continuesInvocation(line, next string, heredocOpened bool) bool {
 	if strings.HasSuffix(strings.TrimSpace(line), "\\") {
 		return true
+	}
+	if heredocOpened {
+		return false
 	}
 	trimmed := strings.TrimSpace(next)
 	indented := strings.TrimLeft(next, " \t") != next
 	return indented && trimmed != "" && !strings.HasPrefix(trimmed, "zensu ")
 }
 
-func invocationTokens(line string) []string {
+func lexLine(line string) ([]string, []heredoc) {
 	var tokens []string
+	var heredocs []heredoc
 	var cur strings.Builder
 	var quote rune
 	substitution, nested := 0, 0
@@ -122,9 +171,21 @@ func invocationTokens(line string) []string {
 			substitution = 1
 			cur.WriteString("$(")
 			i++
-		case (r == '#' || (r == '<' && i+1 < len(runes) && runes[i+1] == '<')) && cur.Len() == 0:
+		case r == '#' && cur.Len() == 0:
 			flush()
-			return tokens
+			return tokens, heredocs
+		case r == '<' && i+1 < len(runes) && runes[i+1] == '<' && cur.Len() == 0:
+			start := i + 2
+			hereString := start < len(runes) && runes[start] == '<'
+			stripTabs := !hereString && start < len(runes) && runes[start] == '-'
+			if hereString || stripTabs {
+				start++
+			}
+			word, end := shellWord(runes, start)
+			if !hereString && word != "" {
+				heredocs = append(heredocs, heredoc{delimiter: word, stripTabs: stripTabs})
+			}
+			i = end - 1
 		case r == '<' && cur.Len() == 0:
 			placeholder = true
 			cur.WriteRune(r)
@@ -146,7 +207,35 @@ func invocationTokens(line string) []string {
 		}
 	}
 	flush()
-	return tokens
+	return tokens, heredocs
+}
+
+func shellWord(runes []rune, start int) (string, int) {
+	i := start
+	for i < len(runes) && (runes[i] == ' ' || runes[i] == '\t') {
+		i++
+	}
+	var word strings.Builder
+	var quote rune
+	for ; i < len(runes); i++ {
+		r := runes[i]
+		switch {
+		case quote != 0 && r == quote:
+			quote = 0
+		case quote != 0:
+			word.WriteRune(r)
+		case r == '\'' || r == '"':
+			quote = r
+		case r == '\\' && i+1 < len(runes):
+			i++
+			word.WriteRune(runes[i])
+		case unicode.IsSpace(r) || strings.ContainsRune("&;|<>()", r):
+			return word.String(), i
+		default:
+			word.WriteRune(r)
+		}
+	}
+	return word.String(), i
 }
 
 type documentedArg struct {
@@ -199,6 +288,8 @@ walk:
 			if len(groups) > 0 {
 				groups = groups[:len(groups)-1]
 			}
+		case token == "&&" || token == "||" || token == ";":
+			break walk
 		case token == "|" && len(groups) == 0:
 			break walk
 		case token == "|" || token == "...":
@@ -354,6 +445,9 @@ func TestInvocationProblems_ReadTheDocumentedNotation(t *testing.T) {
 		{"zensu things get <id> --product p --json | jq -r '.data[].id' --raw-output", nil},
 		{"zensu things get <id> --product p (--url u | --file f) --help", nil},
 		{"zensu things get <id> --product p --file - <<'ZENSU_VALUE_1A2B3C'", nil},
+		{"zensu things get <id> --product p --file - <<'ZENSU_VALUE_1A2B3C' --raw", []string{`--raw is not a flag of "zensu things get"`}},
+		{"zensu things get <id> --product p --file - <<-ZENSU_VALUE_1A2B3C && echo sent", nil},
+		{`zensu things get <id> --product p --file - <<< "$value" --json`, nil},
 		{"zensu things get <id> \\\n  --product p", nil},
 		{"zensu things get <id>\n    --product p   # reference.md style continuation", nil},
 		{"zensu things promote [parent] <id>", nil},
@@ -371,6 +465,68 @@ func TestInvocationProblems_ReadTheDocumentedNotation(t *testing.T) {
 		}
 		if got := invocationProblems(newRoot(), invs[0].tokens); !slices.Equal(got, tc.want) {
 			t.Errorf("%q:\n got %q\nwant %q", tc.doc, got, tc.want)
+		}
+	}
+}
+
+func TestDocumentedInvocations_SkipHeredocBodies(t *testing.T) {
+	doc := "```bash\n" +
+		"zensu things get <id> --product p --file - <<'ZENSU_VALUE_1A2B3C'\n" +
+		"  zensu things purge --everything\n" +
+		"  --raw\n" +
+		"ZENSU_VALUE_1A2B3C\n" +
+		"cat >| \"$f\" <<-EOF &&\n" +
+		"\tzensu things purge --everything\n" +
+		"\tEOF\n" +
+		"zensu things get <id> --product p \\\n" +
+		"  --file - <<'ZENSU_VALUE_4D5E6F'\n" +
+		"    --raw\n" +
+		"ZENSU_VALUE_4D5E6F\n" +
+		"  --not-a-continuation\n" +
+		"zensu things promote <id>\n" +
+		"```\n" +
+		"```go\n" +
+		"limit := 1 << 20\n" +
+		"```\n"
+	var got []string
+	for _, inv := range documentedInvocations(doc) {
+		got = append(got, strings.Join(inv.tokens, " "))
+	}
+	want := []string{
+		"things get <id> --product p --file -",
+		"things get <id> --product p --file -",
+		"things promote <id>",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("invocations:\n got %q\nwant %q", got, want)
+	}
+	if _, unclosed := scanFencedLines(doc); len(unclosed) > 0 {
+		t.Errorf("unclosed = %q, want none", unclosed)
+	}
+}
+
+func TestScanFencedLines_ReportsAHeredocItsBlockNeverCloses(t *testing.T) {
+	doc := "```bash\n" +
+		"zensu things get <id> --file - <<'ZENSU_VALUE_1A2B3C'\n" +
+		"body\n" +
+		"ZENSU_VALUE_1A2B3\n" +
+		"```\n\n" +
+		"```bash\n" +
+		"zensu things promote <id>\n" +
+		"```\n"
+	lines, unclosed := scanFencedLines(doc)
+	if want := []string{"ZENSU_VALUE_1A2B3C"}; !slices.Equal(unclosed, want) {
+		t.Errorf("unclosed = %q, want %q", unclosed, want)
+	}
+	if want := []string{"zensu things get <id> --file - <<'ZENSU_VALUE_1A2B3C'", "zensu things promote <id>"}; !slices.Equal(lines, want) {
+		t.Errorf("lines = %q, want %q", lines, want)
+	}
+}
+
+func TestSkillDocs_EveryHeredocClosesInItsCodeBlock(t *testing.T) {
+	for _, file := range []string{"SKILL.md", "reference.md"} {
+		if _, unclosed := scanFencedLines(readSkillDoc(t, file)); len(unclosed) > 0 {
+			t.Errorf("%s: heredocs never closed in their code block: %q", file, unclosed)
 		}
 	}
 }

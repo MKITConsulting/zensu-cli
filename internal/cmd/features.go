@@ -223,7 +223,7 @@ func newFeaturesUpdateCmd(f *Factory) *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !cmd.Flags().Changed("title") && !cmd.Flags().Changed("description") && !cmd.Flags().Changed("priority") {
-				return fmt.Errorf("nothing to update: pass --title, --description, or --priority")
+				return fmt.Errorf("nothing to update: pass --title, --description (or --description-file), or --priority")
 			}
 			cur, err := f.request(cmd.Context(), http.MethodGet, "/api/features/"+args[0], nil)
 			if err != nil {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"strings"
 	"unicode/utf8"
 
@@ -39,7 +38,6 @@ func withValueFiles(cmd *cobra.Command, files ...valueFile) *cobra.Command {
 	for _, file := range files {
 		cmd.Flags().String(file.name(), "", fmt.Sprintf("read the --%s %s from `path`, or - for stdin (max %s)", file.flag, file.format.noun, byteSize(file.format.maxBytes)))
 		cmd.MarkFlagsMutuallyExclusive(file.flag, file.name())
-		_ = cmd.MarkFlagFilename(file.name())
 	}
 	run := cmd.RunE
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -86,7 +84,12 @@ func readValueFile(stdin io.Reader, path string, format valueFormat) (string, er
 	source, r := "stdin", stdin
 	if path != "-" {
 		source = path
-		info, err := os.Stat(path)
+		file, err := openValueFile(path)
+		if err != nil {
+			return "", fmt.Errorf("cannot read %s: %w", path, pathCause(err))
+		}
+		defer file.Close()
+		info, err := file.Stat()
 		if err != nil {
 			return "", fmt.Errorf("cannot read %s: %w", path, pathCause(err))
 		}
@@ -96,11 +99,6 @@ func readValueFile(stdin io.Reader, path string, format valueFormat) (string, er
 		if info.Size() > format.maxBytes {
 			return "", fmt.Errorf("%s exceeds %s", path, byteSize(format.maxBytes))
 		}
-		file, err := os.Open(path)
-		if err != nil {
-			return "", fmt.Errorf("cannot read %s: %w", path, pathCause(err))
-		}
-		defer file.Close()
 		r = file
 	}
 	data, err := io.ReadAll(io.LimitReader(r, format.maxBytes+1))

@@ -47,7 +47,19 @@ func TestValueFiles_RefuseAFifoWithoutBlocking(t *testing.T) {
 			t.Fatalf("err = %v, want the FIFO refused as not a regular file", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("reading a FIFO blocked; the file mode must be checked before the file is opened")
+		t.Fatal("opening a FIFO blocked; open value files without blocking and check the opened file")
+	}
+	if calls := api.calls(); len(calls) != 0 {
+		t.Fatalf("sent %d requests: %v", len(calls), api.summary())
+	}
+}
+
+func TestValueFiles_RefuseADevice(t *testing.T) {
+	srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{})
+	f, _ := testFactory(srv)
+	err := runCmd(t, NewFeaturesCmd(f), "update", "f1", "--description-file", os.DevNull)
+	if err == nil || err.Error() != "--description-file: "+os.DevNull+" is not a regular file" {
+		t.Fatalf("err = %v, want %s refused as not a regular file", err, os.DevNull)
 	}
 	if calls := api.calls(); len(calls) != 0 {
 		t.Fatalf("sent %d requests: %v", len(calls), api.summary())

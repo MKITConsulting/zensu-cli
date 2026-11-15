@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 const shellHostileText = "## Plan\n\nAdds a `--csv` switch; it's opt-in.\n$(id), \"$HOME\" and 'quotes' stay literal.\n"
@@ -179,9 +181,6 @@ func TestWithValueFiles_HelpNamesPathStdinAndCap(t *testing.T) {
 		if help := tc.cmd.Flags().FlagUsages(); !strings.Contains(help, "--"+tc.flag+" path ") || !strings.Contains(help, tc.usage) {
 			t.Errorf("help lacks --%s path with %q:\n%s", tc.flag, tc.usage, help)
 		}
-		if _, ok := tc.cmd.Flags().Lookup(tc.flag).Annotations[cobra.BashCompFilenameExt]; !ok {
-			t.Errorf("--%s is not marked for file name completion", tc.flag)
-		}
 	}
 }
 
@@ -205,6 +204,48 @@ var valueFileFlags = []struct {
 	{[]string{"link", "docs"}, "content", false},
 	{[]string{"ghost", "scan"}, "candidates", true},
 	{[]string{"ghost", "scan"}, "components", true},
+}
+
+func listedValueFileFlags() []string {
+	var listed []string
+	for _, tc := range valueFileFlags {
+		listed = append(listed, strings.Join(tc.path, " ")+" --"+tc.flag)
+	}
+	slices.Sort(listed)
+	return listed
+}
+
+func valueFileFlagsOf(root *cobra.Command) []string {
+	var found []string
+	VisitCommands(root, func(cmd *cobra.Command) {
+		cmd.LocalFlags().VisitAll(func(flag *pflag.Flag) {
+			if base, ok := strings.CutSuffix(flag.Name, "-file"); ok && cmd.LocalFlags().Lookup(base) != nil {
+				found = append(found, strings.TrimPrefix(cmd.CommandPath(), root.Name()+" ")+" --"+base)
+			}
+		})
+	})
+	slices.Sort(found)
+	return found
+}
+
+func TestValueFileFlagsOf_FindsFlagsWithAFileSiblingOnly(t *testing.T) {
+	scan := &cobra.Command{Use: "scan", RunE: func(*cobra.Command, []string) error { return nil }}
+	scan.Flags().String("candidates", "", "JSON array")
+	withValueFiles(scan, jsonFile("candidates"))
+	scan.Flags().String("review-file", "", "a file flag without an inline sibling")
+	things := &cobra.Command{Use: "things"}
+	things.AddCommand(scan)
+	root := &cobra.Command{Use: "zensu"}
+	root.AddCommand(things)
+	if got, want := valueFileFlagsOf(root), []string{"things scan --candidates"}; !slices.Equal(got, want) {
+		t.Errorf("found %q, want %q", got, want)
+	}
+}
+
+func TestValueFileFlags_ListEveryFileFlagOfTheCommandTree(t *testing.T) {
+	if got, want := valueFileFlagsOf(NewRootCmd()), listedValueFileFlags(); !slices.Equal(got, want) {
+		t.Errorf("the command tree has file flags for:\n  %s\nvalueFileFlags lists:\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
+	}
 }
 
 func TestValueFileFlags_ExistWithTheirHelp(t *testing.T) {
@@ -245,17 +286,50 @@ func TestValueFileFlags_LeaveTheirInlineFlagUnrequiredInTheContract(t *testing.T
 	}
 }
 
-func TestValueFileFlags_CompleteFileNames(t *testing.T) {
-	root := NewRootCmd()
+func fileCompletionProblem(root *cobra.Command, path []string, flag string) string {
 	out := &bytes.Buffer{}
 	root.SetOut(out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{cobra.ShellCompRequestCmd, "features", "update", "f1", "--description-file", ""})
+	root.SetArgs(append(append([]string{cobra.ShellCompRequestCmd}, path...), "--"+flag, ""))
+	where := strings.Join(path, " ") + " --" + flag
 	if err := root.Execute(); err != nil {
-		t.Fatal(err)
+		return fmt.Sprintf("%s: completion failed: %v", where, err)
 	}
 	if got := out.String(); got != ":0\n" {
-		t.Fatalf("completion = %q, want no suggestions and the default directive, which completes file names", got)
+		return fmt.Sprintf("%s completes %q, want no suggestions and the default directive, so the shell completes file names", where, got)
+	}
+	return ""
+}
+
+func TestFileCompletionProblem_ReportsAFileFlagThatHidesFileNames(t *testing.T) {
+	newRoot := func(hide bool) *cobra.Command {
+		scan := &cobra.Command{Use: "scan", RunE: func(*cobra.Command, []string) error { return nil }}
+		scan.Flags().String("candidates", "", "JSON array")
+		withValueFiles(scan, jsonFile("candidates"))
+		if hide {
+			if err := scan.RegisterFlagCompletionFunc("candidates-file", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+				return []string{"draft.json"}, cobra.ShellCompDirectiveNoFileComp
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		root := &cobra.Command{Use: "zensu"}
+		root.AddCommand(scan)
+		return root
+	}
+	if problem := fileCompletionProblem(newRoot(false), []string{"scan"}, "candidates-file"); problem != "" {
+		t.Errorf("a plain file flag was reported: %s", problem)
+	}
+	if problem := fileCompletionProblem(newRoot(true), []string{"scan"}, "candidates-file"); problem == "" {
+		t.Error("a file flag whose completion hides file names was not reported")
+	}
+}
+
+func TestValueFileFlags_LeaveFileNameCompletionToTheShell(t *testing.T) {
+	for _, tc := range valueFileFlags {
+		if problem := fileCompletionProblem(NewRootCmd(), tc.path, tc.flag+"-file"); problem != "" {
+			t.Error(problem)
+		}
 	}
 }
 
@@ -263,7 +337,7 @@ func TestValueFiles_ReachTheRequestBody(t *testing.T) {
 	candidates := "[{\"slug\":\"csv-export\",\"title\":\"CSV export\",\"description\":\"Adds a `--csv` switch; it's opt-in.\"}]\n"
 	components := "[{\"slug\":\"exports\",\"name\":\"Exports\",\"description\":\"`$(id)` stays literal\"}]\n"
 	result := "{\"components\":[],\"features\":[{\"title\":\"it's `x`\",\"slug\":\"x\"}]}\n"
-	for _, tc := range []struct {
+	cases := []struct {
 		name          string
 		newCmd        func(*Factory) *cobra.Command
 		args          []string
@@ -286,7 +360,18 @@ func TestValueFiles_ReachTheRequestBody(t *testing.T) {
 		{"link docs", NewLinkCmd, []string{"docs", "f1", "--doc-type", "user_facing"}, "content", shellHostileText, "POST /api/features/f1/docs", "", "content"},
 		{"ghost scan candidates", NewGhostCmd, []string{"scan", "--product", "p1"}, "candidates", candidates, "POST /api/products/p1/ghost/scans", "", "candidates"},
 		{"ghost scan components", NewGhostCmd, []string{"scan", "--product", "p1", "--candidates", "[]"}, "components", components, "POST /api/products/p1/ghost/scans", "", "components"},
-	} {
+	}
+	srv, _ := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{})
+	factory, _ := testFactory(srv)
+	var covered []string
+	for _, tc := range cases {
+		covered = append(covered, tc.newCmd(factory).Name()+" "+tc.args[0]+" --"+tc.flag)
+	}
+	slices.Sort(covered)
+	if want := listedValueFileFlags(); !slices.Equal(covered, want) {
+		t.Errorf("request-body cases cover:\n  %s\nvalueFileFlags lists:\n  %s", strings.Join(covered, "\n  "), strings.Join(want, "\n  "))
+	}
+	for _, tc := range cases {
 		for _, fromStdin := range []bool{false, true} {
 			name := tc.name + " from a file"
 			if fromStdin {
@@ -351,6 +436,8 @@ func TestValueFiles_FailBeforeAnyRequest(t *testing.T) {
 		{"no vision content in either form", NewProductsCmd, []string{"vision-create", "--title", "t"}, "--content or --content-file is required"},
 		{"no bootstrap result in either form", NewProductsCmd, []string{"bootstrap-apply", "v1"}, "--result or --result-file is required"},
 		{"no wiki page content in either form", NewWikiCmd, []string{"create", "--product", "p1", "--title", "t"}, "--product, --title and --content (or --content-file) are required"},
+		{"a feature update names the description file", NewFeaturesCmd, []string{"update", "f1"}, "nothing to update: pass --title, --description (or --description-file), or --priority"},
+		{"a wiki update names the content file", NewWikiCmd, []string{"update", "w1"}, "nothing to update: pass --title, --content (or --content-file), --change-summary, or --visibility"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{})

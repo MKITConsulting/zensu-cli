@@ -33,6 +33,13 @@ Ground rule 10 and the `(Markdown)` / `(plain text)` labels exist only in commit
 - One leading UTF-8 byte order mark is removed for both kinds, so files saved by Windows editors work. Trailing CR and LF are trimmed for text only, matching what `"$(cat "$f")"` produced.
 - Stdin is `cmd.InOrStdin()`, so tests inject it with `SetIn`.
 
+### Review follow-up (2026-11-15)
+- A value file is opened without blocking (`O_NONBLOCK` and `O_NOCTTY` on Unix), and its type and size are read from the opened descriptor, so a path swapped for a FIFO or a device after a check can neither block the command nor be read.
+- `MarkFlagFilename` is dropped: without extensions cobra ignores it, and shells complete file names by default. A test runs `__complete` for every file flag, and a fixture proves that it reports a flag whose completion hides file names.
+- Missing-value and nothing-to-update errors name the file flag next to the inline flag.
+- The tests' flag lists are compared with the command tree, so a new `--<flag>-file` flag fails the tests until it is listed and covered.
+- The skill-docs scanner skips heredoc bodies, checks the words after a heredoc delimiter, ends an invocation at `&&`, `||` and `;`, and reports a heredoc that never closes in its shell code block.
+
 ## Requirements
 | ID | Requirement | Source |
 |----|-------------|--------|
@@ -43,7 +50,7 @@ Ground rule 10 and the `(Markdown)` / `(plain text)` labels exist only in commit
 | FR-005 | Text values must be valid UTF-8 without NUL bytes; trailing CR and LF are trimmed and the rest is passed byte for byte | spec |
 | FR-006 | JSON values are passed byte for byte to the command's existing JSON validation and payload | spec |
 | FR-007 | Text values are capped at 256 KiB and JSON values at 4 MiB | spec |
-| FR-008 | The value read from a file is stored in the inline flag, so `Changed` semantics, payloads and existing error messages stay unchanged, and inline flags behave as before | spec |
+| FR-008 | The value read from a file is stored in the inline flag, so `Changed` semantics and payloads stay unchanged and inline flags behave as before; errors for a missing value name both flags | spec |
 | FR-009 | Each `--<flag>-file` help line names the path, `-` for stdin and the cap; shell completion completes file names for it | spec |
 | FR-010 | `skills/zensu/SKILL.md` ground rule 10 and `skills/zensu/reference.md` point at the new input, and their documented invocations pass the skill-docs tests | spec |
 | AC-001 | `go vet ./...` exits 0 | spec |
@@ -78,7 +85,7 @@ Ground rule 10 and the `(Markdown)` / `(plain text)` labels exist only in commit
 
 ### Step S1 — Shared value-file helper
 - **Covers**: FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009
-- New `internal/cmd/valuefile.go`: `withValueFiles(cmd, ...)` registers each `--<flag>-file`, marks it mutually exclusive with its inline flag and as a file name for completion, and wraps `RunE`; the reader enforces the regular-file, size, UTF-8, NUL and empty rules and the single-stdin rule.
+- New `internal/cmd/valuefile.go`: `withValueFiles(cmd, ...)` registers each `--<flag>-file`, marks it mutually exclusive with its inline flag and wraps `RunE`; the reader enforces the regular-file, size, UTF-8, NUL and empty rules and the single-stdin rule.
 
 ### Step S2 — Wire the 15 flags into their commands
 - **Covers**: FR-001, FR-008, FR-009, AC-003, AC-004, AC-005
@@ -86,7 +93,7 @@ Ground rule 10 and the `(Markdown)` / `(plain text)` labels exist only in commit
 
 ### Step S3 — Skill rule 10, reference and doc parser
 - **Covers**: FR-010, AC-001, AC-002
-- Rule 10 names the `--<flag>-file` flags first and keeps the `"$(cat "$f")"` form for the other free-text flags; reference.md shows the new flags; the skill-docs parser ends an invocation at a heredoc operator, with a notation case.
+- Rule 10 names the `--<flag>-file` flags first and keeps the `"$(cat "$f")"` form for the other free-text flags; reference.md shows the new flags; the skill-docs parser skips heredoc bodies and reads the words after a heredoc delimiter, with notation cases.
 
 **Checkpoint**: `go test ./internal/cmd/ -run '<step tests>'` over this phase's changed files and the suites that import or invoke them + `go vet ./...` pass (the full suite runs in the Phase 6 audit, not here — unless the Phase 5 fallback fires)
 

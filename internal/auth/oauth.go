@@ -181,8 +181,9 @@ func oauthErrorText(s string) string {
 type APIKeyKind string
 
 const (
-	APIKeyKindUser  APIKeyKind = "user"
-	APIKeyKindAgent APIKeyKind = "agent"
+	APIKeyKindUser       APIKeyKind = "user"
+	APIKeyKindRestricted APIKeyKind = "restricted"
+	APIKeyKindAgent      APIKeyKind = "agent"
 )
 
 func ValidateAPIKey(ctx context.Context, httpClient *http.Client, apiURL, apiKey string) (APIKeyKind, error) {
@@ -203,8 +204,13 @@ func ValidateAPIKey(ctx context.Context, httpClient *http.Client, apiURL, apiKey
 		var body struct {
 			Code string `json:"code"`
 		}
-		if json.NewDecoder(io.LimitReader(resp.Body, 4<<10)).Decode(&body) == nil && body.Code == "agent_key_not_allowed" {
-			return APIKeyKindAgent, nil
+		if json.NewDecoder(io.LimitReader(resp.Body, 4<<10)).Decode(&body) == nil {
+			switch body.Code {
+			case "agent_key_not_allowed":
+				return APIKeyKindAgent, nil
+			case "forbidden":
+				return APIKeyKindRestricted, nil
+			}
 		}
 	}
 	return "", fmt.Errorf("api key rejected (status %d)", resp.StatusCode)

@@ -17,6 +17,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - name: Check that the coverage action installs this release
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          pinned=$(awk -v q="'" '/^  version:$/ { inside = 1; next } inside && /^  [^ ]/ { inside = 0 } inside && $1 == "default:" { gsub(q, "", $2); gsub("\"", "", $2); print $2; exit }' actions/coverage/action.yml)
+          if [ "${pinned}" != "${TAG}" ]; then
+            echo "::error file=actions/coverage/action.yml::The coverage action installs ${pinned:-no version} by default, but this release is ${TAG}. Do not move this tag: set the default of its version input to the next version on main and tag that commit instead."
+            exit 1
+          fi
+          echo "The coverage action installs ${TAG} by default."
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod

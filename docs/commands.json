@@ -9,6 +9,7 @@
       "subcommands": [
         "ai-work",
         "auth",
+        "ci",
         "completion",
         "design",
         "doc",
@@ -695,6 +696,354 @@
         "help": {
           "shorthand": "h",
           "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        }
+      }
+    },
+    "zensu ci": {
+      "use": "ci",
+      "aliases": [],
+      "subcommands": [
+        "commits",
+        "coverage",
+        "pull-request"
+      ],
+      "runnable": false,
+      "hidden": false,
+      "deprecated": false,
+      "args": {
+        "min": 0,
+        "max": 0
+      },
+      "flags": {
+        "api-url": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": true,
+          "hidden": false,
+          "deprecated": false
+        },
+        "help": {
+          "shorthand": "h",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        }
+      }
+    },
+    "zensu ci commits": {
+      "use": "commits",
+      "aliases": [],
+      "subcommands": [],
+      "runnable": true,
+      "hidden": false,
+      "deprecated": false,
+      "args": {
+        "min": 0,
+        "max": 0
+      },
+      "flags": {
+        "api-key-stdin": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "api-url": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": true,
+          "hidden": false,
+          "deprecated": false
+        },
+        "github": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "help": {
+          "shorthand": "h",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "json": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "product": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": true,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "range": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        }
+      }
+    },
+    "zensu ci coverage": {
+      "use": "coverage",
+      "aliases": [],
+      "subcommands": [],
+      "runnable": true,
+      "hidden": false,
+      "deprecated": false,
+      "args": {
+        "min": 0,
+        "max": 0
+      },
+      "flags": {
+        "api-key-stdin": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "api-url": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": true,
+          "hidden": false,
+          "deprecated": false
+        },
+        "ci-run-url": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "file": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": true,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "format": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "github": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "help": {
+          "shorthand": "h",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "json": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "markdown-summary": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "product": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": true,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "root": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        }
+      }
+    },
+    "zensu ci pull-request": {
+      "use": "pull-request",
+      "aliases": [],
+      "subcommands": [],
+      "runnable": true,
+      "hidden": false,
+      "deprecated": false,
+      "args": {
+        "min": 0,
+        "max": 0
+      },
+      "flags": {
+        "api-key-stdin": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "api-url": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": true,
+          "hidden": false,
+          "deprecated": false
+        },
+        "base-ref": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "body": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "body-file": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "github": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "head-sha": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "help": {
+          "shorthand": "h",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "json": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "merge-sha": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "number": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "product": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": true,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "repository": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "status": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "title": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "url": {
+          "shorthand": "",
+          "takesValue": true,
           "required": false,
           "persistent": false,
           "hidden": false,

@@ -50,7 +50,18 @@ curl -fsSL https://zensu.dev/install.sh | sh
 ```
 
 Installs the latest release binary to `/usr/local/bin`. Override with
-`ZENSU_INSTALL_DIR=...`, pin a version with `ZENSU_VERSION=vX.Y.Z`.
+`ZENSU_INSTALL_DIR=...`, pin a version with `ZENSU_VERSION=vX.Y.Z` (the `v` is optional).
+
+The script checks the Ed25519 signature of the release checksums against the zensu
+release keys it embeds, with OpenSSL 3 or later (on macOS the Homebrew `openssl@3`
+when the system OpenSSL is LibreSSL; `ZENSU_OPENSSL=<path>` names another binary),
+and then the SHA-256 of the archive. A wrong signature always stops the install, and
+so does a missing one for every release after v0.18.0, which are all signed. Without an
+OpenSSL 3 that verifies Ed25519 (checked against a known test vector first), or for an
+older release without a signature, it says so and checks only the checksums;
+`ZENSU_REQUIRE_SIGNATURE=1` (any value but `0`) makes both cases fail.
+`ZENSU_RELEASE_URL=<url>` downloads from a mirror of the release assets
+(`<url>/<tag>/<asset>`) and needs `ZENSU_VERSION`.
 
 ### Install script (Windows / PowerShell)
 
@@ -61,7 +72,9 @@ irm https://zensu.dev/install.ps1 | iex
 Installs the latest release to `%LOCALAPPDATA%\Programs\zensu` and adds it to your
 user `PATH` (restart the terminal afterwards). Override with `$env:ZENSU_INSTALL_DIR`,
 pin a version with `$env:ZENSU_VERSION`. Only `amd64` is published; on Windows arm64
-it installs the amd64 build, which runs under emulation.
+it installs the amd64 build, which runs under emulation. It checks the archive's SHA-256
+against the release checksums but not their signature, which the install script on
+Linux and macOS also verifies.
 
 ### Prebuilt binaries
 
@@ -150,9 +163,23 @@ go run ./internal/tools/releasesign verify --in zensu_<version>_checksums.txt --
 
 Keep an offline copy of the private key, then delete `~/zensu-release-signing.key`.
 
-To rotate the key, add the new public key to `keys.go` and ship a release; then put
-both private keys into the secret, one per line, so releases carry both signatures
-until no supported CLI depends on the old key alone.
+To rotate the key, add the new public key to `keys.go` and to `release_keys` in
+`install.sh` (a test keeps both lists equal) and ship a release; then put both private
+keys into the secret, one per line, so releases carry both signatures until no
+supported CLI depends on the old key alone.
+
+### Releasing (maintainers)
+
+The coverage action installs the CLI release named by the default of its `version`
+input, so every release bumps that default first:
+
+1. In a pull request, set `default:` of the `version` input in
+   `actions/coverage/action.yml` to the new tag, such as `v0.23.0`, and merge it.
+2. Tag the merge commit and push the tag.
+
+Before goreleaser runs, the release workflow fails when the action's default differs
+from the tag and names the fix, so the CLI the action was tested with is the CLI it
+installs.
 
 ## Authentication
 
@@ -168,6 +195,10 @@ zensu auth status      # who am I, token expiry
 zensu auth token       # print the token for scripting
 zensu auth logout
 ```
+
+A key without the `read` scope, such as a key of the **CI pipeline** profile (scope
+`ci`), logs in as well; the CLI then says that only the commands its scopes allow
+work, such as `zensu ci`.
 
 Credentials are stored in `hosts.json` under the config dir (resolved as
 `$ZENSU_CONFIG_DIR`, else `$XDG_CONFIG_HOME/zensu`, else `~/.config/zensu`) with
@@ -215,6 +246,7 @@ and flags of each group.
 | `work` | Work orders for autonomous delivery: dispatch, claim, session reporting, questions, decisions |
 | `plan` | Work plans: push plan files, follow their status, approve, finalize, abandon |
 | `link` | Link tests, docs, and source files to a feature |
+| `ci` | Upload commits, pull requests and coverage from a CI pipeline (see [Use in CI](#use-in-ci)) |
 | `knowledge` | Load feature context packages, record agent/source retrievals, search passages and inspect knowledge items |
 | `design` | Inspect a product's design system |
 | `mocks` | Upload and inspect a feature's design mocks |
@@ -378,6 +410,119 @@ pages instead of the envelope. The command then prints the table as before, or
 that array unchanged with `--json`, and warns on stderr when the array holds
 exactly 50 pages, because later pages may be missing.
 
+## Use in CI
+
+`zensu ci` uploads what a pipeline knows to Zensu: the commits whose messages reference
+a feature, such as `[ZEN-42]`, the pull request, and per-file coverage from an Istanbul
+`json-summary` report. Create the key in the web app under Settings → API keys with the
+**CI pipeline** profile (scope `ci`; keys with the `write` scope work too) and store it
+as a CI secret.
+
+### GitHub Actions
+
+```yaml
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<commit-sha> # v7.0.1
+        with:
+          fetch-depth: 0
+      - run: npm ci && npm test
+      - uses: MKITConsulting/zensu-cli/actions/coverage@<commit-sha> # v0.23.0
+        with:
+          api-key: ${{ secrets.ZENSU_API_KEY }}
+          api-url: ${{ vars.ZENSU_API_URL }}
+          product-id: ${{ vars.ZENSU_PRODUCT_ID }}
+          coverage-file: coverage/coverage-summary.json
+```
+
+The test step must write an Istanbul json-summary report, as Vitest and Jest do with the
+`json-summary` coverage reporter. Pin the action by the commit SHA of a release tag, with
+the tag as a comment, so Dependabot updates both together. The action installs the CLI release of its own
+version with this repository's `install.sh` and requires its signature, then runs
+`zensu ci commits`, `zensu ci pull-request` on `pull_request` events and
+`zensu ci coverage` when `coverage-file` is set. A failed commit link fails the job,
+but the pull request and coverage uploads still run. Zensu learns that a pull request
+was merged or closed only from a `pull_request` event of type `closed`, which GitHub
+does not send by default, so list the types as above. The key reaches the CLI only on
+stdin (`--api-key-stdin`); inputs reach the steps only through their environment. On a
+pull request from a fork the secret is empty, so the action prints a notice and uploads
+nothing. Check out with `fetch-depth: 0`: a shallow checkout covers only the commits
+it holds and warns.
+
+Inputs:
+
+- `api-key` (required): key with the `ci` scope, from a secret.
+- `api-url` (required): Zensu API base URL.
+- `product-id` (required): product UUID.
+- `coverage-file`: Istanbul json-summary report; without it the action only links
+  commits and the pull request.
+- `coverage-format`: format of the report, `json-summary` (the default and the only one).
+- `root`: directory the report's paths are made relative to, such as a package of a
+  monorepo; defaults to the workspace, or to `working-directory` when that is set.
+- `working-directory`: checked-out repository the uploads run in, such as the `path`
+  of an `actions/checkout` step; `coverage-file` and `root` resolve against it.
+  Defaults to the workspace.
+- `version`: CLI release to install; defaults to the release of the action.
+- `release-url`: mirror of the release downloads (`<url>/<tag>/<asset>`) for runners
+  without access to GitHub; defaults to the GitHub releases.
+
+The action runs on Linux and macOS runners and needs bash, git, curl or wget, tar,
+`sha256sum` or `shasum` and OpenSSL 3 (GitHub-hosted runners have all of them), plus a
+checkout of the repository for the commit links. On a Windows runner it fails; install
+the CLI yourself there and run `zensu ci` with `--api-key-stdin`. Note that
+`install.ps1` checks the archive checksum but not the release signature.
+
+### GitLab and other CI
+
+Install the CLI with the install script and pipe the key into `--api-key-stdin`, which
+keeps it off the command line and off the disk and leaves any stored login alone. The
+API host must come from `--api-url` or `ZENSU_API_URL`; the key is never sent to the
+built-in default. For GitLab, fetch the whole history (`GIT_DEPTH: 0`) so the range
+resolves. In a merge request pipeline this job links the merge request and its commits;
+in a branch pipeline, where the `CI_MERGE_REQUEST_*` variables are unset, it links the
+pushed commits:
+
+```yaml
+zensu:
+  variables:
+    GIT_DEPTH: "0"
+    ZENSU_API_URL: https://api.zensu.dev
+  script:
+    - npm ci && npm test
+    - curl -fsSL https://zensu.dev/install.sh | ZENSU_REQUIRE_SIGNATURE=1 sh
+    - |
+      if [ -n "${CI_MERGE_REQUEST_IID:-}" ]; then
+        printf '%s' "$ZENSU_API_KEY" | zensu ci commits --product "$ZENSU_PRODUCT_ID" --api-key-stdin \
+          --range "$CI_MERGE_REQUEST_DIFF_BASE_SHA..$CI_COMMIT_SHA"
+        printf '%s' "$ZENSU_API_KEY" | zensu ci pull-request --product "$ZENSU_PRODUCT_ID" --api-key-stdin \
+          --number "$CI_MERGE_REQUEST_IID" --title "$CI_MERGE_REQUEST_TITLE" --status open \
+          --url "$CI_MERGE_REQUEST_PROJECT_URL/-/merge_requests/$CI_MERGE_REQUEST_IID"
+      elif [ -n "${CI_COMMIT_BEFORE_SHA:-}" ] && [ "$CI_COMMIT_BEFORE_SHA" != 0000000000000000000000000000000000000000 ]; then
+        printf '%s' "$ZENSU_API_KEY" | zensu ci commits --product "$ZENSU_PRODUCT_ID" --api-key-stdin \
+          --range "$CI_COMMIT_BEFORE_SHA..$CI_COMMIT_SHA"
+      else
+        printf '%s' "$ZENSU_API_KEY" | zensu ci commits --product "$ZENSU_PRODUCT_ID" --api-key-stdin
+      fi
+    - printf '%s' "$ZENSU_API_KEY" | zensu ci coverage --product "$ZENSU_PRODUCT_ID" --api-key-stdin --file coverage/coverage-summary.json --ci-run-url "$CI_JOB_URL"
+```
+
+Without `--api-key-stdin` the commands use the stored login, so
+`zensu auth login --with-token -` with a CI pipeline key works too. Coverage paths are
+made relative to `--root` (default: the git top-level) and keep forward slashes; a
+report without files uploads nothing, and more than 10,000 files fail, because each
+upload replaces every feature's coverage sum. `--json` prints the API's answer;
+`zensu ci commits` merges the answers of its batches into one `{processed, links}`
+object, and a selection without commits or files prints that empty answer without
+calling the API.
+
 ## Errors
 
 A failed command exits with status `1` and reports the failure on stderr. Scripts and agent
@@ -415,6 +560,12 @@ server.
 
 The update notice (see [Updates](#updates)) never appears when stderr is not a terminal. In a
 terminal it is printed before the `error:` line, so the JSON line always stays last.
+
+With `--github`, the `zensu ci` commands print the error line as `::error::<message>` and each
+warning as `::warning::<message>` instead of `error:` and `warning:`, with `%`, CR and LF
+encoded as `%25`, `%0D` and `%0A`, so GitHub Actions shows them as annotations; the JSON line
+still follows with `--json`. Text from the server never starts a line, and without `--github`
+no line starts with `::`.
 
 ## Shell completion
 

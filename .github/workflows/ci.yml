@@ -25,3 +25,16 @@ jobs:
         run: go build ./...
       - name: Test
         run: go test -race ./...
+
+  coverage-action:
+    name: Coverage action without a key
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run the coverage action as on a pull request from a fork
+        uses: ./actions/coverage
+        with:
+          api-key: ''
+          api-url: https://api.zensu.dev
+          product-id: 00000000-0000-0000-0000-000000000000
+          coverage-file: coverage/coverage-summary.json

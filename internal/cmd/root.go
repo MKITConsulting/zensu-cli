@@ -94,6 +94,7 @@ func NewRootCmd() *cobra.Command {
 		NewMocksCmd(f),
 		NewDesignCmd(f),
 		NewLinkCmd(f),
+		NewCICmd(f),
 		NewGhostCmd(f),
 		NewWikiCmd(f),
 		NewDocCmd(f),

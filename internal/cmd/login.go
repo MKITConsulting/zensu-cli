@@ -65,8 +65,12 @@ func (f *Factory) loginWithToken(ctx context.Context, httpClient *http.Client, c
 	if err := persistLogin(ctx, cfg); err != nil {
 		return err
 	}
-	if kind == auth.APIKeyKindAgent {
+	switch kind {
+	case auth.APIKeyKindAgent:
 		fmt.Fprintf(f.Out, "Logged in to %s with an agent key; it serves only the worker verbs zensu work claim, confirm, release and usage, and claims only in products whose automation policy allows it: %s.\n", apiURL, allowAgentKeyHint)
+		return nil
+	case auth.APIKeyKindRestricted:
+		fmt.Fprintf(f.Out, "Logged in to %s with an API key that cannot read products; only the commands its scopes allow work, such as zensu ci with a key of the CI pipeline profile.\n", apiURL)
 		return nil
 	}
 	fmt.Fprintf(f.Out, "Logged in to %s with API key.\n", apiURL)

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -52,7 +53,7 @@ func readResponse(resp *http.Response, err error) ([]byte, error) {
 		if oversized {
 			raw = raw[:limit]
 		}
-		return nil, apiError(resp.StatusCode, raw)
+		return nil, apiError(resp.StatusCode, raw, sentCredentials(resp)...)
 	}
 	if oversized {
 		return nil, fmt.Errorf("response body exceeds the %d byte limit", limit)
@@ -115,16 +116,67 @@ func statusSuffix(status int, code string) string {
 	return fmt.Sprintf("(status %d, code %s)", status, code)
 }
 
-func apiError(status int, raw []byte) error {
+func sentCredentials(resp *http.Response) []string {
+	if resp == nil || resp.Request == nil {
+		return nil
+	}
+	var credentials []string
+	if key := resp.Request.Header.Get("X-API-Key"); key != "" {
+		credentials = append(credentials, key)
+	}
+	if token, ok := strings.CutPrefix(resp.Request.Header.Get("Authorization"), "Bearer "); ok && token != "" {
+		credentials = append(credentials, token)
+	}
+	return credentials
+}
+
+const redactedCredential = "***"
+
+type credentialRedactor []string
+
+func newCredentialRedactor(credentials []string) credentialRedactor {
+	var forms credentialRedactor
+	for _, credential := range credentials {
+		if credential == "" {
+			continue
+		}
+		forms = append(forms, credential)
+		if quoted, err := json.Marshal(credential); err == nil {
+			if escaped := string(quoted[1 : len(quoted)-1]); escaped != credential {
+				forms = append(forms, escaped)
+			}
+		}
+	}
+	sort.SliceStable(forms, func(i, j int) bool { return len(forms[i]) > len(forms[j]) })
+	return forms
+}
+
+func (r credentialRedactor) text(s string) string {
+	for _, form := range r {
+		s = strings.ReplaceAll(s, form, redactedCredential)
+	}
+	return s
+}
+
+func (r credentialRedactor) bytes(b []byte) []byte {
+	if len(r) == 0 {
+		return b
+	}
+	return []byte(r.text(string(b)))
+}
+
+func apiError(status int, raw []byte, credentials ...string) error {
+	redact := newCredentialRedactor(credentials)
+	raw = redact.bytes(raw)
 	var body struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	}
 	decoded := json.Unmarshal(raw, &body) == nil
-	e := &apiStatusError{status: status, code: body.Code, raw: raw}
+	e := &apiStatusError{status: status, code: redact.text(body.Code), raw: raw}
 	suffix := statusSuffix(status, e.printableCode())
 	if decoded && body.Message != "" {
-		e.plain = sanitizeTerminal(excerpt(body.Message))
+		e.plain = sanitizeTerminal(excerpt(redact.text(body.Message)))
 		e.text = e.plain + " " + suffix
 		return e
 	}

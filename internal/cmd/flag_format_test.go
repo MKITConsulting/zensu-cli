@@ -14,6 +14,7 @@ import (
 var requiredMarkerRe = regexp.MustCompile(`(?:\(|[;,] )required\)`)
 
 var freeTextFlagNames = []string{
+	"body",
 	"conditions",
 	"description",
 	"expected-result",
@@ -140,6 +141,7 @@ func TestFreeTextFlags_NameTheirTextFormat(t *testing.T) {
 		{[]string{"features", "merge"}, "reason", "reason for merging (plain text)"},
 		{[]string{"ghost", "reject"}, "reason", "rejection reason (plain text)"},
 		{[]string{"ghost", "batch"}, "reject-reason", "reason for rejecting candidates (plain text) (applies to all rejected)"},
+		{[]string{"ci", "pull-request"}, "body", "pull request description (Markdown); its references link features too"},
 	} {
 		cmd, _, err := root.Find(tc.path)
 		if err != nil || cmd.Name() != tc.path[len(tc.path)-1] {

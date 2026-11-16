@@ -1,0 +1,242 @@
+BUILD STARTED — Customer-usable CI uploader (zensu ci and a thin public coverage action) | steps: 9
+EXECUTION STARTED
+S1 IMPL completed — files: internal/auth/oauth.go, internal/cmd/login.go, internal/auth/oauth_test.go, internal/cmd/login_test.go
+S1 TESTED — internal/auth/oauth_test.go, internal/cmd/login_test.go | go test -race ./internal/auth/ -run ValidateAPIKey and ./internal/cmd/ -run Login pass
+S2 IMPL completed — files: internal/cmd/factory.go, internal/cmd/redact_test.go
+S2 TESTED — internal/cmd/redact_test.go | go test -race ./internal/cmd/ -run 'Redact|APIError|Request|ReadResponse|ErrorText|WriteError|Wiki' passes
+S3 IMPL completed — files: internal/cmd/ci.go, internal/cmd/erroroutput.go, internal/cmd/root.go, internal/cmd/ci_test.go
+S4 IMPL completed — files: internal/cmd/ci_coverage.go, internal/cmd/ci_coverage_test.go, internal/cmd/testdata/coverage-summary.json
+S5 IMPL completed — files: internal/cmd/ci_commits.go, internal/cmd/ci_commits_test.go
+S6 IMPL completed — files: internal/cmd/ci_pullrequest.go, internal/cmd/ci_pullrequest_test.go
+S3-S6 TESTED — internal/cmd/ci_test.go, internal/cmd/ci_coverage_test.go, internal/cmd/ci_commits_test.go, internal/cmd/ci_pullrequest_test.go | go test -race ./internal/cmd/ -run CI: 41 top-level tests pass
+S7 IMPL completed — files: install.sh, internal/ciaction/release_test.go, internal/ciaction/install_test.go | the secret gate flagged the public release key as a high-entropy assignment, so install.sh lists it in a release_keys function instead of a variable (no allow-marker comment, per the repository's no-comments rule)
+S7 TESTED — internal/ciaction/install_test.go | 10 tests pass under macOS sh (bash 3.2 POSIX) and /bin/dash; a real install of the signed v0.21.0 release with ZENSU_REQUIRE_SIGNATURE=1 verified the signature; the unsigned v0.18.0 was refused
+S8 IMPL completed — files: actions/coverage/action.yml, .github/workflows/release.yml, .github/workflows/ci.yml, internal/ciaction/action_test.go, internal/ciaction/release_test.go
+S8 TESTED — internal/ciaction/action_test.go | 9 action tests pass (built CLI, signed fake release, every composite step under bash --noprofile --norc -eo pipefail, also with dash as sh); the release guard script exits 0 for v0.22.0 and 1 for an old tag
+S9 IMPL completed — files: README.md, skills/zensu/reference.md, skills/zensu/SKILL.md, docs/commands.json, internal/cmd/valuefile_test.go
+S9 TESTED — internal/cmd/skill_docs_test.go, internal/cmd/valuefile_test.go, internal/tools/cmdtree/main_test.go | docs, value-file and command-contract tests pass; make commands added the ci group (349 lines, no other change)
+S1-S9 CHECKPOINT — PASS | cmd: go vet ./... && GOOS=windows go vet ./... && go test -race ./internal/auth/ ./internal/cmd/ ./internal/ciaction/ ./internal/tools/cmdtree/ | scope: 4 suites over internal/auth/oauth.go, internal/cmd/factory.go, internal/cmd/erroroutput.go, internal/cmd/login.go, internal/cmd/root.go, internal/cmd/ci.go, internal/cmd/ci_coverage.go, internal/cmd/ci_commits.go, internal/cmd/ci_pullrequest.go, install.sh, actions/coverage/action.yml, .github/workflows/release.yml, .github/workflows/ci.yml, docs/commands.json, README.md, skills/zensu/reference.md, skills/zensu/SKILL.md
+EVIDENCE RUN — scope=full exit=0 duration=24.8s tree=6854e8902b42 record=er1_1794844355823_73158a9d7902 | cmd: go test -race ./...
+EVIDENCE RUN — scope=lint exit=0 duration=0.7s tree=n/a record=er1_1794844390244_5797c1827be8 | cmd: go vet ./... && GOOS=windows go vet ./...
+BUILD VERIFIED — make build exit 0 (bin/zensu, gitignored)
+COVERAGE — go test -coverprofile over ./internal/cmd/... ./internal/auth/...: internal/auth/oauth.go 95.3%, internal/cmd/factory.go 98.5%, internal/cmd/erroroutput.go 100%, internal/cmd/root.go 97.8%, internal/cmd/ci.go 91.5%, internal/cmd/ci_coverage.go 92.2%, internal/cmd/ci_commits.go 92.0%, internal/cmd/ci_pullrequest.go 96.4%, internal/cmd/login.go 46.7%
+COVERAGE BELOW THRESHOLD on 1 files: internal/cmd/login.go | decision: no extra cycle; the gap is loginWithBrowser (0%, the unchanged interactive browser OAuth flow); the changed loginWithToken is at 95.5% and its new restricted-key branch is covered
+DISCIPLINE AUDIT SKIPPED — vanilla mode
+PRECONDITION DRIFT AUDIT — no drift: every precondition was present with decision n/a, none installed, substituted or skipped
+REQUIREMENT COVERAGE — every Steps row names requirement IDs and FR-001..FR-023 and AC-001..AC-007 are each covered by a step
+EVIDENCE RUN — scope=acceptance exit=0 duration=17.6s tree=6854e8902b42 record=er1_1794844805144_eda68835faa2 | cmd: bash /private/tmp/claude-501/<project>/79bf854a-c356-4c0d-9952-74a76a993300/scratchpad/verify-run/check-a.sh
+ACCEPTANCE — AC-001 pass | driver=cli observed er1_1794844805144_eda68835faa2 | tree=6854e8902b42 | record=av1_1794844847046_62958b94acea | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: The observed check ran go vet over every package of the module on the current tree; it exited 0 and the check printed AC-001 check=go-vet result=pass.
+ACCEPTANCE — AC-002 pass | driver=cli observed er1_1794844805144_eda68835faa2 | tree=6854e8902b42 | record=av1_1794844856025_34d0006220d3 | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: The same observed check ran go vet over every package with GOOS=windows on the current tree; it exited 0 and the check printed AC-002 check=go-vet-windows result=pass.
+ACCEPTANCE — AC-003 pass | driver=cli observed er1_1794844805144_eda68835faa2 | tree=6854e8902b42 | record=av1_1794844865640_9b9144eb1046 | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: The same observed check ran go test -race -count=1 over ./internal/... with -run 'CI|Login|ValidateAPIKey|Action|SkillDocs|Readme|Redact'; it exited 0 and the check printed AC-003 check=targeted-test…
+ACCEPTANCE — AC-004 pass | driver=cli observed er1_1794844805144_eda68835faa2 | tree=6854e8902b42 | record=av1_1794844874928_46976eb30694 | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: The same observed check ran sh -n install.sh on the current tree; it exited 0 and the check printed AC-004 check=install-syntax result=pass.
+ACCEPTANCE — AC-007 pass | driver=cli observed er1_1794844805144_eda68835faa2 | tree=6854e8902b42 | record=av1_1794844884087_0c8256c28677 | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: The same observed check built the CLI from the current tree outside the project and matched lines of the real help output: ci coverage --help lists --product and --file with usage ending in (required…
+EVIDENCE RUN — scope=acceptance exit=0 duration=2.4s tree=6854e8902b42 record=er1_1794844892298_54d3227293c1 | cmd: bash /private/tmp/claude-501/<project>/79bf854a-c356-4c0d-9952-74a76a993300/scratchpad/verify-run/check-b.sh
+ACCEPTANCE — AC-005 pass | driver=cli observed er1_1794844892298_54d3227293c1 | tree=6854e8902b42 | record=av1_1794844913473_65b147cc6eec | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: A CLI built from the current tree ran ci commits --github --api-key-stdin --product with a placeholder key on stdin, ZENSU_API_URL at a loopback recording server and a push event over a temporary fou…
+EVIDENCE RUN — scope=acceptance exit=0 duration=2.0s tree=6854e8902b42 record=er1_1794844925765_4caf2c4a3560 | cmd: bash /private/tmp/claude-501/<project>/79bf854a-c356-4c0d-9952-74a76a993300/scratchpad/verify-run/check-c.sh /private/tmp/claude-501/<project>/79bf854a-c356-4c0d-9952-74a76a993300/scratchpad/verify-r…
+ACCEPTANCE — AC-006 pass | driver=cli observed er1_1794844925765_4caf2c4a3560 | tree=6854e8902b42 | record=av1_1794844944946_e7ca9dbab148 | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: install.sh from the current tree ran with ZENSU_REQUIRE_SIGNATURE=1, ZENSU_VERSION=v0.21.0 and ZENSU_RELEASE_URL at a loopback mirror of the real signed v0.21.0 release assets: it reported the verifi…
+VANILLA COMPLETE — 9/9 implemented | Build: ✓ passed | Coverage: 8/9 files >= 90%
+ROUND PREPARE — round 0 recorded the round-start snapshot (31 changed files)
+DECISION — tag re-check: v0.22.0 was published on 2026-11-16 from d466f49 (this branch's base, without the ci group), so the coverage action's version default and the README pin move to v0.23.0, the next release that can carry this change; applied in the next fix round so the running review keeps its bound tree
+FINDING VERIFICATION — 19 verified, 0 unsupported, 0 phantom, 0 off-changeset
+FINDING LEDGER — R1-F1 routed IMPORTANT install.sh:88 | signature verification downgrade when the signature asset of a signed release is absent
+FINDING LEDGER — R1-F2 routed IMPORTANT install.sh:104 | a verifier without Ed25519 support is reported as tampering and aborts the install
+FINDING LEDGER — R1-F3 routed IMPORTANT internal/cmd/ci_commits.go:210 | a shallow checkout deeper than one commit truncates the commit range without warning
+FINDING LEDGER — R1-F4 routed SUGGESTION .github/workflows/release.yml:26 | the version guard message tells maintainers to move a pushed release tag
+FINDING LEDGER — R1-F5 routed SUGGESTION README.md:419 | the GitHub example omits triggers, so closed and merged pull requests are not reported
+FINDING LEDGER — R1-F6 routed SUGGESTION README.md:490 | the json output contract is misdescribed for merged batches and empty selections
+FINDING LEDGER — R1-F7 routed SUGGESTION internal/ciaction/install_test.go:204 | the release-key sync test lives in the action package, not next to the key list
+FINDING LEDGER — R1-F8 routed SUGGESTION internal/cmd/ci.go:27 | product ID validation duplicates the shared UUID flag helper
+FINDING LEDGER — R1-F9 routed SUGGESTION internal/cmd/ci_commits.go:252 | group-wide helpers live in one subcommand file and carry a GitHub-specific name
+FINDING LEDGER — R1-F10 routed SUGGESTION internal/cmd/ci_commits_test.go:322 | the end-of-options test passes whether or not the separator is passed
+FINDING LEDGER — R1-F11 routed SUGGESTION internal/cmd/ci_coverage.go:375 | Markdown injection into the job summary through unescaped report paths
+FINDING LEDGER — R1-F12 routed SUGGESTION internal/cmd/ci_pullrequest.go:93 | the body flag help does not name its text format
+FINDING LEDGER — R1-F13 routed SUGGESTION internal/cmd/erroroutput.go:46 | annotations key on a generic flag name and skip flag parse errors
+FINDING LEDGER — R1-F14 routed IMPORTANT README.md:474 | the GitLab example only works in merge request pipelines and fails branch pipelines
+FINDING LEDGER — R1-F15 routed SUGGESTION actions/coverage/action.yml:70 | the action has no working-directory input for a checkout in a subdirectory
+FINDING LEDGER — R1-F16 routed IMPORTANT internal/cmd/ci_commits.go:111 | signature output enabled by user git config can corrupt parsed commit hashes
+FINDING LEDGER — R1-F17 routed IMPORTANT actions/coverage/action.yml:62 | Windows guidance points to an installer that verifies no release signature
+FINDING LEDGER — R1-F18 routed SUGGESTION actions/coverage/action.yml:72 | a commit-linking failure skips the coverage upload; the git requirement is undocumented
+FINDING LEDGER — R1-F19 routed SUGGESTION skills/zensu/reference.md:637 | the reference documents a narrower feature reference syntax than the CLI accepts
+EVIDENCE RUN — scope=scoped exit=0 duration=17.8s tree=6f57982a693b record=er1_1794849360569_bbde69d5bf27 | cmd: go vet ./... && GOOS=windows go vet ./... && sh -n install.sh && go test -race -count=1 ./internal/cmd/ ./internal/ciaction/ ./internal/update/ ./internal/tools/cmdtree/
+R1 CHECKPOINT — PASS | cmd: go vet ./... && GOOS=windows go vet ./... && sh -n install.sh && go test -race -count=1 ./internal/cmd/ ./internal/ciaction/ ./internal/update/ ./internal/tools/cmdtree/ | scope: 4 suites over this round's edits | record=er1_1794849360569_bbde69d5bf27
+R1-F1 IMPL completed — files: install.sh, internal/ciaction/install_test.go, README.md, skills/zensu/reference.md
+R1-F2 IMPL completed — files: install.sh, internal/ciaction/install_test.go, README.md
+R1-F3 IMPL completed — files: internal/cmd/ci_commits.go, internal/cmd/ci_commits_test.go, skills/zensu/reference.md
+R1-F4 IMPL completed — files: .github/workflows/release.yml, internal/ciaction/action_test.go
+R1-F5 IMPL completed — files: README.md
+R1-F6 IMPL completed — files: README.md, internal/cmd/ci_commits.go
+R1-F7 IMPL completed — files: internal/update/install_keys_test.go, internal/ciaction/install_test.go
+R1-F8 IMPL completed — files: internal/cmd/ci.go, internal/cmd/ci_test.go
+R1-F9 IMPL completed — files: internal/cmd/ci.go, internal/cmd/ci_commits.go, internal/cmd/ci_coverage.go, internal/cmd/ci_pullrequest.go
+R1-F10 IMPL completed — files: internal/cmd/ci_commits.go, internal/cmd/ci_commits_test.go
+R1-F11 IMPL completed — files: internal/cmd/ci_coverage.go, internal/cmd/ci_coverage_test.go
+R1-F12 IMPL completed — files: internal/cmd/ci_pullrequest.go, internal/cmd/flag_format_test.go
+R1-F13 IMPL completed — files: internal/cmd/ci.go, internal/cmd/erroroutput.go, internal/cmd/ci_test.go
+R1-F14 IMPL completed — files: README.md
+R1-F15 IMPL completed — files: actions/coverage/action.yml, internal/ciaction/action_test.go, README.md
+R1-F16 IMPL completed — files: internal/cmd/ci_commits.go, internal/cmd/ci_commits_test.go
+R1-F17 IMPL completed — files: actions/coverage/action.yml, internal/ciaction/action_test.go, README.md
+R1-F18 IMPL completed — files: actions/coverage/action.yml, internal/ciaction/action_test.go, README.md
+R1-F19 IMPL completed — files: skills/zensu/reference.md, internal/cmd/ci_commits.go
+R1-S8 IMPL completed — files: actions/coverage/action.yml, README.md
+EDIT LANDING AUDIT STARTED — round fix-1
+PENDING PREDICATE — R1-F1: install.sh was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F1: internal/ciaction/install_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F1: README.md was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F1: skills/zensu/reference.md was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F2: install.sh was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F2: internal/ciaction/install_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F2: README.md was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F3: internal/cmd/ci_commits.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F3: internal/cmd/ci_commits_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F3: skills/zensu/reference.md was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F4: .github/workflows/release.yml was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F4: internal/ciaction/action_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F5: README.md was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F6: README.md was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F6: internal/cmd/ci_commits.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F7: internal/ciaction/install_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F8: internal/cmd/ci.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F8: internal/cmd/ci_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F9: internal/cmd/ci.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F9: internal/cmd/ci_commits.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F9: internal/cmd/ci_coverage.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F9: internal/cmd/ci_pullrequest.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F10: internal/cmd/ci_commits.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F10: internal/cmd/ci_commits_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F11: internal/cmd/ci_coverage.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F11: internal/cmd/ci_coverage_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F12: internal/cmd/ci_pullrequest.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F13: internal/cmd/ci.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F13: internal/cmd/erroroutput.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F13: internal/cmd/ci_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F14: README.md was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F15: actions/coverage/action.yml was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F15: internal/ciaction/action_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F15: README.md was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F16: internal/cmd/ci_commits.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F16: internal/cmd/ci_commits_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F17: actions/coverage/action.yml was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F17: internal/ciaction/action_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F17: README.md was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F18: actions/coverage/action.yml was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F18: internal/ciaction/action_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F18: README.md was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F19: skills/zensu/reference.md was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-F19: internal/cmd/ci_commits.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-S8: actions/coverage/action.yml was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — R1-S8: README.md was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+EDIT LANDING AUDIT — claims=78 landed=17 not_landed=0 unverified=0 pending=61 exempt_ignored=0 exempt_verified=0
+ROUND LANDING — R1-F1: unresolved (files=4 changed=0 unchanged=0 unresolved=4 failed=0 shared=4)
+ROUND LANDING — R1-F2: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+ROUND LANDING — R1-F3: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+ROUND LANDING — R1-F4: unresolved (files=2 changed=1 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — R1-F5: unresolved (files=1 changed=0 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — R1-F6: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — R1-F7: unresolved (files=2 changed=1 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — R1-F8: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — R1-F9: unresolved (files=4 changed=0 unchanged=0 unresolved=4 failed=0 shared=4)
+ROUND LANDING — R1-F10: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — R1-F11: unresolved (files=2 changed=1 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — R1-F12: unresolved (files=2 changed=1 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — R1-F13: unresolved (files=3 changed=1 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — R1-F14: unresolved (files=1 changed=0 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — R1-F15: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+ROUND LANDING — R1-F16: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — R1-F17: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+ROUND LANDING — R1-F18: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+ROUND LANDING — R1-F19: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — R1-S8: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ASPECT SKIPPED — design (re-review-lean-panel)
+ASPECT SKIPPED — security (re-review-lean-panel)
+EDIT LANDING AUDIT STARTED — round fix-1
+EDIT LANDING AUDIT — claims=78 landed=78 not_landed=0 unverified=0 pending=0 exempt_ignored=0 exempt_verified=0
+ROUND LANDING — R1-F1: unresolved (files=4 changed=0 unchanged=0 unresolved=4 failed=0 shared=4)
+ROUND LANDING — R1-F2: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+ROUND LANDING — R1-F3: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+ROUND LANDING — R1-F4: unresolved (files=2 changed=1 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — R1-F5: unresolved (files=1 changed=0 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — R1-F6: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — R1-F7: unresolved (files=2 changed=1 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — R1-F8: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — R1-F9: unresolved (files=4 changed=0 unchanged=0 unresolved=4 failed=0 shared=4)
+ROUND LANDING — R1-F10: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — R1-F11: unresolved (files=2 changed=1 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — R1-F12: unresolved (files=2 changed=1 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — R1-F13: unresolved (files=3 changed=1 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — R1-F14: unresolved (files=1 changed=0 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — R1-F15: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+ROUND LANDING — R1-F16: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — R1-F17: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+ROUND LANDING — R1-F18: unresolved (files=3 changed=0 unchanged=0 unresolved=3 failed=0 shared=3)
+ROUND LANDING — R1-F19: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ROUND LANDING — R1-S8: unresolved (files=2 changed=0 unchanged=0 unresolved=2 failed=0 shared=2)
+ASPECT SKIPPED — design (re-review-lean-panel)
+ASPECT SKIPPED — security (re-review-lean-panel)
+FINDING LEDGER — R1-F1 fixed IMPORTANT install.sh:88 | signature verification downgrade when the signature asset of a signed release is absent
+FINDING LEDGER — R1-F2 fixed IMPORTANT install.sh:104 | a verifier without Ed25519 support is reported as tampering and aborts the install
+FINDING LEDGER — R1-F3 fixed IMPORTANT internal/cmd/ci_commits.go:210 | a shallow checkout deeper than one commit truncates the commit range without warning
+FINDING LEDGER — R1-F4 fixed SUGGESTION .github/workflows/release.yml:26 | the version guard message tells maintainers to move a pushed release tag
+FINDING LEDGER — R1-F5 fixed SUGGESTION README.md:419 | the GitHub example omits triggers, so closed and merged pull requests are not reported
+FINDING LEDGER — R1-F6 fixed SUGGESTION README.md:490 | the json output contract is misdescribed for merged batches and empty selections
+FINDING LEDGER — R1-F7 fixed SUGGESTION internal/ciaction/install_test.go:204 | the release-key sync test lives in the action package, not next to the key list
+FINDING LEDGER — R1-F8 fixed SUGGESTION internal/cmd/ci.go:27 | product ID validation duplicates the shared UUID flag helper
+FINDING LEDGER — R1-F9 fixed SUGGESTION internal/cmd/ci_commits.go:252 | group-wide helpers live in one subcommand file and carry a GitHub-specific name
+FINDING LEDGER — R1-F10 fixed SUGGESTION internal/cmd/ci_commits_test.go:322 | the end-of-options test passes whether or not the separator is passed
+FINDING LEDGER — R1-F11 fixed SUGGESTION internal/cmd/ci_coverage.go:375 | Markdown injection into the job summary through unescaped report paths
+FINDING LEDGER — R1-F12 fixed SUGGESTION internal/cmd/ci_pullrequest.go:93 | the body flag help does not name its text format
+FINDING LEDGER — R1-F13 fixed SUGGESTION internal/cmd/erroroutput.go:46 | annotations key on a generic flag name and skip flag parse errors
+FINDING LEDGER — R1-F14 fixed IMPORTANT README.md:474 | the GitLab example only works in merge request pipelines and fails branch pipelines
+FINDING LEDGER — R1-F15 fixed SUGGESTION actions/coverage/action.yml:70 | the action has no working-directory input for a checkout in a subdirectory
+FINDING LEDGER — R1-F16 fixed IMPORTANT internal/cmd/ci_commits.go:111 | signature output enabled by user git config can corrupt parsed commit hashes
+FINDING LEDGER — R1-F17 fixed IMPORTANT actions/coverage/action.yml:62 | Windows guidance points to an installer that verifies no release signature
+FINDING LEDGER — R1-F18 fixed SUGGESTION actions/coverage/action.yml:72 | a commit-linking failure skips the coverage upload; the git requirement is undocumented
+FINDING LEDGER — R1-F19 fixed SUGGESTION skills/zensu/reference.md:637 | the reference documents a narrower feature reference syntax than the CLI accepts
+ASPECT SKIPPED — design (re-review-lean-panel)
+ASPECT SKIPPED — security (re-review-lean-panel)
+FINDING VERIFICATION — 3 verified, 0 unsupported, 0 phantom, 0 off-changeset
+FINDING LEDGER — R2-F2 parked IMPORTANT internal/cmd/ci_test.go:399 | answer-shape tests are refused by a trailing token before any field or kind check runs
+FINDING LEDGER — R2-F3 deferred SUGGESTION internal/cmd/ci_commits_test.go:427 | no test runs a shallow checkout whose range stays inside the fetched history
+FINDING LEDGER — R2-F1 routed IMPORTANT internal/ciaction/install_test.go:188 | the fake verifier fails before the Ed25519 known-answer check, so the test cannot see that check
+EVIDENCE RUN — scope=scoped exit=0 duration=13.5s tree=88509b8deb7f record=er1_1794851143945_6236901c2e7f | cmd: go vet ./internal/ciaction/ && go test -race -count=1 ./internal/ciaction/
+R2 CHECKPOINT — PASS | cmd: go vet ./internal/ciaction/ && go test -race -count=1 ./internal/ciaction/ | scope: 1 suite over this round's edit | record=er1_1794851143945_6236901c2e7f
+R2-F1 IMPL completed — files: internal/ciaction/install_test.go
+EDIT LANDING AUDIT STARTED — round fix-2
+PENDING PREDICATE — R2-F1: internal/ciaction/install_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+EDIT LANDING AUDIT — claims=79 landed=74 not_landed=0 unverified=0 pending=5 exempt_ignored=0 exempt_verified=0
+ROUND LANDING — R2-F1: landed (files=1 changed=1 unchanged=0 unresolved=0 failed=0)
+FINDING LEDGER — R2-F1 fixed IMPORTANT internal/ciaction/install_test.go:188 | the fake verifier fails before the Ed25519 known-answer check, so the test cannot see that check
+ASPECT SKIPPED — design (re-review-lean-panel)
+ASPECT SKIPPED — security (re-review-lean-panel)
+ASPECT SKIPPED — design (re-review-lean-panel); ASPECT SKIPPED — security (re-review-lean-panel)
+FINDING VERIFICATION — 4 verified, 0 unsupported, 0 phantom, 0 off-changeset
+FINDING LEDGER — R3-F1 parked IMPORTANT internal/cmd/ci_commits_test.go:193 | the plain-text commits test cannot fail: no warning is emitted and no GitHub context is set
+FINDING LEDGER — R3-F2 parked IMPORTANT internal/cmd/ci_test.go:399 | answer-shape tests are refused by a trailing token before any field or kind check runs
+FINDING LEDGER — R3-F3 deferred SUGGESTION internal/ciaction/install_test.go:188 | nothing asserts that the fake verifier reached the known-answer check
+FINDING LEDGER — R3-F4 deferred SUGGESTION internal/cmd/ci_commits_test.go:234 | the json run of the no-reference test has no request recorder
+EVIDENCE RUN — scope=full exit=0 duration=16.9s tree=88509b8deb7f record=er1_1794852312897_44b32966aa8d | cmd: go test -race ./...
+SR-R2-F2 IMPL completed — files: internal/cmd/ci_test.go
+SR-R3-F2 IMPL completed — files: internal/cmd/ci_test.go
+SR-R3-F1 IMPL completed — files: internal/cmd/ci_commits_test.go
+EVIDENCE RUN — scope=full exit=0 duration=15.7s tree=ed4b73b30350 record=er1_1794852895598_230d0281c562 | cmd: go test -race ./...
+EDIT LANDING AUDIT STARTED — round self-review
+PENDING PREDICATE — SR-R2-F2: internal/cmd/ci_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — SR-R3-F2: internal/cmd/ci_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+PENDING PREDICATE — SR-R3-F1: internal/cmd/ci_commits_test.go was already dirty before this claim or was audited earlier in this generation; union membership is not evidence — supply a current literal/hash proof with --predicates
+EDIT LANDING AUDIT — claims=82 landed=72 not_landed=0 unverified=0 pending=10 exempt_ignored=0 exempt_verified=0
+ROUND LANDING — SR-R2-F2: unresolved (files=1 changed=0 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — SR-R3-F2: unresolved (files=1 changed=0 unchanged=0 unresolved=1 failed=0 shared=1)
+ROUND LANDING — SR-R3-F1: landed (files=1 changed=1 unchanged=0 unresolved=0 failed=0)
+FINDING LEDGER — R3-F1 fixed IMPORTANT internal/cmd/ci_commits_test.go:193 | the plain-text commits test cannot fail: no warning is emitted and no GitHub context is set
+FINDING LEDGER — R2-F2 fixed IMPORTANT internal/cmd/ci_test.go:399 | answer-shape tests are refused by a trailing token before any field or kind check runs
+FINDING LEDGER — R3-F2 fixed IMPORTANT internal/cmd/ci_test.go:399 | answer-shape tests are refused by a trailing token before any field or kind check runs
+EVIDENCE RUN — scope=acceptance exit=0 duration=23.2s tree=ed4b73b30350 record=er1_1794853201311_f9c5635421a1 | cmd: bash /private/tmp/claude-501/<project>/79bf854a-c356-4c0d-9952-74a76a993300/scratchpad/verify-run/check-a.sh
+ACCEPTANCE — AC-001 pass | driver=cli observed er1_1794853201311_f9c5635421a1 | tree=ed4b73b30350 | record=av1_1794853236431_2e9e4eb7948c | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: The observed check ran go vet over every package of this tree; it exited 0 and the check printed AC-001 result=pass.
+ACCEPTANCE — AC-002 pass | driver=cli observed er1_1794853201311_f9c5635421a1 | tree=ed4b73b30350 | record=av1_1794853238045_47f0acbe2adc | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: The observed check ran go vet over every package with GOOS=windows; it exited 0 and the check printed AC-002 result=pass.
+ACCEPTANCE — AC-003 pass | driver=cli observed er1_1794853201311_f9c5635421a1 | tree=ed4b73b30350 | record=av1_1794853239568_ef8bd7b95ee8 | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: The observed check ran go test -race -count=1 over internal packages for the CI, Login, ValidateAPIKey, Action, SkillDocs, Readme and Redact tests; it exited 0 and printed AC-003 result=pass.
+ACCEPTANCE — AC-004 pass | driver=cli observed er1_1794853201311_f9c5635421a1 | tree=ed4b73b30350 | record=av1_1794853241039_5859cd76acee | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: The observed check parsed install.sh with sh -n; it exited 0 and the check printed AC-004 result=pass.
+ACCEPTANCE — AC-007 pass | driver=cli observed er1_1794853201311_f9c5635421a1 | tree=ed4b73b30350 | record=av1_1794853242519_8eddd1ec5adf | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: A binary built from this tree printed ci coverage help with --product and --file usages ending in (required) and ci pull-request help listing --body-file; the check printed AC-007 result=pass.
+EVIDENCE RUN — scope=acceptance exit=0 duration=4.9s tree=ed4b73b30350 record=er1_1794853249697_bbdafd9045a9 | cmd: bash /private/tmp/claude-501/<project>/79bf854a-c356-4c0d-9952-74a76a993300/scratchpad/verify-run/check-b.sh
+ACCEPTANCE — AC-005 pass | driver=cli observed er1_1794853249697_bbdafd9045a9 | tree=ed4b73b30350 | record=av1_1794853261782_e9b931fbeb1d | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: A binary built from this tree ran zensu ci commits --github --api-key-stdin against a loopback recording server for a push event in a temporary repository; the server saw one POST /api/ci/commits wit…
+EVIDENCE RUN — scope=acceptance exit=0 duration=0.9s tree=ed4b73b30350 record=er1_1794853270090_220a07786176 | cmd: bash /private/tmp/claude-501/<project>/79bf854a-c356-4c0d-9952-74a76a993300/scratchpad/verify-run/check-c.sh /private/tmp/claude-501/<project>/79bf854a-c356-4c0d-9952-74a76a993300/scratchpad/verify-r…
+ACCEPTANCE — AC-006 pass | driver=cli observed er1_1794853270090_220a07786176 | tree=ed4b73b30350 | record=av1_1794853279008_5a32d88dfae9 | plan: .zensu/plans/2026-11-15-2124_build-ci-uploader.md | evidence: install.sh from this tree with ZENSU_REQUIRE_SIGNATURE=1 and ZENSU_RELEASE_URL at a loopback mirror of the published v0.21.0 assets printed Verified the release signature. and installed a binary repo…

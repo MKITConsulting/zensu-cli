@@ -208,6 +208,9 @@ func TestValidateAPIKey(t *testing.T) {
 		case "zsk_agent":
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(`{"code":"agent_key_not_allowed","message":"an agent key serves only the work order worker routes"}`))
+		case "zsk_ci_only":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"code":"forbidden","message":"insufficient scope"}`))
 		case "zsk_forbidden":
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(`{"code":"insufficient_scope","message":"no"}`))
@@ -227,6 +230,7 @@ func TestValidateAPIKey(t *testing.T) {
 	}{
 		{"zsk_good", auth.APIKeyKindUser, ""},
 		{"zsk_agent", auth.APIKeyKindAgent, ""},
+		{"zsk_ci_only", auth.APIKeyKindRestricted, ""},
 		{"zsk_bad", "", "api key rejected (status 401)"},
 		{"zsk_forbidden", "", "api key rejected (status 403)"},
 		{"zsk_garbled", "", "api key rejected (status 403)"},

@@ -204,6 +204,7 @@ var valueFileFlags = []struct {
 	{[]string{"link", "docs"}, "content", false},
 	{[]string{"ghost", "scan"}, "candidates", true},
 	{[]string{"ghost", "scan"}, "components", true},
+	{[]string{"ci", "pull-request"}, "body", false},
 }
 
 func listedValueFileFlags() []string {
@@ -360,6 +361,7 @@ func TestValueFiles_ReachTheRequestBody(t *testing.T) {
 		{"link docs", NewLinkCmd, []string{"docs", "f1", "--doc-type", "user_facing"}, "content", shellHostileText, "POST /api/features/f1/docs", "", "content"},
 		{"ghost scan candidates", NewGhostCmd, []string{"scan", "--product", "p1"}, "candidates", candidates, "POST /api/products/p1/ghost/scans", "", "candidates"},
 		{"ghost scan components", NewGhostCmd, []string{"scan", "--product", "p1", "--candidates", "[]"}, "components", components, "POST /api/products/p1/ghost/scans", "", "components"},
+		{"ci pull-request", NewCICmd, []string{"pull-request", "--product", ciTestProduct, "--number", "5", "--title", "Rotate"}, "body", shellHostileText, "POST /api/ci/pull-requests", "", "body"},
 	}
 	srv, _ := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{})
 	factory, _ := testFactory(srv)
@@ -378,7 +380,7 @@ func TestValueFiles_ReachTheRequestBody(t *testing.T) {
 				name = tc.name + " from stdin"
 			}
 			t.Run(name, func(t *testing.T) {
-				routes := map[string]func(recordedRequest) fakeReply{tc.write: reply(200, map[string]any{"id": "x"})}
+				routes := map[string]func(recordedRequest) fakeReply{tc.write: reply(200, map[string]any{"id": "x", "prNumber": 5, "linked": []any{}, "unresolved": []any{}})}
 				if tc.read != "" {
 					routes[tc.read] = reply(200, map[string]any{"id": "f1", "slug": "zen-001", "title": "Old"})
 				}

@@ -14,8 +14,11 @@ authoritative.
 | Prebuilt binaries / Docker / Go | see the [repository README](https://github.com/MKITConsulting/zensu-cli) |
 
 The macOS binary is Developer-ID signed and notarized. Pin a version with
-`ZENSU_VERSION`, change the target dir with `ZENSU_INSTALL_DIR`. Update an
-existing install with `zensu update` (see [update](#update)).
+`ZENSU_VERSION`, change the target dir with `ZENSU_INSTALL_DIR`. The install
+script checks the release signature with an OpenSSL 3 that verifies Ed25519 when
+it finds one, and refuses a release after v0.18.0 whose signature is missing;
+`ZENSU_REQUIRE_SIGNATURE=1` makes the check mandatory. Update an existing
+install with `zensu update` (see [update](#update)).
 
 ## Auth & configuration
 
@@ -95,6 +98,10 @@ the line only with `--json`. Branch on
 `code` from this last line. The update notice never appears when stderr is not a
 terminal.
 
+With `--github`, the `ci` commands print `::error::<message>` instead of the
+`error:` line and `::warning::<message>` for each warning, with `%`, CR and LF
+encoded, so GitHub Actions shows them as annotations.
+
 ## Command groups
 
 | Group | Manages |
@@ -113,6 +120,7 @@ terminal.
 | `work` | Work orders: dispatch, claim, session reporting, questions, human decisions, policy, repositories |
 | `plan` | Work plans: push plan files, follow status, approve, finalize, abandon, follow-ups |
 | `link` | Link tests, docs, and source files to a feature |
+| `ci` | Upload commits, pull requests and coverage from a CI pipeline |
 | `knowledge` | Organization knowledge pool search |
 | `design` | Product design-system context |
 | `mocks` | Feature design mocks — upload and inspect |
@@ -605,6 +613,43 @@ system packages point to their package manager. A development build always exits
 with the `go install` command.
 Updating changes the user's installation: suggest `zensu update`, do not run it
 unasked.
+
+### ci
+
+```
+zensu ci commits --product <product-id> [--range <rev-range>] [--github] [--api-key-stdin] [--json]
+zensu ci pull-request --product <product-id> (--github | --number <n> --title <text>)
+    [--url <url>] [--status open|closed|merged] [--body <markdown> | --body-file path]
+    [--repository <url>] [--base-ref <branch>] [--head-sha <sha>] [--merge-sha <sha>]
+    [--api-key-stdin] [--json]
+zensu ci coverage --product <product-id> --file coverage/coverage-summary.json
+    [--format json-summary] [--root <dir>] [--ci-run-url <url>] [--markdown-summary <file>]
+    [--github] [--api-key-stdin] [--json]
+```
+
+For CI pipelines. The key needs the `ci` scope (the CI pipeline key profile;
+`write` keys work too). `--api-key-stdin` reads the key from stdin, so pipe it in
+(`printf '%s' "$ZENSU_API_KEY" | zensu ci ...`); the stored login is neither read
+nor written, and the host must come from `--api-url` or `ZENSU_API_URL`.
+`--github` takes the run context from the GitHub Actions environment (push or
+pull request range, the `pull_request` event, `GITHUB_WORKSPACE`, the run URL and
+`GITHUB_STEP_SUMMARY`) and prints annotations; explicit flags win.
+
+- `commits` sends only commits whose message references a feature in brackets:
+  a key, a dash and a number or slug, in any case (`[ZEN-42]`,
+  `[zen-invoice-rounding]`), at most 1,000 per request. Without `--range` it
+  checks `HEAD`; with `--github` a base missing from a shallow checkout leaves
+  only the head and warns, and so does a range that reaches the boundary of a
+  shallow checkout (`fetch-depth: 0` fixes both).
+- `pull-request` links the pull request to every feature its title and body
+  reference.
+- `coverage` reads an Istanbul json-summary report: per file covered and total
+  lines, plus branches when present, with paths relative to `--root` (default
+  `GITHUB_WORKSPACE` with `--github`, else the git top-level). A report without
+  files uploads nothing; more than 10,000 files fail.
+
+On GitHub Actions use the action `MKITConsulting/zensu-cli/actions/coverage`,
+pinned by commit SHA; it installs the matching CLI release and runs all three.
 
 ## Enum vocabularies
 

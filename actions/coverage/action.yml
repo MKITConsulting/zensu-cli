@@ -1,0 +1,122 @@
+name: 'Zensu Coverage Upload'
+description: 'Links commits and the pull request to Zensu features and uploads per-file coverage with the Zensu CLI'
+inputs:
+  api-key:
+    description: 'Zensu API key (zsk_...) with the ci scope, passed from a secret'
+    required: true
+  api-url:
+    description: 'Zensu API base URL, such as https://api.zensu.dev'
+    required: true
+  product-id:
+    description: 'Zensu product UUID'
+    required: true
+  coverage-file:
+    description: 'Istanbul json-summary report, such as coverage/coverage-summary.json; without it the action only links commits and the pull request'
+    required: false
+    default: ''
+  coverage-format:
+    description: 'Format of the coverage file; only json-summary is supported'
+    required: false
+    default: 'json-summary'
+  root:
+    description: 'Directory the coverage paths are made relative to; defaults to the workspace, or to working-directory when that is set'
+    required: false
+    default: ''
+  working-directory:
+    description: 'Checked-out repository the uploads run in, such as the path of an actions/checkout step; coverage-file and root resolve against it'
+    required: false
+    default: '.'
+  version:
+    description: 'Zensu CLI release to install; defaults to the release this action belongs to'
+    required: false
+    default: 'v0.23.0'
+  release-url:
+    description: 'Base URL of a mirror of the zensu-cli release downloads (<url>/<tag>/<asset>); defaults to the GitHub releases'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check the Zensu configuration
+      id: config
+      shell: bash
+      env:
+        ZENSU_API_KEY: ${{ inputs.api-key }}
+        ZENSU_API_URL: ${{ inputs.api-url }}
+        ZENSU_PRODUCT_ID: ${{ inputs.product-id }}
+      run: |
+        if [ -n "${ZENSU_API_URL}" ] && [ -n "${ZENSU_API_KEY}" ] && [ -n "${ZENSU_PRODUCT_ID}" ]; then
+          echo "configured=true" >> "${GITHUB_OUTPUT}"
+        else
+          echo "::notice::Zensu is not configured for this run (api-url, api-key or product-id is empty), so nothing is uploaded."
+          echo "configured=false" >> "${GITHUB_OUTPUT}"
+        fi
+
+    - name: Install the Zensu CLI
+      id: install
+      if: steps.config.outputs.configured == 'true'
+      shell: bash
+      env:
+        ZENSU_VERSION: ${{ inputs.version }}
+        ZENSU_RELEASE_URL: ${{ inputs.release-url }}
+        ZENSU_REQUIRE_SIGNATURE: '1'
+      run: |
+        if [ "${RUNNER_OS:-}" = "Windows" ]; then
+          echo "::error::The Zensu coverage action runs on Linux and macOS runners. On Windows, install the CLI yourself and run zensu ci commits, pull-request and coverage with --api-key-stdin; install.ps1 checks the archive checksum but not the release signature."
+          exit 1
+        fi
+        ZENSU_INSTALL_DIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/zensu-cli.XXXXXX")
+        export ZENSU_INSTALL_DIR
+        sh "${GITHUB_ACTION_PATH}/../../install.sh"
+        echo "bin=${ZENSU_INSTALL_DIR}/zensu" >> "${GITHUB_OUTPUT}"
+
+    - name: Link commits to Zensu features
+      id: commits
+      if: steps.config.outputs.configured == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ZENSU_BIN: ${{ steps.install.outputs.bin }}
+        ZENSU_API_KEY: ${{ inputs.api-key }}
+        ZENSU_API_URL: ${{ inputs.api-url }}
+        ZENSU_PRODUCT_ID: ${{ inputs.product-id }}
+      run: printf '%s' "${ZENSU_API_KEY}" | "${ZENSU_BIN}" ci commits --github --api-key-stdin --product "${ZENSU_PRODUCT_ID}"
+
+    - name: Link the pull request to Zensu features
+      id: pull-request
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.config.outputs.configured == 'true' && github.event_name == 'pull_request' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ZENSU_BIN: ${{ steps.install.outputs.bin }}
+        ZENSU_API_KEY: ${{ inputs.api-key }}
+        ZENSU_API_URL: ${{ inputs.api-url }}
+        ZENSU_PRODUCT_ID: ${{ inputs.product-id }}
+      run: printf '%s' "${ZENSU_API_KEY}" | "${ZENSU_BIN}" ci pull-request --github --api-key-stdin --product "${ZENSU_PRODUCT_ID}"
+
+    - name: Upload coverage to Zensu
+      id: coverage
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.config.outputs.configured == 'true' && inputs.coverage-file != '' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ZENSU_BIN: ${{ steps.install.outputs.bin }}
+        ZENSU_API_KEY: ${{ inputs.api-key }}
+        ZENSU_API_URL: ${{ inputs.api-url }}
+        ZENSU_PRODUCT_ID: ${{ inputs.product-id }}
+        COVERAGE_FILE: ${{ inputs.coverage-file }}
+        COVERAGE_FORMAT: ${{ inputs.coverage-format }}
+        COVERAGE_ROOT: ${{ inputs.root }}
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+      run: |
+        args=(ci coverage --github --api-key-stdin --product "${ZENSU_PRODUCT_ID}" --file "${COVERAGE_FILE}")
+        if [ -n "${COVERAGE_FORMAT}" ]; then
+          args+=(--format "${COVERAGE_FORMAT}")
+        fi
+        if [ -n "${COVERAGE_ROOT}" ]; then
+          args+=(--root "${COVERAGE_ROOT}")
+        elif [ -n "${WORKING_DIRECTORY}" ] && [ "${WORKING_DIRECTORY}" != "." ]; then
+          args+=(--root .)
+        fi
+        printf '%s' "${ZENSU_API_KEY}" | "${ZENSU_BIN}" "${args[@]}"

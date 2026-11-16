@@ -43,7 +43,11 @@ func WriteError(w io.Writer, ran *cobra.Command, args []string, err error) {
 		return
 	}
 	text := ErrorText(err)
-	fmt.Fprintln(w, "error:", text)
+	if annotatesErrors(ran, args, err) {
+		fmt.Fprintln(w, workflowCommand("error", text))
+	} else {
+		fmt.Fprintln(w, "error:", text)
+	}
 	if !jsonErrorRequested(ran, args, err) {
 		return
 	}
@@ -70,20 +74,20 @@ func jsonErrorRequested(ran *cobra.Command, args []string, err error) bool {
 		return true
 	}
 	var parseErr *flagParseError
-	return errors.As(err, &parseErr) && argsRequestJSON(args)
+	return errors.As(err, &parseErr) && argsRequestFlag(args, "json")
 }
 
-func argsRequestJSON(args []string) bool {
+func argsRequestFlag(args []string, name string) bool {
 	requested := false
 	for _, a := range args {
 		if a == "--" {
 			break
 		}
-		if a == "--json" {
+		if a == "--"+name {
 			requested = true
 			continue
 		}
-		if value, ok := strings.CutPrefix(a, "--json="); ok {
+		if value, ok := strings.CutPrefix(a, "--"+name+"="); ok {
 			if on, err := strconv.ParseBool(value); err == nil {
 				requested = on
 			}

@@ -369,7 +369,7 @@ curl -sH "Authorization: Bearer $(zensu auth token)" "$ZENSU_API_URL/api/..."
 
 ## Full command map
 
-Twenty-two command groups: `auth products features subfeatures tiers roadmap
-journeys security ghost pulse ai-work work plan link knowledge design mocks wiki org doc
+Twenty-four command groups: `auth products features subfeatures tiers roadmap
+journeys security ghost pulse ai-work work plan link ci knowledge design mocks wiki org doc
 meta update completion`. Per-group commands, verified flag sets, and all enum vocabularies
 are in [reference.md](reference.md).

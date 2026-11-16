@@ -67,6 +67,55 @@ func TestLoginWithToken_AcceptsAnAgentKey(t *testing.T) {
 	}
 }
 
+func TestLoginWithToken_AcceptsAKeyWithoutReadScope(t *testing.T) {
+	t.Setenv("ZENSU_CONFIG_DIR", t.TempDir())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/products" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"code":"forbidden","message":"insufficient scope"}`))
+	}))
+	defer srv.Close()
+
+	f, out := authFactory()
+	if err := runCmd(t, NewAuthCmd(f), "login", "--api-url", srv.URL, "--with-token", "zsk_ci_only"); err != nil {
+		t.Fatalf("login with a ci-scoped key: %v", err)
+	}
+	if out.String() != "Logged in to "+srv.URL+" with an API key that cannot read products; only the commands its scopes allow work, such as zensu ci with a key of the CI pipeline profile.\n" {
+		t.Fatalf("output = %q", out.String())
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg.APIKey != "zsk_ci_only" || cfg.APIURL != srv.URL {
+		t.Fatalf("ci-scoped key not persisted: %+v", cfg)
+	}
+}
+
+func TestLoginWithToken_RejectsOtherForbiddenCodes(t *testing.T) {
+	t.Setenv("ZENSU_CONFIG_DIR", t.TempDir())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"code":"organization_suspended","message":"suspended"}`))
+	}))
+	defer srv.Close()
+
+	f, out := authFactory()
+	err := runCmd(t, NewAuthCmd(f), "login", "--api-url", srv.URL, "--with-token", "zsk_suspended")
+	if err == nil || err.Error() != "API key validation failed: api key rejected (status 403)" || out.Len() != 0 {
+		t.Fatalf("error = %v output = %q, want the rejection", err, out.String())
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg.APIKey != "" {
+		t.Fatalf("a rejected key was stored: %+v", cfg)
+	}
+}
+
 type failingLoginInput struct{}
 
 func (failingLoginInput) Read([]byte) (int, error) { return 0, errors.New("stdin closed") }

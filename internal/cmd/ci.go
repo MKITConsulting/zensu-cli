@@ -148,7 +148,7 @@ func (r ciReporter) warn(format string, args ...any) {
 		fmt.Fprintln(r.errOut, workflowCommand("warning", message))
 		return
 	}
-	fmt.Fprintln(r.errOut, "warning: "+message)
+	_ = writeWarning(r.errOut, message)
 }
 
 var workflowDataEscaper = strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A")

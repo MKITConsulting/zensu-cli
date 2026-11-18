@@ -76,8 +76,7 @@ func newWikiListCmd(f *Factory) *cobra.Command {
 			if err != nil || !legacy || len(pages) != legacyWikiPageLimit {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.ErrOrStderr(), "warning: the server returns at most %d wiki pages per query, so pages after the first %d may be missing; narrow the query with --parent or --audience\n", legacyWikiPageLimit, legacyWikiPageLimit)
-			return err
+			return writeWarning(cmd.ErrOrStderr(), fmt.Sprintf("the server returns at most %d wiki pages per query, so pages after the first %d may be missing; narrow the query with --parent or --audience", legacyWikiPageLimit, legacyWikiPageLimit))
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product UUID (required)")

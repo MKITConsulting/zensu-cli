@@ -62,6 +62,15 @@ func WriteError(w io.Writer, ran *cobra.Command, args []string, err error) {
 	_ = enc.Encode(errorLine{Error: detail})
 }
 
+func writeWarning(w io.Writer, message string) error {
+	message = strings.TrimSpace(sanitizeTerminal(message))
+	if message == "" {
+		return nil
+	}
+	_, err := io.WriteString(w, "warning: "+message+"\n")
+	return err
+}
+
 func jsonErrorRequested(ran *cobra.Command, args []string, err error) bool {
 	if ran == nil {
 		return false

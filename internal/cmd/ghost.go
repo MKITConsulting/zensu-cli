@@ -283,7 +283,7 @@ func newGhostApplyCmd(f *Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "apply <scan-id>",
 		Short:        "Apply all approved Ghost candidates as real features",
-		Long:         "Apply all approved Ghost candidates as real features. Creates features, components, and links test/doc/source files. Set --enrich-existing when the product already has features defined - this links discovered tests, docs, and source files to matching existing features (by slug) instead of failing with a conflict error. Use --enrich-existing by default unless this is the very first scan on an empty product.",
+		Long:         "Apply all approved Ghost candidates as real features. Creates features, components, and links test/doc/source files. Set --enrich-existing when the product already has features defined - this links discovered tests, docs, and source files to matching existing features (by slug) instead of failing with a conflict error. Use --enrich-existing by default unless this is the very first scan on an empty product. The server may return warnings, for example when it could not use the scan's repository and linked the source files without one: each warning is printed as a \"warning: <message>\" line on stderr after the summary, and --json keeps them in the response's warnings array.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -305,10 +305,20 @@ func newGhostApplyCmd(f *Factory) *cobra.Command {
 				FeaturesCreated   int `json:"featuresCreated"`
 				FeaturesEnriched  int `json:"featuresEnriched"`
 				ComponentsCreated int `json:"componentsCreated"`
+				Warnings          []struct {
+					Message string `json:"message"`
+				} `json:"warnings"`
 			}
 			_ = json.Unmarshal(raw, &res)
-			_, err = fmt.Fprintf(f.Out, "Applied scan %s: %d features created, %d enriched, %d components created\n", args[0], res.FeaturesCreated, res.FeaturesEnriched, res.ComponentsCreated)
-			return err
+			if _, err = fmt.Fprintf(f.Out, "Applied scan %s: %d features created, %d enriched, %d components created\n", args[0], res.FeaturesCreated, res.FeaturesEnriched, res.ComponentsCreated); err != nil {
+				return err
+			}
+			for _, warning := range res.Warnings {
+				if err = writeWarning(cmd.ErrOrStderr(), warning.Message); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")

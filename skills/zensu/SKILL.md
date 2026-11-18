@@ -261,6 +261,10 @@ Run `zensu ghost scan --help` for the exact candidate JSON shape. Use
 files to matching existing features (by slug) instead of failing on conflicts.
 Omit it only on the very first scan of an empty product.
 
+`ghost apply` can return server warnings, for example when it linked source
+files without a repository: `warning: <message>` lines on stderr, or the
+`warnings` array (`code`, `message`) with `--json`. Pass them on to the user.
+
 ### Greenfield: bootstrap from a vision
 
 ```bash

@@ -49,7 +49,7 @@ func newKnowledgeSearchCmd(f *Factory) *cobra.Command {
 		Use:   "search",
 		Short: "Search the indexed knowledge pool (full-text; hybrid when the server has embeddings)",
 		Long: "Search the organization's knowledge pool: what Zensu indexes from the organization's products (features, " +
-			"visions, journeys, wiki pages, the titles and links of feature docs but not the linked files, mocks and design assets) " +
+			"visions, journeys, wiki pages, mocks and design assets, and the titles and links of feature docs but not the linked files) " +
 			"plus Zensu's built-in product documentation. Sources of type external are registrations only and are not indexed " +
 			"(no connector yet), so their content never appears in results. " +
 			"Ranking is full-text keyword matching unless the server has an embedding model configured; then it combines meaning " +

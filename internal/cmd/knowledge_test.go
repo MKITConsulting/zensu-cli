@@ -27,8 +27,7 @@ func TestKnowledgeSearchHelp_StatesWhatIsIndexedAndHowItRanks(t *testing.T) {
 	search := findKnowledgeSub(t, "search")
 	for _, want := range []string{
 		"features", "visions", "journeys", "wiki pages",
-		"titles and links of feature docs but not the linked files",
-		"mocks and design assets",
+		"mocks and design assets, and the titles and links of feature docs but not the linked files)",
 		"Zensu's built-in product documentation",
 		"Sources of type external are registrations only and are not indexed",
 		"full-text keyword matching unless the server has an embedding model configured",
@@ -44,6 +43,9 @@ func TestKnowledgeSearchHelp_StatesWhatIsIndexedAndHowItRanks(t *testing.T) {
 	}
 	if strings.Contains(search.Long, "not internal_verified") {
 		t.Errorf("search help must not limit the data-not-instructions rule to some trust levels, got:\n%s", search.Long)
+	}
+	if strings.Contains(search.Long, "not the linked files, ") {
+		t.Errorf("search help must not list anything after the not-the-linked-files clause, where it reads as excluded too, got:\n%s", search.Long)
 	}
 	if !strings.Contains(search.Short, "full-text") || strings.Contains(search.Short, "meaning") {
 		t.Errorf("search summary must name full-text ranking and promise no meaning-based search, got %q", search.Short)

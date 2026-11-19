@@ -12,6 +12,8 @@ import (
 
 const legacyGhostCandidateLimit = 200
 
+const ghostWarningsHelp = "each warning is printed as a \"warning: <message>\" line on stderr after the summary, and --json keeps them in the response's warnings array."
+
 func NewGhostCmd(f *Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ghost",
@@ -40,7 +42,9 @@ func newGhostScanCmd(f *Factory) *cobra.Command {
 			", --components " +
 			`[{"slug":"...","name":"...","description":"..."}]. ` +
 			"Every candidate needs slug and title. On apply, a candidate that creates a feature needs componentSlug; " +
-			"a component the product lacks is created, named from its --components entry when there is one.",
+			"a component the product lacks is created, named from its --components entry when there is one. " +
+			"The server may return warnings, for example when a candidate's slug matches an existing feature of the product: " +
+			ghostWarningsHelp,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if product == "" {
@@ -91,10 +95,13 @@ func newGhostScanCmd(f *Factory) *cobra.Command {
 					ID              string `json:"id"`
 					CandidatesTotal int    `json:"candidates_total"`
 				} `json:"scan"`
+				Warnings []serverWarning `json:"warnings"`
 			}
 			_ = json.Unmarshal(raw, &env)
-			_, err = fmt.Fprintf(f.Out, "Created ghost scan %s (%d candidates)\n", env.Scan.ID, env.Scan.CandidatesTotal)
-			return err
+			if _, err = fmt.Fprintf(f.Out, "Created ghost scan %s (%d candidates)\n", sanitizeTerminal(env.Scan.ID), env.Scan.CandidatesTotal); err != nil {
+				return err
+			}
+			return writeWarnings(cmd.ErrOrStderr(), env.Warnings)
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")
@@ -283,7 +290,7 @@ func newGhostApplyCmd(f *Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "apply <scan-id>",
 		Short:        "Apply all approved Ghost candidates as real features",
-		Long:         "Apply all approved Ghost candidates as real features. Creates features, components, and links test/doc/source files. Set --enrich-existing when the product already has features defined - this links discovered tests, docs, and source files to matching existing features (by slug) instead of failing with a conflict error. Use --enrich-existing by default unless this is the very first scan on an empty product. The server may return warnings, for example when it could not use the scan's repository and linked the source files without one: each warning is printed as a \"warning: <message>\" line on stderr after the summary, and --json keeps them in the response's warnings array.",
+		Long:         "Apply all approved Ghost candidates as real features. Creates features, components, and links test/doc/source files. Set --enrich-existing when the product already has features defined - this links discovered tests, docs, and source files to matching existing features (by slug) instead of failing with a conflict error. Use --enrich-existing by default unless this is the very first scan on an empty product. The server may return warnings, for example when it could not use the scan's repository and linked the source files without one: " + ghostWarningsHelp,
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -302,23 +309,16 @@ func newGhostApplyCmd(f *Factory) *cobra.Command {
 				return printJSON(f.Out, raw)
 			}
 			var res struct {
-				FeaturesCreated   int `json:"featuresCreated"`
-				FeaturesEnriched  int `json:"featuresEnriched"`
-				ComponentsCreated int `json:"componentsCreated"`
-				Warnings          []struct {
-					Message string `json:"message"`
-				} `json:"warnings"`
+				FeaturesCreated   int             `json:"featuresCreated"`
+				FeaturesEnriched  int             `json:"featuresEnriched"`
+				ComponentsCreated int             `json:"componentsCreated"`
+				Warnings          []serverWarning `json:"warnings"`
 			}
 			_ = json.Unmarshal(raw, &res)
 			if _, err = fmt.Fprintf(f.Out, "Applied scan %s: %d features created, %d enriched, %d components created\n", args[0], res.FeaturesCreated, res.FeaturesEnriched, res.ComponentsCreated); err != nil {
 				return err
 			}
-			for _, warning := range res.Warnings {
-				if err = writeWarning(cmd.ErrOrStderr(), warning.Message); err != nil {
-					return err
-				}
-			}
-			return nil
+			return writeWarnings(cmd.ErrOrStderr(), res.Warnings)
 		},
 	}
 	cmd.Flags().StringVar(&product, "product", "", "product ID (required)")

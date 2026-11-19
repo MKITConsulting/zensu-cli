@@ -195,18 +195,20 @@ func TestGhostScanHelp_ShowsCandidateAndComponentSchema(t *testing.T) {
 	}
 }
 
-func TestGhostApplyHelp_NamesTheServerWarnings(t *testing.T) {
-	apply, _, err := NewRootCmd().Find([]string{"ghost", "apply"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{
-		"The server may return warnings",
-		`each warning is printed as a "warning: <message>" line on stderr after the summary`,
-		"--json keeps them in the response's warnings array",
-	} {
-		if !strings.Contains(apply.Long, want) {
-			t.Errorf("ghost apply help must say %q, got:\n%s", want, apply.Long)
+func TestGhostHelp_NamesTheServerWarnings(t *testing.T) {
+	for _, name := range []string{"scan", "apply"} {
+		sub, _, err := NewRootCmd().Find([]string{"ghost", name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{
+			"The server may return warnings",
+			`each warning is printed as a "warning: <message>" line on stderr after the summary`,
+			"--json keeps them in the response's warnings array",
+		} {
+			if !strings.Contains(sub.Long, want) {
+				t.Errorf("ghost %s help must say %q, got:\n%s", name, want, sub.Long)
+			}
 		}
 	}
 }

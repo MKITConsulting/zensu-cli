@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -134,6 +135,86 @@ func TestGhostScan_RequiresCandidates(t *testing.T) {
 	if err := runCmd(t, cmd, "scan", "--product", "p1"); err == nil {
 		t.Fatal("ghost scan without --candidates should error")
 	}
+}
+
+func ghostScanReply(warnings any) map[string]any {
+	body := map[string]any{
+		"scan":              map[string]any{"id": "s9", "candidates_total": 2},
+		"supersededScanIds": []string{"s8"},
+	}
+	if warnings != nil {
+		body["warnings"] = warnings
+	}
+	return body
+}
+
+func TestGhostScan_PrintsEachServerWarningOnStderrAfterTheSummary(t *testing.T) {
+	const summary = "Created ghost scan s9 (2 candidates)\n"
+	checkout := "candidate 'checkout' matches existing feature slug"
+	search := "candidate 'search' matches existing feature slug"
+	tests := []ghostWarningCase{
+		{
+			name:       "each warning follows the summary on stderr, in server order",
+			body:       ghostScanReply([]string{checkout, search}),
+			wantStdout: summary,
+			wantStderr: "warning: " + checkout + "\nwarning: " + search + "\n",
+		},
+		{
+			name:       "with stdout and stderr on one terminal the warnings follow the summary",
+			body:       ghostScanReply([]string{checkout, search}),
+			oneStream:  true,
+			wantStdout: summary,
+			wantStderr: "warning: " + checkout + "\nwarning: " + search + "\n",
+		},
+		{
+			name:       "an empty warnings array prints the summary alone",
+			body:       ghostScanReply([]string{}),
+			wantStdout: summary,
+		},
+		{
+			name:       "a server that sends no warnings field prints the summary alone",
+			body:       ghostScanReply(nil),
+			wantStdout: summary,
+		},
+		{
+			name:       "a blank warning prints no line",
+			body:       ghostScanReply([]string{"", " \t ", search}),
+			wantStdout: summary,
+			wantStderr: "warning: " + search + "\n",
+		},
+		{
+			name:       "control characters and line breaks in a warning never reach the terminal",
+			body:       ghostScanReply([]string{"candidate 'check\u001b[2Jout\u202e' matches\n existing feature slug"}),
+			wantStdout: summary,
+			wantStderr: "warning: candidate 'check[2Jout' matches existing feature slug\n",
+		},
+		{
+			name:       "a warning sent as an object prints its message",
+			body:       ghostScanReply([]map[string]any{{"code": "feature_slug_exists", "message": checkout}}),
+			wantStdout: summary,
+			wantStderr: "warning: " + checkout + "\n",
+		},
+		{
+			name:       "a warning of another shape prints no line and leaves the summary intact",
+			body:       ghostScanReply([]any{42, map[string]any{"message": 7}, []string{"x"}, search}),
+			wantStdout: summary,
+			wantStderr: "warning: " + search + "\n",
+		},
+		{
+			name: "control characters and line breaks in the scan id never reach the terminal",
+			body: map[string]any{
+				"scan":     map[string]any{"id": "s\u001b[2J9\n", "candidates_total": 2},
+				"warnings": []string{},
+			},
+			wantStdout: "Created ghost scan s[2J9 (2 candidates)\n",
+		},
+		{
+			name: "--json prints the response unchanged, warnings included, and nothing on stderr",
+			body: ghostScanReply([]string{checkout}),
+			json: true,
+		},
+	}
+	runGhostWarningCases(t, "/api/products/p1/ghost/scans", http.StatusCreated, []string{"scan", "--product", "p1", "--candidates", `[{"slug":"checkout","title":"Checkout"},{"slug":"search","title":"Search"}]`}, tests)
 }
 
 func TestGhostCandidates(t *testing.T) {
@@ -524,14 +605,7 @@ func TestGhostApply_PrintsEachServerWarningOnStderrAfterTheSummary(t *testing.T)
 	const summary = "Applied scan s1: 3 features created, 1 enriched, 2 components created\n"
 	notRegistered := "repository github.com/acme/shop is not registered for this product; source files were linked without a repository; an admin can register it under the product's settings"
 	unresolved := "the scan repository could not be resolved; source files were linked without a repository"
-	tests := []struct {
-		name       string
-		body       map[string]any
-		json       bool
-		oneStream  bool
-		wantStdout string
-		wantStderr string
-	}{
+	tests := []ghostWarningCase{
 		{
 			name: "each warning follows the summary on stderr, in server order",
 			body: ghostApplyReply([]map[string]any{
@@ -580,6 +654,12 @@ func TestGhostApply_PrintsEachServerWarningOnStderrAfterTheSummary(t *testing.T)
 			wantStderr: "warning: the scan repository url [2Jis not a valid repository; source files were linked without a repository\n",
 		},
 		{
+			name:       "a warning sent as a plain string prints it",
+			body:       ghostApplyReply([]string{unresolved}),
+			wantStdout: summary,
+			wantStderr: "warning: " + unresolved + "\n",
+		},
+		{
 			name: "--json prints the response unchanged, warnings included, and nothing on stderr",
 			body: ghostApplyReply([]map[string]any{
 				{"code": "repository_unresolved", "message": unresolved},
@@ -587,10 +667,24 @@ func TestGhostApply_PrintsEachServerWarningOnStderrAfterTheSummary(t *testing.T)
 			json: true,
 		},
 	}
+	runGhostWarningCases(t, "/api/products/p1/ghost/scans/s1/apply", http.StatusOK, []string{"apply", "s1", "--product", "p1"}, tests)
+}
+
+type ghostWarningCase struct {
+	name       string
+	body       map[string]any
+	json       bool
+	oneStream  bool
+	wantStdout string
+	wantStderr string
+}
+
+func runGhostWarningCases(t *testing.T, path string, status int, args []string, tests []ghostWarningCase) {
+	t.Helper()
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
-				"POST /api/products/p1/ghost/scans/s1/apply": reply(http.StatusOK, tc.body),
+				http.MethodPost + " " + path: reply(status, tc.body),
 			})
 			f, out := testFactory(srv)
 			cmd := NewGhostCmd(f)
@@ -599,14 +693,14 @@ func TestGhostApply_PrintsEachServerWarningOnStderrAfterTheSummary(t *testing.T)
 			if tc.oneStream {
 				cmd.SetErr(out)
 			}
-			args := []string{"apply", "s1", "--product", "p1"}
+			cmdArgs := slices.Clone(args)
 			if tc.json {
-				args = append(args, "--json")
+				cmdArgs = append(cmdArgs, "--json")
 			}
-			if err := runCmd(t, cmd, args...); err != nil {
-				t.Fatalf("ghost apply error: %v", err)
+			if err := runCmd(t, cmd, cmdArgs...); err != nil {
+				t.Fatalf("ghost %s error: %v", args[0], err)
 			}
-			api.only(t, http.MethodPost, "/api/products/p1/ghost/scans/s1/apply")
+			api.only(t, http.MethodPost, path)
 			if tc.oneStream {
 				if want := tc.wantStdout + tc.wantStderr; out.String() != want {
 					t.Errorf("stdout and stderr in one stream:\n%q\nwant the summary first, then each warning in server order:\n%q", out.String(), want)
@@ -631,6 +725,56 @@ func TestGhostApply_PrintsEachServerWarningOnStderrAfterTheSummary(t *testing.T)
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("--json output:\n%s\nwant the server's response unchanged:\n%s", out.String(), jsonOf(t, tc.body))
+			}
+		})
+	}
+}
+
+func TestGhostScanAndApply_ReturnAFailedSummaryOrWarningWrite(t *testing.T) {
+	broken := errors.New("broken pipe")
+	scanReply := ghostScanReply([]string{"candidate 'search' matches existing feature slug"})
+	applyReply := ghostApplyReply([]map[string]any{{"code": "repository_unresolved", "message": "the scan repository could not be resolved"}})
+	scanArgs := []string{"scan", "--product", "p1", "--candidates", `[{"slug":"search","title":"Search"}]`}
+	applyArgs := []string{"apply", "s1", "--product", "p1"}
+	tests := []struct {
+		name          string
+		path          string
+		status        int
+		body          map[string]any
+		args          []string
+		brokenSummary bool
+		summary       string
+	}{
+		{name: "scan returns a failed summary write and prints no warning", path: "/api/products/p1/ghost/scans", status: http.StatusCreated, body: scanReply, args: scanArgs, brokenSummary: true},
+		{name: "scan writes the summary, then returns a failed warning write", path: "/api/products/p1/ghost/scans", status: http.StatusCreated, body: scanReply, args: scanArgs, summary: "Created ghost scan s9 (2 candidates)\n"},
+		{name: "apply returns a failed summary write and prints no warning", path: "/api/products/p1/ghost/scans/s1/apply", status: http.StatusOK, body: applyReply, args: applyArgs, brokenSummary: true},
+		{name: "apply writes the summary, then returns a failed warning write", path: "/api/products/p1/ghost/scans/s1/apply", status: http.StatusOK, body: applyReply, args: applyArgs, summary: "Applied scan s1: 3 features created, 1 enriched, 2 components created\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, _ := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+				http.MethodPost + " " + tc.path: reply(tc.status, tc.body),
+			})
+			f, out := testFactory(srv)
+			cmd := NewGhostCmd(f)
+			var stderr bytes.Buffer
+			cmd.SetErr(&stderr)
+			if tc.brokenSummary {
+				f.Out = failingWriter{err: broken}
+			} else {
+				cmd.SetErr(failingWriter{err: broken})
+			}
+			if err := runCmd(t, cmd, tc.args...); !errors.Is(err, broken) {
+				t.Fatalf("ghost %s must return the write error, got: %v", tc.args[0], err)
+			}
+			if !tc.brokenSummary {
+				if out.String() != tc.summary {
+					t.Errorf("the summary must be written before the failed warning write, got stdout:\n%q\nwant:\n%q", out.String(), tc.summary)
+				}
+				return
+			}
+			if strings.Contains(stderr.String(), "warning:") {
+				t.Errorf("no warning may follow a summary that could not be written, got stderr:\n%q", stderr.String())
 			}
 		})
 	}

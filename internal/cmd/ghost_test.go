@@ -512,6 +512,130 @@ func TestGhostApply_EnrichExistingQuery(t *testing.T) {
 	}
 }
 
+func ghostApplyReply(warnings any) map[string]any {
+	body := map[string]any{"featuresCreated": 3, "featuresEnriched": 1, "componentsCreated": 2}
+	if warnings != nil {
+		body["warnings"] = warnings
+	}
+	return body
+}
+
+func TestGhostApply_PrintsEachServerWarningOnStderrAfterTheSummary(t *testing.T) {
+	const summary = "Applied scan s1: 3 features created, 1 enriched, 2 components created\n"
+	notRegistered := "repository github.com/acme/shop is not registered for this product; source files were linked without a repository; an admin can register it under the product's settings"
+	unresolved := "the scan repository could not be resolved; source files were linked without a repository"
+	tests := []struct {
+		name       string
+		body       map[string]any
+		json       bool
+		oneStream  bool
+		wantStdout string
+		wantStderr string
+	}{
+		{
+			name: "each warning follows the summary on stderr, in server order",
+			body: ghostApplyReply([]map[string]any{
+				{"code": "repository_not_registered", "repository": "github.com/acme/shop", "message": notRegistered},
+				{"code": "repository_unresolved", "message": unresolved},
+			}),
+			wantStdout: summary,
+			wantStderr: "warning: " + notRegistered + "\nwarning: " + unresolved + "\n",
+		},
+		{
+			name: "with stdout and stderr on one terminal the warnings follow the summary",
+			body: ghostApplyReply([]map[string]any{
+				{"code": "repository_not_registered", "repository": "github.com/acme/shop", "message": notRegistered},
+				{"code": "repository_unresolved", "message": unresolved},
+			}),
+			oneStream:  true,
+			wantStdout: summary,
+			wantStderr: "warning: " + notRegistered + "\nwarning: " + unresolved + "\n",
+		},
+		{
+			name:       "an empty warnings array prints the summary alone",
+			body:       ghostApplyReply([]any{}),
+			wantStdout: summary,
+		},
+		{
+			name:       "a server that sends no warnings field prints the summary alone",
+			body:       ghostApplyReply(nil),
+			wantStdout: summary,
+		},
+		{
+			name: "a warning without a message prints no line",
+			body: ghostApplyReply([]map[string]any{
+				{"code": "repository_removed"},
+				{"code": "repository_removed", "message": " \t "},
+				{"code": "repository_unresolved", "message": unresolved},
+			}),
+			wantStdout: summary,
+			wantStderr: "warning: " + unresolved + "\n",
+		},
+		{
+			name: "control characters and line breaks in a warning never reach the terminal",
+			body: ghostApplyReply([]map[string]any{
+				{"code": "repository_url_invalid", "message": "the scan repository url \u001b[2Jis not a valid repository\u202e\n; source files were linked without a repository"},
+			}),
+			wantStdout: summary,
+			wantStderr: "warning: the scan repository url [2Jis not a valid repository; source files were linked without a repository\n",
+		},
+		{
+			name: "--json prints the response unchanged, warnings included, and nothing on stderr",
+			body: ghostApplyReply([]map[string]any{
+				{"code": "repository_unresolved", "message": unresolved},
+			}),
+			json: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+				"POST /api/products/p1/ghost/scans/s1/apply": reply(http.StatusOK, tc.body),
+			})
+			f, out := testFactory(srv)
+			cmd := NewGhostCmd(f)
+			var stderr bytes.Buffer
+			cmd.SetErr(&stderr)
+			if tc.oneStream {
+				cmd.SetErr(out)
+			}
+			args := []string{"apply", "s1", "--product", "p1"}
+			if tc.json {
+				args = append(args, "--json")
+			}
+			if err := runCmd(t, cmd, args...); err != nil {
+				t.Fatalf("ghost apply error: %v", err)
+			}
+			api.only(t, http.MethodPost, "/api/products/p1/ghost/scans/s1/apply")
+			if tc.oneStream {
+				if want := tc.wantStdout + tc.wantStderr; out.String() != want {
+					t.Errorf("stdout and stderr in one stream:\n%q\nwant the summary first, then each warning in server order:\n%q", out.String(), want)
+				}
+				return
+			}
+			if stderr.String() != tc.wantStderr {
+				t.Errorf("stderr:\n%q\nwant:\n%q", stderr.String(), tc.wantStderr)
+			}
+			if !tc.json {
+				if out.String() != tc.wantStdout {
+					t.Errorf("stdout:\n%q\nwant:\n%q", out.String(), tc.wantStdout)
+				}
+				return
+			}
+			var got, want any
+			if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+				t.Fatalf("--json output is not JSON: %v\n%s", err, out.String())
+			}
+			if err := json.Unmarshal([]byte(jsonOf(t, tc.body)), &want); err != nil {
+				t.Fatalf("decode the expected JSON: %v", err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("--json output:\n%s\nwant the server's response unchanged:\n%s", out.String(), jsonOf(t, tc.body))
+			}
+		})
+	}
+}
+
 func TestGhostApply_RequiresProduct(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("server must not be called when --product is missing")

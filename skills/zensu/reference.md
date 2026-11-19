@@ -243,6 +243,12 @@ zensu ghost apply <scan-id> --product <id> [--enrich-existing]
 existing features (by slug) instead of failing on slug conflicts. Omit it only
 on the very first scan of an empty product.
 
+The server may return warnings with the apply result, for example when it could
+not use the scan's repository and linked the source files without one. The
+summary line on stdout is followed by one `warning: <message>` line per warning
+on stderr; `--json` keeps them in the response's `warnings` array, each with a
+`code` and a `message`. Pass these warnings on to the user.
+
 ### ai-work
 
 ```bash

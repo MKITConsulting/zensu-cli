@@ -60,6 +60,7 @@ func TestIsRequiredFlag_MarksFlagsTheirCommandRejectsWhenMissing(t *testing.T) {
 	startArgs := []string{"ai-work", "start", "--id", id, "--title", "Goal", "--maintenance-reason", "Upgrade tooling", "--product", id}
 	submitArgs := []string{"ai-work", "submit", id, "--event-id", event, "--expected-version", "1", "--artifact", "commit:abc", "--criteria-version", "sha256:def"}
 	recoverArgs := []string{"ai-work", "recover", "--session", "scv1_" + strings.Repeat("a", 64)}
+	reportArgs := []string{"ai-work", "report", "--session", "scv1_" + strings.Repeat("a", 64), "--kind", "turn_started"}
 	bindArgs := []string{"ai-work", "bind", "--product", id, "--confirm"}
 	searchArgs := []string{"knowledge", "context-search", "--query", "Fix login"}
 	for _, tc := range []struct {
@@ -68,7 +69,7 @@ func TestIsRequiredFlag_MarksFlagsTheirCommandRejectsWhenMissing(t *testing.T) {
 	}{
 		{startArgs, "id"}, {startArgs, "title"},
 		{submitArgs, "event-id"}, {submitArgs, "expected-version"}, {submitArgs, "artifact"}, {submitArgs, "criteria-version"},
-		{recoverArgs, "session"}, {bindArgs, "confirm"}, {searchArgs, "query"},
+		{recoverArgs, "session"}, {reportArgs, "session"}, {bindArgs, "confirm"}, {searchArgs, "query"},
 	} {
 		t.Run(strings.Join(tc.args[:2], " ")+" --"+tc.flag, func(t *testing.T) {
 			if err := runCmd(t, newRoot(), tc.args...); err != nil && !errors.Is(err, errReached) {
@@ -111,8 +112,9 @@ func TestVisitCommands_WalksTheCommandAndEveryDescendantInPreOrder(t *testing.T)
 
 func TestPlaceholderArg_SatisfiesTheTreesContentValidators(t *testing.T) {
 	for name, validate := range map[string]cobra.PositionalArgs{
-		"aiWorkIDArgs":       aiWorkIDArgs,
-		"pulseSessionIDArgs": pulseSessionIDArgs,
+		"aiWorkIDArgs":         aiWorkIDArgs,
+		"aiWorkOptionalIDArgs": aiWorkOptionalIDArgs,
+		"pulseSessionIDArgs":   pulseSessionIDArgs,
 	} {
 		if err := validate(&cobra.Command{Use: "probe"}, []string{PlaceholderArg}); err != nil {
 			t.Errorf("%s rejects PlaceholderArg: %v", name, err)

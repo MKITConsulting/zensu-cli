@@ -92,9 +92,12 @@ error: the order is held by another attempt or its lease expired; stop without f
 
 `message` is the error text without the status suffix. `status` and `code` are
 left out when absent, so a network, flag or validation error carries only
-`message`. The line follows the `--json` flag, not a command's default output:
-commands that print JSON by default, such as `work get` or `features get`, add
-the line only with `--json`. Branch on
+`message`. Three codes are the CLI's own verdicts and come without a `status`:
+`unsupported` and `not_found` from `ai-work status`, and
+`ai_work_progress_unit_full` from `ai-work report`. They appear only in this
+line, never in the `error:` text. The line follows the `--json` flag, not a
+command's default output: commands that print JSON by default, such as
+`work get` or `features get`, add the line only with `--json`. Branch on
 `code` from this last line. The update notice never appears when stderr is not a
 terminal.
 
@@ -116,7 +119,7 @@ encoded, so GitHub Actions shows them as annotations.
 | `security` | Classification, security tests, reviews, score, posture |
 | `ghost` | Ghost scans and feature candidates (brownfield import) |
 | `pulse` | Development sessions |
-| `ai-work` | Authenticated work declarations and result submissions |
+| `ai-work` | Authenticated work declarations, progress facts, status reads and result submissions |
 | `work` | Work orders: dispatch, claim, session reporting, questions, human decisions, policy, repositories |
 | `plan` | Work plans: push plan files, follow status, approve, finalize, abandon, follow-ups |
 | `link` | Link tests, docs, and source files to a feature |
@@ -257,8 +260,12 @@ zensu ai-work context
 zensu ai-work context --cross-product
 zensu ai-work start --id <work-uuid> --title "Agreed objective" [--product <product-uuid>] [--work-order <uuid>]
 zensu ai-work start --id <work-uuid> --title "Shared goal" --cross-product-reason "Explicitly requested work spanning products"
+zensu ai-work start --id <work-uuid> --title "Agreed objective" --feature <feature-uuid> --task <task-uuid>
 zensu ai-work get <work-uuid>
 zensu ai-work submit <work-uuid> --event-id <event-uuid> --expected-version 1 --artifact "commit:<immutable-sha>" --criteria-version "sha256:<criteria-digest>"
+zensu ai-work report [<work-uuid>] --session <capture-key> --kind <kind> [--timeout 8s]
+zensu ai-work status <work-uuid>
+zensu ai-work status --session <capture-key>
 ```
 
 Requires a personal first-party CLI OAuth login. API keys and worker tokens are
@@ -281,6 +288,129 @@ Manual starts can explicitly name a product; plugin sources must match the bindi
 Cross-product work requires explicit human intent and a reason for each goal;
 it is never a fallback or repository default. Legacy unassigned records remain
 in the separate Unassigned web view and cannot receive new automatic submissions.
+
+`start --task <task-uuid>` names the task the goal works on. The server stores
+it when the task belongs to the goal's feature or product and answers 400
+otherwise. Keep it on every retry: a repeated start that names another task,
+adds one or leaves it out conflicts. A cross-product goal cannot name a task.
+
+#### Progress facts and work status
+
+`report` tells the server where a piece of work stands; `status` reads what the
+server derives from the reported facts, CI, the forge and a person's decisions.
+A fact is a session's statement and confirms nothing. Both need the personal
+login and backend v0.120.0 or later, and only the work's owner reports and
+reads through the CLI.
+
+```bash
+zensu ai-work report --session <capture-key> --kind segment_started --phase implement
+zensu ai-work report --session <capture-key> --kind step_progress --done 3 --total 8 --label "Wire the status list"
+zensu ai-work report <work-uuid> --session <capture-key> --kind evidence_reported --check tests --outcome passed --passed 212 --failed 0
+zensu ai-work report --session <capture-key> --batch <<'ZENSU_VALUE_7B1E42'
+{"kind":"turn_started"}
+{"kind":"review_round_ended","payload":{"round":2,"findings":{"open":1,"fixed":3,"blocking":0},"items":[{"severity":"medium","state":"open","title":"Retry loses the header"}]}}
+ZENSU_VALUE_7B1E42
+zensu ai-work status <work-uuid> --json
+zensu ai-work status --session <capture-key> --json
+```
+
+`--session` is the exact capture key the plugin supplies. It names the
+reporting session and is never sent: the server sees a reference derived from
+it. Without `<work-uuid>` the work is the one this worktree's capture receipt
+of that session names. `--batch` reads up to 100 facts from stdin, one JSON
+object per line with `kind` and an optional `payload` whose fields carry the
+server's names (256 KiB at most); it replaces `--kind` and the payload flags.
+
+Each kind takes these flags; a payload field is named where it differs from
+its flag, and the closed value lists are under
+[Enum vocabularies](#enum-vocabularies):
+
+- `session_started`: `--harness <harness> [--client-version <version>] [--branch <name>] [--worktree <label>]` (`clientVersion`)
+- `session_ended`: `--reason <session end reason>`
+- `turn_started`, `turn_ended`, `resumed`: no flags
+- `segment_started`: `--phase <phase>`
+- `segment_ended`: `--phase <phase> --outcome <segment outcome>`
+- `step_progress`: `--done <n> --total <1-500> [--label <text>]`
+- `wait_requested`: `--subject <wait subject>`
+- `wait_resolved`: `--subject <wait subject> --outcome <outcome of that subject>`
+- `review_round_started`: `--round <1-50>`
+- `review_round_ended`: `--round <1-50> [--findings-open <n>] [--findings-fixed <n>] [--findings-blocking <n>]`,
+  optionally up to 20 times `--finding <severity>:<state>:<title>`, and
+  `--chain-closed`, `--limit-reached` (`findings.open`, `findings.fixed`,
+  `findings.blocking`, `items[]` with `severity`, `state` and `title`,
+  `chainClosed`, `limitReached`)
+- `change_request_linked`: `--repository <owner/name> --number <n> [--state <change request state>] [--url <https address>]`
+- `workspace_state`: `[--commits-ahead <n>] [--files-changed <n>] [--uncommitted-files <n>] --head <7-64 hex characters>`
+  (`commitsAhead`, `filesChanged`, `uncommittedFiles`)
+- `evidence_reported`: `--check <check> --outcome <check outcome> [--passed <n>] [--failed <n>] [--percent <0-100>]`
+- `blocked`: `--block-kind <block kind> [--reason <text>]` (`kind`)
+- `signal`: `[--activity <activity>]`
+- `work_ended`: `--reason <work end reason>`
+
+A count of `review_round_ended` or `workspace_state` that is left out is
+reported as `0`, so pass every count you know. `--label`, a `blocked` `--reason`
+and a finding's title are one line of at most 120 characters. Report only what
+these fields hold: no prompt, answer, question text, command, code, diff, file
+path or host name. Of the workspace a fact carries at most a branch name, a
+worktree label, a commit hash, a repository's `owner/name` and a change
+request's address. The CLI refuses a value outside these lists and limits
+before it sends anything.
+
+A queue in the worktree's Git directory
+(`<git-dir>/zensu-ai-work-v1/progress/<work-id>.json`) owns the event ids and
+the order. It sends one request at a time per work, repeats an unanswered batch
+byte for byte and keeps what it could not send within `--timeout` (8s by
+default, 1s to 60s) for the next call. A call that delivered its own facts also
+sends what another work of this worktree left behind for the same API host, so
+the last facts of a finished goal go out with the next goal's first report.
+`signal` facts of one session merge to one per minute. A fact that is not sent
+within 24 hours is dropped, and so is the oldest fact once 500 wait. Apart from
+the `unsupported` verdict below, only an answer that carries one of the API's
+error codes drops a fact or refuses the work; any other answer, such as an
+error page of a proxy, keeps the batch for the next call. Never write the
+queue's files yourself.
+
+`report` prints one JSON object and exits `0` whenever it has one of these to
+say in `status`:
+
+- `sent`: every fact of this call and of the queue reached the server, or was
+  refused for good and is listed in `dropped`.
+- `queued`: `queued` facts wait for the next call. `reason` is `network`,
+  `timeout`, `server_error`, `busy` (another call is sending for this work),
+  `backoff` (the wait after a failure has not passed) or `rate_limited`, then
+  with `retryAfterSeconds`.
+- `merged`: the `signal` waits in its session's one-per-minute slot; nothing
+  was sent.
+- `unsupported`: the server has no progress route yet (`reason`
+  `route_missing`). The queue is emptied, and every call of the next ten
+  minutes answers the same without a request. Go on without reporting.
+- `skipped`: no `<work-uuid>` was passed and this session's capture receipt
+  allows no report; `reason` is `no_active_work`, `capture_paused`,
+  `legacy_scope`, `invalid_receipt` or `host_mismatch`. Nothing is queued.
+
+`workId` names the work the result speaks of; a `skipped` result carries it
+when the receipt names one. `recorded` counts the facts of that work the server
+stored in this call, `queued` the facts that still wait. `dropped` lists each
+fact the server refused for good with its `kind`, the server's `code` and the
+refused `field`; the other facts of its batch are sent again. Exit `1` is left
+to invalid input, a missing personal login, a local failure such as a missing
+Git worktree and a refusal of the whole work: work that is not available or not
+yours, and work that takes no more facts (`ai_work_progress_unit_full`; start a
+new goal). Such a refusal empties the queue, and a parallel call that was still
+waiting to send fails with exit `1` as well. Do not retry a `queued` result in
+a loop; the next report sends it.
+
+`status` prints the server's JSON answer: the work's identity and scope,
+`outcome`, `waitingForYou`, `status` (nine `stations` with `state` and, where
+they apply, `assurance`, `source` and `since`; `current`; `turn` with `holder`,
+`reason` and `since`; `lastSignal`), `progress` (what the facts say: session,
+turn, segments, steps, review, change request, workspace, evidence, block and
+end), `workOrder`, `canClose` and `facts`, the 50 newest facts. A station a
+session reported stays reported; only CI, a forge or a person in the browser
+confirms one, and nothing here is an acceptance. Pass the work id, or
+`--session` to read the work of this worktree's capture receipt (also while
+capture is paused). Everyone but the owner gets `not_found`. Against a server
+without the status route it fails with the error code `unsupported`.
 
 Local recovery is the offline exception: it does not authenticate, contact a
 server or change attribution. Use the exact plugin-provided capture key in the
@@ -681,6 +811,18 @@ pinned by commit SHA; it installs the matching CLI release and runs all three.
 | Wiki visibility | `public` `private` |
 | Knowledge scope | `org` `personal` |
 | CLAUDE.md variant | `full` `minimal` `ci-only` |
+| Progress fact kind (`ai-work report`) | `session_started` `session_ended` `turn_started` `turn_ended` `segment_started` `segment_ended` `step_progress` `wait_requested` `wait_resolved` `review_round_started` `review_round_ended` `change_request_linked` `workspace_state` `evidence_reported` `blocked` `resumed` `signal` `work_ended` |
+| Progress harness | `claude_code` `codex` `copilot` `kiro` `antigravity` `other` |
+| Progress session end reason | `ended` `interrupted` `unknown` |
+| Progress phase | `plan` `implement` `review` `fix` `verify` |
+| Progress segment outcome | `completed` `interrupted` `failed` |
+| Progress wait subject and its outcomes | `plan_approval`: `approved` `rejected` `cancelled`; `question` and `input`: `answered` `cancelled`; `permission`: `granted` `denied` `cancelled` |
+| Progress finding severity / state | `critical` `high` `medium` `low` `info` / `open` `in_progress` `fixed` `dismissed` |
+| Progress change request state | `open` `merged` `closed` |
+| Progress evidence check / outcome | `tests` `typecheck` `coverage` `lint` `build` / `passed` `failed` `skipped` |
+| Progress block kind | `review_limit` `worker_error` `precondition` `other` |
+| Progress signal activity | `editing` `testing` `reviewing` `committing` `delegating` `idle` |
+| Progress work end reason | `finished` `abandoned` `handed_off` |
 
 ## Scripting recipes
 

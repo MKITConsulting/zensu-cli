@@ -7,11 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/MKITConsulting/zensu-cli/internal/safefile"
 )
 
 const (
 	sessionLockFileName = configFileName + ".lock"
-	sessionLockPoll     = 25 * time.Millisecond
 	SessionLockWait     = time.Minute
 )
 
@@ -28,31 +29,11 @@ func LockSession(ctx context.Context) (func(), error) {
 	if err := os.MkdirAll(dir, dirPerm); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, sessionLockFileName), os.O_RDWR|os.O_CREATE, filePerm)
-	if err != nil {
-		return nil, err
+	unlock, err := safefile.Lock(ctx, filepath.Join(dir, sessionLockFileName))
+	if errors.Is(err, safefile.ErrLockBusy) {
+		return nil, fmt.Errorf("%w: %w", ErrSessionLockBusy, ctx.Err())
 	}
-	for {
-		locked, err := tryLockFile(f)
-		if err != nil {
-			f.Close()
-			return nil, fmt.Errorf("locking %s: %w", f.Name(), err)
-		}
-		if locked {
-			return func() {
-				_ = unlockFile(f)
-				_ = f.Close()
-			}, nil
-		}
-		wait := time.NewTimer(sessionLockPoll)
-		select {
-		case <-ctx.Done():
-			wait.Stop()
-			f.Close()
-			return nil, fmt.Errorf("%w: %w", ErrSessionLockBusy, ctx.Err())
-		case <-wait.C:
-		}
-	}
+	return unlock, err
 }
 
 func UpdateStored(ctx context.Context, update func(*Config) bool) error {

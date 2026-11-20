@@ -1,0 +1,252 @@
+{
+  "about": "Copy of the vocabulary section of the work-status contract fixture of the Zensu backend repository. The CLI tests compare their closed lists with it. Set ZENSU_WORK_STATUS_CASES to the path of the original to compare this copy with it.",
+  "fixtureVersion": 1,
+  "sourceCommit": "81aecb985ecefa8afabfe32fe2ecfd4e4220c758",
+  "vocabulary": {
+    "stations": [
+      "order",
+      "plan",
+      "build",
+      "review",
+      "change_request",
+      "acceptance",
+      "merge",
+      "release",
+      "live"
+    ],
+    "stationStates": [
+      "pending",
+      "active",
+      "done",
+      "blocked",
+      "not_applicable",
+      "not_tracked"
+    ],
+    "turnHolders": [
+      "person",
+      "agent",
+      "automation",
+      "nobody"
+    ],
+    "turnReasons": [
+      "closed",
+      "blocked",
+      "plan_approval",
+      "question",
+      "permission",
+      "input",
+      "working",
+      "checks_running",
+      "deploy_running",
+      "checks_failed",
+      "acceptance",
+      "merge",
+      "release_pending",
+      "rollout_pending",
+      "no_signal",
+      "reply_ready",
+      "resting",
+      "not_started",
+      "queued",
+      "complete"
+    ],
+    "factKinds": [
+      "session_started",
+      "session_ended",
+      "turn_started",
+      "turn_ended",
+      "segment_started",
+      "segment_ended",
+      "step_progress",
+      "wait_requested",
+      "wait_resolved",
+      "review_round_started",
+      "review_round_ended",
+      "change_request_linked",
+      "workspace_state",
+      "evidence_reported",
+      "blocked",
+      "resumed",
+      "signal",
+      "work_ended"
+    ],
+    "signalKinds": [
+      "session_started",
+      "session_ended",
+      "turn_started",
+      "turn_ended",
+      "segment_started",
+      "segment_ended",
+      "step_progress",
+      "wait_requested",
+      "wait_resolved",
+      "review_round_started",
+      "review_round_ended",
+      "change_request_linked",
+      "workspace_state",
+      "evidence_reported",
+      "blocked",
+      "resumed",
+      "signal",
+      "work_ended",
+      "work_started",
+      "result_submitted",
+      "result_accepted",
+      "result_revoked",
+      "work_order_updated"
+    ],
+    "waitSubjects": [
+      "plan_approval",
+      "question",
+      "permission",
+      "input"
+    ],
+    "waitClasses": [
+      "required_approval",
+      "operational_intervention",
+      "routine_review"
+    ],
+    "waitSubjectClasses": {
+      "plan_approval": "required_approval",
+      "question": "operational_intervention",
+      "permission": "operational_intervention",
+      "input": "operational_intervention"
+    },
+    "waitSubjectOutcomes": {
+      "plan_approval": [
+        "approved",
+        "rejected",
+        "cancelled"
+      ],
+      "question": [
+        "answered",
+        "cancelled"
+      ],
+      "permission": [
+        "granted",
+        "denied",
+        "cancelled"
+      ],
+      "input": [
+        "answered",
+        "cancelled"
+      ]
+    },
+    "sources": [
+      "session",
+      "work_order",
+      "person",
+      "ci",
+      "forge",
+      "release",
+      "deployment"
+    ],
+    "assurances": [
+      "reported",
+      "confirmed"
+    ],
+    "origins": [
+      "capture",
+      "web",
+      "work_order"
+    ],
+    "harnesses": [
+      "claude_code",
+      "codex",
+      "copilot",
+      "kiro",
+      "antigravity",
+      "other"
+    ],
+    "sessionEndReasons": [
+      "ended",
+      "interrupted",
+      "unknown"
+    ],
+    "phases": [
+      "plan",
+      "implement",
+      "review",
+      "fix",
+      "verify"
+    ],
+    "segmentOutcomes": [
+      "completed",
+      "interrupted",
+      "failed"
+    ],
+    "waitOutcomes": [
+      "approved",
+      "rejected",
+      "answered",
+      "granted",
+      "denied",
+      "cancelled"
+    ],
+    "severities": [
+      "critical",
+      "high",
+      "medium",
+      "low",
+      "info"
+    ],
+    "findingStates": [
+      "open",
+      "in_progress",
+      "fixed",
+      "dismissed"
+    ],
+    "changeRequestStates": [
+      "open",
+      "merged",
+      "closed"
+    ],
+    "evidenceChecks": [
+      "tests",
+      "typecheck",
+      "coverage",
+      "lint",
+      "build"
+    ],
+    "evidenceOutcomes": [
+      "passed",
+      "failed",
+      "skipped"
+    ],
+    "blockKinds": [
+      "review_limit",
+      "worker_error",
+      "precondition",
+      "other"
+    ],
+    "activities": [
+      "editing",
+      "testing",
+      "reviewing",
+      "committing",
+      "delegating",
+      "idle"
+    ],
+    "workEndReasons": [
+      "finished",
+      "abandoned",
+      "handed_off",
+      "closed_by_person"
+    ],
+    "resultStates": [
+      "submitted",
+      "accepted",
+      "revoked"
+    ],
+    "checkStates": [
+      "pending",
+      "passing",
+      "failing"
+    ],
+    "deploymentStates": [
+      "in_progress",
+      "succeeded",
+      "failed"
+    ]
+  }
+}

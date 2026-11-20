@@ -314,3 +314,25 @@ func TestNewRootCmd_WritesTheJSONErrorLineForFlagAndArgumentErrors(t *testing.T)
 		})
 	}
 }
+
+func TestWriteError_NamesTheCodeOfALocalError(t *testing.T) {
+	ran := jsonByDefault(&cobra.Command{Use: "status", RunE: func(*cobra.Command, []string) error { return nil }})
+	if err := ran.Flags().Set("json", "true"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{&codedError{code: "unsupported", message: "no route"}, "error: no route\n" + `{"error":{"code":"unsupported","message":"no route"}}` + "\n"},
+		{fmt.Errorf("status: %w", &codedError{code: "not_found", message: "work not available"}), "error: status: work not available\n" + `{"error":{"code":"not_found","message":"status: work not available"}}` + "\n"},
+		{&codedError{code: "Not A Code", message: "no route"}, "error: no route\n" + `{"error":{"message":"no route"}}` + "\n"},
+		{errors.New("plain"), "error: plain\n" + `{"error":{"message":"plain"}}` + "\n"},
+	} {
+		stderr := &bytes.Buffer{}
+		WriteError(stderr, ran, []string{"status", "--json"}, tc.err)
+		if stderr.String() != tc.want {
+			t.Errorf("stderr = %q\nwant     %q", stderr.String(), tc.want)
+		}
+	}
+}

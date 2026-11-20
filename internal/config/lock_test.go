@@ -156,3 +156,35 @@ func TestUpdateStored_WaitsForTheSessionLock(t *testing.T) {
 		t.Error("the update ran without holding the lock")
 	}
 }
+
+func TestUpdateStored_LeavesAStoredLoginItCannotReadUntouched(t *testing.T) {
+	dir := testutil.RequireIsolatedConfigDir(t)
+	testutil.ClearIsolatedConfigDir(t, dir)
+	path := filepath.Join(dir, "hosts.json")
+	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	err := config.UpdateStored(context.Background(), func(*config.Config) bool {
+		called = true
+		return true
+	})
+	if err == nil || called {
+		t.Fatalf("UpdateStored over an unreadable stored login: error %v, update called %t", err, called)
+	}
+	if raw, _ := os.ReadFile(path); string(raw) != "{not json" {
+		t.Errorf("the unreadable stored login was rewritten: %q", raw)
+	}
+}
+
+func TestLockSession_ReportsAConfigDirectoryItCannotCreate(t *testing.T) {
+	occupied := filepath.Join(t.TempDir(), "occupied")
+	if err := os.WriteFile(occupied, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ZENSU_CONFIG_DIR", filepath.Join(occupied, "zensu"))
+	if unlock, err := config.LockSession(context.Background()); err == nil {
+		unlock()
+		t.Fatal("LockSession took a lock below a regular file")
+	}
+}

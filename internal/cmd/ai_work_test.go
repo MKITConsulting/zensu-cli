@@ -158,6 +158,81 @@ func TestAIWorkReviewFile(t *testing.T) {
 	}
 }
 
+func TestAIWorkStart_NamesTheTaskOfTheGoal(t *testing.T) {
+	aiWorkTestRepo(t)
+	const product = "9e733c18-b6b7-4a18-a17d-4dfd2d15f21a"
+	const feature = "891419fa-f7e4-4a52-8123-2bef791876dd"
+	const task = "42a9be6a-a419-40a5-b24d-64c962f23159"
+	const units = "/api/ai-work/capture/units"
+	srv, api := newFakeAPI(t, map[string]func(recordedRequest) fakeReply{
+		"GET /api/ai-work/capture/context": func(r recordedRequest) fakeReply {
+			return fakeReply{Status: 200, Body: map[string]any{"productId": product, "productName": "Product", "featureId": r.Query.Get("featureId"), "featureRevisionId": "", "featureTitle": "Feature", "reportingUserId": task, "organizationId": product}}
+		},
+		"POST " + units: reply(201, map[string]any{"id": product}),
+	})
+	f, _ := loginFactory(srv)
+	run := func(args ...string) error {
+		return runCmd(t, NewAIWorkCmd(f), append([]string{"start", "--id", product, "--title", "Goal"}, args...)...)
+	}
+	started := func() []recordedRequest {
+		var posts []recordedRequest
+		for _, call := range api.calls() {
+			if call.Method == "POST" && call.Path == units {
+				posts = append(posts, call)
+			}
+		}
+		return posts
+	}
+
+	for _, tc := range []struct {
+		name  string
+		scope []string
+		field string
+	}{
+		{"a feature goal", []string{"--feature", feature}, "featureId"},
+		{"a maintenance goal", []string{"--maintenance-reason", "Upgrade build tooling", "--product", product}, "maintenanceReason"},
+	} {
+		sent := len(started())
+		if err := run(append(tc.scope, "--task", task)...); err != nil {
+			t.Fatalf("%s with a task: %v", tc.name, err)
+		}
+		if err := run(tc.scope...); err != nil {
+			t.Fatalf("%s without a task: %v", tc.name, err)
+		}
+		posts := started()
+		if len(posts) != sent+2 {
+			t.Fatalf("%s: %d declarations sent, want 2", tc.name, len(posts)-sent)
+		}
+		with, without := posts[sent].Body, posts[sent+1].Body
+		if with["taskId"] != task || with[tc.field] == nil || with["productId"] != product {
+			t.Errorf("%s must name the task beside its scope: %v", tc.name, with)
+		}
+		if _, named := without["taskId"]; named {
+			t.Errorf("%s without --task must not send a task: %v", tc.name, without)
+		}
+	}
+
+	sent := len(api.calls())
+	const invalid = "--task must be a canonical non-nil task UUID"
+	for _, tc := range []struct {
+		want  string
+		flags []string
+	}{
+		{invalid, []string{"--maintenance-reason", "Build", "--product", product, "--task", "ZEN-42"}},
+		{invalid, []string{"--feature", feature, "--task", ""}},
+		{invalid, []string{"--feature", feature, "--task", "00000000-0000-0000-0000-000000000000"}},
+		{"legacy replay cannot name a task", []string{"--legacy-metadata", "--task", task}},
+		{"cross-product work cannot name a task", []string{"--cross-product-reason", "Shared validation", "--task", task}},
+	} {
+		if err := run(tc.flags...); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("start %v: got %v, want an error containing %q", tc.flags, err, tc.want)
+		}
+	}
+	if got := len(api.calls()); got != sent {
+		t.Errorf("a refused task sent %d requests", got-sent)
+	}
+}
+
 func aiWorkTestRepo(t *testing.T) {
 	t.Helper()
 	t.Chdir(t.TempDir())

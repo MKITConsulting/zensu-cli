@@ -75,7 +75,9 @@
         "context",
         "get",
         "recover",
+        "report",
         "start",
+        "status",
         "submit"
       ],
       "runnable": false,
@@ -328,6 +330,332 @@
         }
       }
     },
+    "zensu ai-work report": {
+      "use": "report [<work-id>]",
+      "aliases": [],
+      "subcommands": [],
+      "runnable": true,
+      "hidden": false,
+      "deprecated": false,
+      "args": {
+        "min": 0,
+        "max": 1
+      },
+      "flags": {
+        "activity": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "api-url": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": true,
+          "hidden": false,
+          "deprecated": false
+        },
+        "batch": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "block-kind": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "branch": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "chain-closed": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "check": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "client-version": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "commits-ahead": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "done": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "failed": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "files-changed": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "finding": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "findings-blocking": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "findings-fixed": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "findings-open": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "harness": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "head": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "help": {
+          "shorthand": "h",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "json": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "kind": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "label": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "limit-reached": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "number": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "outcome": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "passed": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "percent": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "phase": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "reason": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "repository": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "round": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "session": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": true,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "state": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "subject": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "timeout": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "total": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "uncommitted-files": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "url": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "worktree": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        }
+      }
+    },
     "zensu ai-work start": {
       "use": "start",
       "aliases": [],
@@ -444,6 +772,14 @@
           "hidden": false,
           "deprecated": false
         },
+        "task": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
         "title": {
           "shorthand": "",
           "takesValue": true,
@@ -453,6 +789,52 @@
           "deprecated": false
         },
         "work-order": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        }
+      }
+    },
+    "zensu ai-work status": {
+      "use": "status [<work-id>]",
+      "aliases": [],
+      "subcommands": [],
+      "runnable": true,
+      "hidden": false,
+      "deprecated": false,
+      "args": {
+        "min": 0,
+        "max": 1
+      },
+      "flags": {
+        "api-url": {
+          "shorthand": "",
+          "takesValue": true,
+          "required": false,
+          "persistent": true,
+          "hidden": false,
+          "deprecated": false
+        },
+        "help": {
+          "shorthand": "h",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "json": {
+          "shorthand": "",
+          "takesValue": false,
+          "required": false,
+          "persistent": false,
+          "hidden": false,
+          "deprecated": false
+        },
+        "session": {
           "shorthand": "",
           "takesValue": true,
           "required": false,

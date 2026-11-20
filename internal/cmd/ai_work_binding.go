@@ -137,7 +137,7 @@ func aiWorkBindingLocation(ctx context.Context) (string, string, error) {
 	}
 	// No repository URL, credentials or local path is persisted or transmitted.
 	fingerprint := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(origin)))
-	dir = filepath.Join(dir, "zensu-ai-work-v1")
+	dir = filepath.Join(dir, aiWorkCaptureDirName)
 	if st, e := os.Lstat(dir); e == nil && (!st.IsDir() || st.Mode()&os.ModeSymlink != 0) {
 		return "", "", fmt.Errorf("unsafe capture binding directory")
 	} else if e != nil && !os.IsNotExist(e) {

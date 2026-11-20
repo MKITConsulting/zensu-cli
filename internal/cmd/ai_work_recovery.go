@@ -43,7 +43,7 @@ func newAIWorkRecoverCmd(f *Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			dir := filepath.Join(gitDir, "zensu-ai-work-v1")
+			dir := filepath.Join(gitDir, aiWorkCaptureDirName)
 			if err = captureDirectory(dir, false); err != nil {
 				return err
 			}

@@ -1,4 +1,4 @@
-package config
+package safefile
 
 import "time"
 
@@ -7,6 +7,10 @@ const (
 	replaceRetryFirst  = 2 * time.Millisecond
 	replaceRetryMax    = 128 * time.Millisecond
 )
+
+func Replace(src, dst string) error {
+	return replaceFile(src, dst)
+}
 
 func replaceWithRetry(rename func(string, string) error, transient func(error) bool, sleep func(time.Duration), src, dst string) error {
 	delay := replaceRetryFirst

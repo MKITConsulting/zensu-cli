@@ -261,9 +261,11 @@ Run `zensu ghost scan --help` for the exact candidate JSON shape. Use
 files to matching existing features (by slug) instead of failing on conflicts.
 Omit it only on the very first scan of an empty product.
 
-`ghost apply` can return server warnings, for example when it linked source
-files without a repository: `warning: <message>` lines on stderr, or the
-`warnings` array (`code`, `message`) with `--json`. Pass them on to the user.
+`ghost scan` and `ghost apply` can return server warnings, for example when a
+candidate's slug matches an existing feature or when apply linked source files
+without a repository: `warning: <message>` lines on stderr, or the `warnings`
+array with `--json` (strings from `ghost scan`, objects with `code` and
+`message` from `ghost apply`). Pass them on to the user.
 
 ### Greenfield: bootstrap from a vision
 

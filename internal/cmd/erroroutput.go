@@ -71,6 +71,30 @@ func writeWarning(w io.Writer, message string) error {
 	return err
 }
 
+type serverWarning struct{ Message string }
+
+func (warning *serverWarning) UnmarshalJSON(data []byte) error {
+	if json.Unmarshal(data, &warning.Message) == nil {
+		return nil
+	}
+	var object struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(data, &object) == nil {
+		warning.Message = object.Message
+	}
+	return nil
+}
+
+func writeWarnings(w io.Writer, warnings []serverWarning) error {
+	for _, warning := range warnings {
+		if err := writeWarning(w, warning.Message); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func jsonErrorRequested(ran *cobra.Command, args []string, err error) bool {
 	if ran == nil {
 		return false

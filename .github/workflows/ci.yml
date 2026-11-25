@@ -26,6 +26,21 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+  windows:
+    name: Windows install script and coverage action
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test install.ps1 and the Windows branch of the coverage action
+        shell: bash
+        env:
+          ZENSU_TEST_PUBLISHED_RELEASE: v0.23.0
+        run: go test ./internal/ciaction/ ./internal/update/ -run 'TestInstallPS1|TestPublishedRelease_InstallPS1|TestCoverageAction_InstallsWithInstallPS1OnWindowsRunners|TestWindowsInstallScript' -count=1 -v
+
   coverage-action:
     name: Coverage action without a key
     runs-on: ubuntu-latest

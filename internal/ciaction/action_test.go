@@ -29,10 +29,12 @@ const (
 )
 
 var (
-	cliOnce    sync.Once
-	cliDir     string
-	cliArchive []byte
-	cliErr     error
+	cliOnce     sync.Once
+	archiveOnce sync.Once
+	cliDir      string
+	cliBinary   []byte
+	cliArchive  []byte
+	cliErr      error
 )
 
 func TestMain(m *testing.M) {
@@ -43,7 +45,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func builtCLIArchive(t *testing.T) []byte {
+func builtCLIBinary(t *testing.T) []byte {
 	t.Helper()
 	cliOnce.Do(func() {
 		if cliDir, cliErr = os.MkdirTemp("", "zensu-ciaction-"); cliErr != nil {
@@ -56,16 +58,18 @@ func builtCLIArchive(t *testing.T) []byte {
 			cliErr = fmt.Errorf("go build ./cmd/zensu: %v\n%s", err, out)
 			return
 		}
-		binary, err := os.ReadFile(bin)
-		if err != nil {
-			cliErr = err
-			return
-		}
-		cliArchive = tarball(t, binary)
+		cliBinary, cliErr = os.ReadFile(bin)
 	})
 	if cliErr != nil {
 		t.Fatal(cliErr)
 	}
+	return cliBinary
+}
+
+func builtCLIArchive(t *testing.T) []byte {
+	t.Helper()
+	binary := builtCLIBinary(t)
+	archiveOnce.Do(func() { cliArchive = tarball(t, binary) })
 	return cliArchive
 }
 
@@ -296,6 +300,8 @@ type actionRun struct {
 	inputs    map[string]string
 	eventName string
 	env       map[string]string
+	bash      string
+	path      string
 	workspace string
 	checkout  string
 	home      string
@@ -314,17 +320,45 @@ type runSetup struct {
 	eventName string
 	event     map[string]any
 	sha       string
-	runnerOS  string
+	windows   bool
+}
+
+func requireWindowsActionRunner(t *testing.T) (bash, path string) {
+	t.Helper()
+	powerShells(t)
+	if runtime.GOOS != "windows" {
+		requireUnixRunner(t)
+		stub := t.TempDir()
+		if err := os.WriteFile(filepath.Join(stub, "cygpath"), []byte("#!/bin/sh\nprintf '%s\\n' \"$2\"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return "bash", stub + string(os.PathListSeparator) + os.Getenv("PATH")
+	}
+	bash = filepath.Join(os.Getenv("ProgramFiles"), "Git", "bin", "bash.exe")
+	if _, err := os.Stat(bash); err != nil {
+		t.Fatalf("the Windows branch of the action runs in Git Bash: %v", err)
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Fatalf("git is needed: %v", err)
+	}
+	return bash, os.Getenv("PATH")
 }
 
 func newActionRun(t *testing.T, workspace string, release *fakeRelease, key signingKey, setup runSetup) *actionRun {
 	t.Helper()
-	requireUnixRunner(t)
+	bash, path := "bash", os.Getenv("PATH")
+	if setup.windows {
+		bash, path = requireWindowsActionRunner(t)
+	} else {
+		requireUnixRunner(t)
+	}
 	r := &actionRun{
 		t:         t,
 		action:    loadAction(t),
 		inputs:    setup.inputs,
 		eventName: setup.eventName,
+		bash:      bash,
+		path:      path,
 		workspace: workspace,
 		checkout:  t.TempDir(),
 		home:      t.TempDir(),
@@ -350,6 +384,7 @@ func newActionRun(t *testing.T, workspace string, release *fakeRelease, key sign
 		t.Fatal(err)
 	}
 	patchedInstallScript(t, r.checkout, key.public)
+	patchedInstallPS1(t, r.checkout, key.public)
 	eventPath := filepath.Join(r.runner, "event.json")
 	eventData, err := json.Marshal(setup.event)
 	if err != nil {
@@ -358,9 +393,9 @@ func newActionRun(t *testing.T, workspace string, release *fakeRelease, key sign
 	if err := os.WriteFile(eventPath, eventData, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runnerOS := setup.runnerOS
-	if runnerOS == "" {
-		runnerOS = map[string]string{"darwin": "macOS", "linux": "Linux"}[runtime.GOOS]
+	runnerOS := map[string]string{"darwin": "macOS", "linux": "Linux"}[runtime.GOOS]
+	if setup.windows {
+		runnerOS = "Windows"
 	}
 	r.env = map[string]string{
 		"CI":                  "true",
@@ -488,14 +523,23 @@ func (r *actionRun) runStep(step actionStep) bool {
 	if err := os.WriteFile(output, nil, 0o644); err != nil {
 		r.t.Fatal(err)
 	}
-	env := []string{"PATH=" + os.Getenv("PATH"), "LANG=C", "LC_ALL=C", "GITHUB_OUTPUT=" + output}
+	var env []string
+	if runtime.GOOS == "windows" {
+		for _, kv := range os.Environ() {
+			if name, _, _ := strings.Cut(kv, "="); inheritedOnWindows(name) && !strings.EqualFold(name, "PATH") {
+				env = append(env, kv)
+			}
+		}
+		env = append(env, "TEMP="+r.tmp, "TMP="+r.tmp)
+	}
+	env = append(env, "PATH="+r.path, "LANG=C", "LC_ALL=C", "GITHUB_OUTPUT="+output)
 	for k, v := range r.env {
 		env = append(env, k+"="+v)
 	}
 	for k, v := range step.Env {
 		env = append(env, k+"="+r.interpolate(v))
 	}
-	cmd := exec.Command("bash", "--noprofile", "--norc", "-eo", "pipefail", script)
+	cmd := exec.Command(r.bash, "--noprofile", "--norc", "-eo", "pipefail", script)
 	cmd.Dir = r.workspace
 	if dir := r.interpolate(step.WorkingDirectory); dir != "" {
 		if !filepath.IsAbs(dir) {
@@ -755,18 +799,59 @@ func TestCoverageAction_StopsWhenTheReleaseCannotBeVerified(t *testing.T) {
 	}
 }
 
-func TestCoverageAction_RefusesWindowsRunners(t *testing.T) {
-	requireUnixRunner(t)
-	key := newSigningKey(t)
-	release := newFakeRelease(t, loadAction(t).Inputs["version"].Default, fakeBinary, key)
-	z := newFakeZensu(t)
-	h := newHistory(t)
-	run := newActionRun(t, h.dir, release, key, runSetup{inputs: configuredInputs(z, nil), eventName: "push", event: map[string]any{}, sha: h.billing, runnerOS: "Windows"}).run()
-	if run.failed != "install" || run.logs["install"] != "::error::The Zensu coverage action runs on Linux and macOS runners. On Windows, install the CLI yourself and run zensu ci commits, pull-request and coverage with --api-key-stdin; install.ps1 checks the archive checksum but not the release signature.\n" {
-		t.Fatalf("ran %v failed %q:\n%s", run.ran, run.failed, run.allLogs())
+func userPathOf(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return ""
 	}
-	if release.downloads() != 0 || len(z.recorded()) != 0 {
-		t.Fatal("a Windows runner downloaded or uploaded")
+	out, code := runPowerShellCommand(t, powerShells(t)[0], "[Environment]::GetEnvironmentVariable('Path', 'User')", nil)
+	if code != 0 {
+		t.Fatalf("reading the user PATH: exit %d\n%s", code, out)
+	}
+	return out
+}
+
+func TestCoverageAction_InstallsWithInstallPS1OnWindowsRunners(t *testing.T) {
+	for name, forged := range map[string]bool{"signed release": false, "forged signature": true} {
+		t.Run(name, func(t *testing.T) {
+			openssl := requireOpenSSL3(t)
+			key := newSigningKey(t)
+			release := newWindowsRelease(t, loadAction(t).Inputs["version"].Default, builtCLIBinary(t), key)
+			if forged {
+				release.write(release.checksums+".sig", []byte(newSigningKey(t).sign(release.read(release.checksums))+"\n"))
+			}
+			z := newFakeZensu(t)
+			h := newHistory(t)
+			run := newActionRun(t, h.dir, release, key, runSetup{inputs: configuredInputs(z, nil), eventName: "pull_request", event: pullRequestEvent(h), sha: h.bump, windows: true})
+			run.path = filepath.Dir(openssl) + string(os.PathListSeparator) + run.path
+			before := userPathOf(t)
+			run.run()
+			if after := userPathOf(t); after != before {
+				t.Errorf("the install step changed the user PATH from %q to %q", before, after)
+			}
+			if strings.Contains(run.logs["install"], "to your PATH") || strings.Contains(run.logs["install"], "to your user PATH") {
+				t.Errorf("the install step touched the PATH:\n%s", run.logs["install"])
+			}
+			if forged {
+				want := "error: the signature of " + release.checksums + " matches no zensu release key, so the download may have been tampered with\n"
+				if !slices.Equal(run.ran, []string{"config", "install"}) || run.failed != "install" || !strings.HasSuffix(strings.ReplaceAll(run.logs["install"], "\r\n", "\n"), want) {
+					t.Fatalf("ran %v failed %q:\n%s", run.ran, run.failed, run.allLogs())
+				}
+				if n := len(z.recorded()); n != 0 || release.requested(release.archive) {
+					t.Fatalf("%d API calls and archive downloaded %v after a forged signature", n, release.requested(release.archive))
+				}
+				return
+			}
+			run.requireSteps("config", "install", "commits", "pull-request")
+			if bin := run.outputs["install"]["bin"]; !strings.HasSuffix(bin, "/zensu.exe") || !strings.Contains(run.logs["install"], "Verified the release signature.") {
+				t.Fatalf("bin %q, install output:\n%s", bin, run.logs["install"])
+			}
+			calls := z.recorded()
+			if len(calls) != 2 || calls[0].Path != "/api/ci/commits" || calls[1].Path != "/api/ci/pull-requests" || calls[0].Key != actionKey {
+				t.Fatalf("calls = %+v", calls)
+			}
+			run.requireKeyNowhere()
+		})
 	}
 }
 
@@ -912,7 +997,8 @@ func TestCoverageAction_StepsReadInputsOnlyThroughEnv(t *testing.T) {
 		}
 	}
 	install := action.Runs.Steps[1]
-	if install.ID != "install" || install.Env["ZENSU_REQUIRE_SIGNATURE"] != "1" || !strings.Contains(install.Run, `"${GITHUB_ACTION_PATH}/../../install.sh"`) {
+	if install.ID != "install" || install.Env["ZENSU_REQUIRE_SIGNATURE"] != "1" || install.Env["ZENSU_NO_MODIFY_PATH"] != "1" ||
+		!strings.Contains(install.Run, `"${GITHUB_ACTION_PATH}/../../install.sh"`) || !strings.Contains(install.Run, `"${GITHUB_ACTION_PATH}/../../install.ps1"`) {
 		t.Errorf("install step = %+v", install)
 	}
 }

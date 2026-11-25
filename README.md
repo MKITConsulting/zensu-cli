@@ -70,11 +70,18 @@ irm https://zensu.dev/install.ps1 | iex
 ```
 
 Installs the latest release to `%LOCALAPPDATA%\Programs\zensu` and adds it to your
-user `PATH` (restart the terminal afterwards). Override with `$env:ZENSU_INSTALL_DIR`,
-pin a version with `$env:ZENSU_VERSION`. Only `amd64` is published; on Windows arm64
-it installs the amd64 build, which runs under emulation. It checks the archive's SHA-256
-against the release checksums but not their signature, which the install script on
-Linux and macOS also verifies.
+user `PATH` (restart the terminal afterwards; `$env:ZENSU_NO_MODIFY_PATH=1` leaves the
+`PATH` alone). Override with `$env:ZENSU_INSTALL_DIR`, pin a version with
+`$env:ZENSU_VERSION`. Only `amd64` is published; on Windows arm64 it installs the amd64
+build, which runs under emulation. Like the script for Linux and macOS, it checks the
+Ed25519 signature of the release checksums before it downloads the archive, and then the
+archive's SHA-256, with the same rules and variables: OpenSSL 3 or later verifies the
+signature (`openssl` on the `PATH`, else the OpenSSL that Git for Windows bundles;
+`$env:ZENSU_OPENSSL=<path>` names another binary), a wrong signature always stops the
+install, and so does a missing one for every release after v0.18.0. Without a verifier,
+or for an older release without a signature, it says so and checks only the checksums;
+`$env:ZENSU_REQUIRE_SIGNATURE=1` makes both cases fail. `$env:ZENSU_RELEASE_URL` installs
+from a mirror and needs `$env:ZENSU_VERSION`.
 
 ### Prebuilt binaries
 
@@ -446,7 +453,7 @@ jobs:
 The test step must write an Istanbul json-summary report, as Vitest and Jest do with the
 `json-summary` coverage reporter. Pin the action by the commit SHA of a release tag, with
 the tag as a comment, so Dependabot updates both together. The action installs the CLI release of its own
-version with this repository's `install.sh` and requires its signature, then runs
+version with this repository's `install.sh` (`install.ps1` on Windows) and requires its signature, then runs
 `zensu ci commits`, `zensu ci pull-request` on `pull_request` events and
 `zensu ci coverage` when `coverage-file` is set. A failed commit link fails the job,
 but the pull request and coverage uploads still run. Zensu learns that a pull request
@@ -474,11 +481,12 @@ Inputs:
 - `release-url`: mirror of the release downloads (`<url>/<tag>/<asset>`) for runners
   without access to GitHub; defaults to the GitHub releases.
 
-The action runs on Linux and macOS runners and needs bash, git, curl or wget, tar,
-`sha256sum` or `shasum` and OpenSSL 3 (GitHub-hosted runners have all of them), plus a
-checkout of the repository for the commit links. On a Windows runner it fails; install
-the CLI yourself there and run `zensu ci` with `--api-key-stdin`. Note that
-`install.ps1` checks the archive checksum but not the release signature.
+The action runs on Linux, macOS and Windows runners. On Linux and macOS it needs bash,
+git, curl or wget, tar, `sha256sum` or `shasum` and OpenSSL 3. On Windows it runs
+`install.ps1` from Git Bash with PowerShell 7 (`pwsh`, else Windows PowerShell 5.1), needs
+git and OpenSSL 3 (on the `PATH`, or the one Git for Windows bundles) and leaves the
+runner's user `PATH` unchanged. GitHub-hosted runners have all of them. Every runner
+also needs a checkout of the repository for the commit links.
 
 ### GitLab and other CI
 

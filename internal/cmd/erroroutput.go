@@ -28,6 +28,13 @@ func jsonByDefault(cmd *cobra.Command) *cobra.Command {
 	return cmd
 }
 
+type codedError struct {
+	code    string
+	message string
+}
+
+func (e *codedError) Error() string { return e.message }
+
 type errorLine struct {
 	Error errorDetail `json:"error"`
 }
@@ -52,10 +59,13 @@ func WriteError(w io.Writer, ran *cobra.Command, args []string, err error) {
 		return
 	}
 	detail := errorDetail{Message: text}
+	var coded *codedError
 	if e, ok := apiErrorOf(err); ok {
 		detail.Status = e.status
 		detail.Code = e.printableCode()
 		detail.Message = strings.ReplaceAll(text, e.text, e.plain)
+	} else if errors.As(err, &coded) && printableCodePattern.MatchString(coded.code) {
+		detail.Code = coded.code
 	}
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)

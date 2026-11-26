@@ -84,7 +84,10 @@ zensu auth status   # authenticated? against which host?
    one JSON object,
    `{"error":{"status":409,"code":"stale_attempt","message":"..."}}`, so branch
    on its `code`. `code` is absent when the API sent none, and a network, flag
-   or validation error carries only `message`.
+   or validation error carries only `message`. `ai-work status` and
+   `ai-work report` add the codes `unsupported`, `not_found` and
+   `ai_work_progress_unit_full` of their own: these carry no `status` and
+   appear only in this line.
 3. **Never guess ids.** Resolve product, component, and feature ids with
    `list`/`get` commands or ask the user.
 4. **Status changes go through the dedicated command** —
@@ -294,6 +297,35 @@ zensu pulse summary <session-id> --json
 
 Sessions are idempotent per HEAD SHA — starting again with the same SHA
 continues the session.
+
+### Work progress and status (ai-work)
+
+`ai-work report` tells the server where a captured piece of work stands, and
+`ai-work status` reads what the server derives from it. Both need the personal
+login of `zensu auth login`; `--session` is the exact capture key the capture
+plugin supplies and is never sent.
+
+```bash
+zensu ai-work start --id <work-id> --title "Agreed objective" --feature <feature-id> --task <task-id>
+zensu ai-work report --session <capture-key> --kind segment_started --phase implement
+zensu ai-work report --session <capture-key> --kind step_progress --done 3 --total 8 --label "Wire the status list"
+zensu ai-work status --session <capture-key> --json   # stations, whose turn it is, last signal
+zensu ai-work status <work-id> --json
+```
+
+`start --task` names the task of the goal; keep it on every retry of that
+start. `report` prints a JSON result and exits `0` also when it delivered
+nothing: `sent`, `queued` (kept for the next call for any work of this
+worktree), `merged`, `skipped` (no active goal, or capture is paused) or
+`unsupported` (the server has no progress route yet). Go on with the work in
+every case; never retry it in a loop. A fact is a session's statement and
+confirms nothing: pass only the closed values and one-line labels its flags
+take, never a prompt, an answer, a question text, a command, code, a diff or a
+path. `status` shows nine stations, whose turn it is and the newest facts; a
+station a session reported is not confirmed, and nothing in it is an
+acceptance. Against a server without the status route it fails with the error
+code `unsupported`. Kinds, flags, `--batch` and the result fields:
+[reference.md](reference.md#ai-work).
 
 ### Documentation
 

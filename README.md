@@ -242,7 +242,7 @@ and flags of each group.
 | `security` | Feature security classification, tests, reviews, and posture |
 | `ghost` | Ghost scans and feature candidates |
 | `pulse` | Development sessions |
-| `ai-work` | Authenticated work declarations and result submissions; human acceptance stays in the web UI |
+| `ai-work` | Authenticated work declarations, progress facts, status reads and result submissions; human acceptance stays in the web UI |
 | `work` | Work orders for autonomous delivery: dispatch, claim, session reporting, questions, decisions |
 | `plan` | Work plans: push plan files, follow their status, approve, finalize, abandon |
 | `link` | Link tests, docs, and source files to a feature |
@@ -766,6 +766,62 @@ reads the current authenticated identity without creating work or a binding.
 The backend rejects unassigned new starts; old exact retries remain idempotent.
 Existing unassigned history is shown separately in the web UI and cannot receive
 new automatic submissions. Upgrade the backend before this CLI and the plugins.
+
+### Work progress and status
+
+`zensu ai-work report` reports progress facts for a piece of captured work, and
+`zensu ai-work status` reads the status the server derives from them, from CI,
+the forge and a person's decisions. Both use the personal OAuth login and only
+answer the work's owner. The server needs backend v0.120.0 or later.
+
+```bash
+zensu ai-work start --id <goal-uuid> --title <objective> --feature <feature-uuid> --task <task-uuid>
+zensu ai-work report --session <capture-key> --kind segment_started --phase implement
+zensu ai-work report --session <capture-key> --kind step_progress --done 3 --total 8 --label "Wire the status list"
+zensu ai-work report <work-uuid> --session <capture-key> --batch < facts.jsonl
+zensu ai-work status <work-uuid>
+zensu ai-work status --session <capture-key>
+```
+
+`--task` on `start` names the task the goal works on. The server stores it when
+the task belongs to the goal's feature or product and refuses it otherwise;
+keep it unchanged when retrying the start. A cross-product goal cannot name one.
+
+A fact has one of eighteen kinds (`session_started`, `segment_started`,
+`step_progress`, `review_round_ended`, `evidence_reported`, `blocked`, `signal`,
+`work_ended` and others; `zensu ai-work report --help` lists them with their
+flags) and takes only closed values, counts and one-line labels of at most 120
+characters. No prompt, answer, question text, command, code, diff or file path
+has a field. `--session` is the exact capture key the plugin supplies; it names
+the reporting session and is never sent. Without a work id the work is the one
+this worktree's capture receipt of that session names. `--batch` reads up to 100
+facts from stdin, one JSON object per line: `{"kind":"...","payload":{...}}`.
+
+A queue under `<git-dir>/zensu-ai-work-v1/progress/` owns the event ids. It sends
+one request at a time per work, repeats an unanswered batch unchanged, merges
+the `signal` facts of a session to one per minute and keeps what it could not
+send within `--timeout` (8s by default) for the next call. A call that delivered
+its own facts also sends what another work of the worktree left behind. Apart
+from the `unsupported` verdict, only an answer that carries one of the API's
+error codes drops a fact or refuses the work; any other answer keeps the batch.
+The command prints a JSON result and exits 0 for each of its outcomes:
+
+- `sent`: everything queued reached the server; facts it refused for good are
+  listed in `dropped`.
+- `queued`: facts wait for the next call; `reason` says why (`network`,
+  `timeout`, `server_error`, `busy`, `backoff` or `rate_limited`).
+- `merged`: the signal waits in its session's one-per-minute slot.
+- `unsupported`: the server has no progress route yet; nothing is kept.
+- `skipped`: the receipt allows no report: no active goal, capture paused, a
+  legacy or unreadable receipt, or another API host.
+
+Exit code 1 is left to invalid input, a missing personal login, a local failure
+such as a missing Git worktree and a refusal of the whole work. A fact is a
+session's statement: it never confirms a station and never accepts a result.
+`status` prints the server's answer: nine stations with their
+state and source, the current station, whose turn it is and why, the last
+signal, what the sessions reported and the newest facts. Against a server
+without the status route it fails with the error code `unsupported`.
 
 CLI setup and troubleshooting: [Install or update the CLI, including `zensu update` and older-version recovery](docs/cli-install-update.md).
 

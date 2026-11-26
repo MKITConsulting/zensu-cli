@@ -16,14 +16,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	aiWorkCaptureDirName = "zensu-ai-work-v1"
+	aiWorkUnitsPath      = "/api/ai-work/capture/units"
+)
+
+func aiWorkUnitPath(workID string) string { return aiWorkUnitsPath + "/" + workID }
+
 // Capture is deliberately a different API from human decisions. Plugins share
 // this typed command surface; neither credentials nor a caller-supplied user ID
 // become proof that a human accepted a result.
 func NewAIWorkCmd(f *Factory) *cobra.Command {
-	root := &cobra.Command{Use: "ai-work", Short: "Capture work and result versions using your personal OAuth login",
-		Long: "Capture work for My work and Organization. API keys and work-order session tokens are refused. Submission is not acceptance; review and decide the exact result in the web application."}
+	root := &cobra.Command{Use: "ai-work", Short: "Capture work, progress facts and result versions using your personal OAuth login",
+		Long: "Capture work for My work and Organization: declare a goal, report progress facts, read where the work stands and submit result versions. API keys and work-order session tokens are refused. A progress fact is a session's statement and a submission is not acceptance; review and decide the exact result in the web application."}
 	var id, title, order, source, sourceVersion, runKind, product, crossReason string
-	var feature, revision, maintenance string
+	var feature, revision, maintenance, task string
 	var legacyMetadata bool
 	start := jsonByDefault(&cobra.Command{Use: "start", Short: "Declare an agreed work objective (retry with the same ID)", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -63,6 +70,11 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 				}
 				body["workOrderId"] = order
 			}
+			if cmd.Flags().Changed("task") {
+				if err := aiWorkStartTask(body, task, crossReason, legacyMetadata); err != nil {
+					return err
+				}
+			}
 			goalProduct, err := aiWorkStartGoal(f, cmd, body, product, crossReason, feature, revision, maintenance, legacyMetadata)
 			if err != nil {
 				return err
@@ -70,7 +82,7 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 			if err := aiWorkStartScope(f, cmd, body, goalProduct, crossReason, source, legacyMetadata); err != nil {
 				return err
 			}
-			return aiWorkRequest(f, cmd, http.MethodPost, "/api/ai-work/capture/units", body)
+			return aiWorkRequest(f, cmd, http.MethodPost, aiWorkUnitsPath, body)
 		}})
 	start.Flags().StringVar(&id, "id", "", "stable work UUID, kept across retries (required)")
 	start.Flags().StringVar(&title, "title", "", "agreed work objective, at most 160 characters (required)")
@@ -80,6 +92,7 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 	start.Flags().StringVar(&maintenance, "maintenance-reason", "", "explicit reason for product maintenance without a feature, for this goal only")
 	start.Flags().StringVar(&crossReason, "cross-product-reason", "", "explicit reason for this cross-product goal; never a repository default")
 	start.Flags().StringVar(&order, "work-order", "", "optional canonical work-order UUID")
+	start.Flags().StringVar(&task, "task", "", "optional UUID of the task this goal works on; the task must belong to the goal's feature or product")
 	start.Flags().StringVar(&source, "source", "cli", "reporter: cli, codex, claude_code, antigravity, copilot or kiro (client declaration)")
 	start.Flags().StringVar(&sourceVersion, "source-version", version.Version, "reporter version (plugins must supply their own version)")
 	start.Flags().StringVar(&runKind, "run-kind", "work", "work or test; use test only for explicit validation/demo/probe runs")
@@ -87,7 +100,7 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 	_ = start.Flags().MarkHidden("legacy-metadata")
 	get := jsonByDefault(&cobra.Command{Use: "get <work-id>", Short: "Read the current result and authenticated capture history", Args: aiWorkIDArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return aiWorkRequest(f, cmd, http.MethodGet, "/api/ai-work/capture/units/"+args[0], nil)
+			return aiWorkRequest(f, cmd, http.MethodGet, aiWorkUnitPath(args[0]), nil)
 		}})
 	var event, artifact, criteria, reviewFile string
 	var expected int32
@@ -107,14 +120,14 @@ func NewAIWorkCmd(f *Factory) *cobra.Command {
 				}
 				body["reviewDetails"] = details
 			}
-			return aiWorkRequest(f, cmd, http.MethodPost, "/api/ai-work/capture/units/"+args[0]+"/submissions", body)
+			return aiWorkRequest(f, cmd, http.MethodPost, aiWorkUnitPath(args[0])+"/submissions", body)
 		}})
 	submit.Flags().StringVar(&event, "event-id", "", "stable submission UUID, kept across retries (required)")
 	submit.Flags().Int32Var(&expected, "expected-version", 0, "observed work version; stale writes conflict (required)")
 	submit.Flags().StringVar(&artifact, "artifact", "", "immutable commit or document version reference (required)")
 	submit.Flags().StringVar(&criteria, "criteria-version", "", "version or digest of the agreed acceptance criteria (required)")
 	submit.Flags().StringVar(&reviewFile, "review-file", "", "explicit JSON file containing implementation summary, acceptanceCriteria, evidence and optional limitations (max 32 KiB)")
-	root.AddCommand(start, get, submit, newAIWorkContextCmd(f), newAIWorkBindCmd(f), newAIWorkRecoverCmd(f))
+	root.AddCommand(start, get, submit, newAIWorkReportCmd(f), newAIWorkStatusCmd(f), newAIWorkContextCmd(f), newAIWorkBindCmd(f), newAIWorkRecoverCmd(f))
 	return root
 }
 

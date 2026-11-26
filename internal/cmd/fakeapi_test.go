@@ -23,6 +23,7 @@ type recordedRequest struct {
 type fakeReply struct {
 	Status int
 	Body   any
+	Header map[string]string
 }
 
 type fakeAPI struct {
@@ -60,6 +61,9 @@ func newFakeAPI(t *testing.T, routes map[string]func(recordedRequest) fakeReply)
 		reply := handler(req)
 		if reply.Status == 0 {
 			reply.Status = http.StatusOK
+		}
+		for name, value := range reply.Header {
+			w.Header().Set(name, value)
 		}
 		switch b := reply.Body.(type) {
 		case nil:

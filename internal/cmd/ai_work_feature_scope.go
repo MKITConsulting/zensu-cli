@@ -9,6 +9,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func aiWorkStartTask(body map[string]any, task, cross string, legacy bool) error {
+	switch {
+	case legacy:
+		return fmt.Errorf("legacy replay cannot name a task")
+	case cross != "":
+		return fmt.Errorf("cross-product work cannot name a task; a task belongs to one product")
+	case aiWorkUUID(task) != nil:
+		return fmt.Errorf("--task must be a canonical non-nil task UUID")
+	}
+	body["taskId"] = task
+	return nil
+}
+
 func aiWorkStartGoal(f *Factory, cmd *cobra.Command, body map[string]any, product, cross, feature, revision, maintenance string, legacy bool) (string, error) {
 	if legacy {
 		if feature != "" || revision != "" || maintenance != "" {

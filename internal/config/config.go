@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"time"
+
+	"github.com/MKITConsulting/zensu-cli/internal/safefile"
 )
 
 const DefaultAPIURL = "https://api.zensu.dev"
@@ -112,7 +114,7 @@ func (c *Config) Save() error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return replaceFile(tmpName, filepath.Join(dir, configFileName))
+	return safefile.Replace(tmpName, filepath.Join(dir, configFileName))
 }
 
 func (c *Config) ResolveAPIURL(flag, env string) string {

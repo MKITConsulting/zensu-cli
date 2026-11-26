@@ -207,12 +207,12 @@ zensu security classify <feature-id> [--classification public|internal|confident
     [--auth-required] [--auth-type jwt|api-key|oauth2|none]
     [--encryption-at-rest] [--encryption-in-transit] [--input-validation]
     [--rate-limited] [--audit-logged]
-    [--pentest-status not-required|pending|passed|failed]
-    [--threat-model-status not-required|pending|completed]
+    [--pentest-status not-required|pending|failed]
+    [--threat-model-status not-required|pending]
 zensu security add-test <feature-id> --file <path>
     --type auth-bypass|injection|access-control|rate-limit|input-validation|data-exposure|header-security|dependency-scan|csrf|xss|ssrf
     [--owasp-id A01:2021] [--last-run-status passed|failed|skipped|error]
-zensu security review <feature-id> --reviewer <who> --status approved|rejected|conditional
+zensu security review <feature-id> --reviewer <who> --status rejected|conditional
     [--type manual|automated|external] [--findings markdown | --findings-file path]
     [--conditions markdown | --conditions-file path]
 zensu security score <feature-id>                   # score + release-gate state
@@ -225,7 +225,12 @@ zensu security threat-model <feature-id>            # STRIDE context data
 
 Classification is ordered `public < internal < confidential < restricted`;
 higher classifications raise the release-gate requirements. Classify sets the
-attributes and recalculates the security score automatically.
+attributes and recalculates the security score automatically. It accepts only a
+classification that keeps or raises the current one, and a feature without one
+counts as `internal`, so `public` is refused for it. Lowering the classification,
+marking a pentest `passed`, marking the threat model `completed` and approving a
+security review are decisions for an admin signed in to the Zensu web app; Zensu
+refuses each of them from the CLI with a `400`.
 
 ### ghost
 
@@ -806,9 +811,9 @@ pinned by commit SHA; it installs the matching CLI release and runs all three.
 | Security classification | `public` `internal` `confidential` `restricted` |
 | Data sensitivity | `none` `pii` `financial` `health` `credentials` |
 | Auth type | `jwt` `api-key` `oauth2` `none` |
-| Pentest status | `not-required` `pending` `passed` `failed` |
-| Threat-model status | `not-required` `pending` `completed` |
-| Review status / type | `approved` `rejected` `conditional` / `manual` `automated` `external` |
+| Pentest status | `not-required` `pending` `failed` (`passed` is set only by an admin signed in to the Zensu web app) |
+| Threat-model status | `not-required` `pending` (`completed` is set only by an admin signed in to the Zensu web app) |
+| Review status / type | `rejected` `conditional` (`approved` is set only by an admin signed in to the Zensu web app) / `manual` `automated` `external` |
 | Ghost scan source | `api` `mcp` `web_ui` |
 | Wiki visibility | `public` `private` |
 | Knowledge scope | `org` `personal` |

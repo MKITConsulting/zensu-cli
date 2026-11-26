@@ -128,7 +128,7 @@ func TestFreeTextFlags_NameTheirTextFormat(t *testing.T) {
 		{[]string{"roadmap", "create"}, "description", "roadmap description (Markdown)"},
 		{[]string{"roadmap", "update"}, "description", "roadmap description (Markdown)"},
 		{[]string{"security", "review"}, "findings", "review findings (Markdown)"},
-		{[]string{"security", "review"}, "conditions", "conditions for conditional approval (Markdown)"},
+		{[]string{"security", "review"}, "conditions", "changes a conditional review asks for (Markdown)"},
 		{[]string{"ghost", "scan"}, "candidates", `JSON array of candidate objects; each "description" is Markdown (required unless --candidates-file)`},
 		{[]string{"ghost", "scan"}, "components", `optional JSON array of component objects; each "description" is Markdown`},
 		{[]string{"tiers", "create"}, "description", "tier description (plain text)"},

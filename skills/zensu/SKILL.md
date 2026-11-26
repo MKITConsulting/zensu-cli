@@ -94,7 +94,8 @@ zensu auth status   # authenticated? against which host?
    `zensu features status <id> <new-status>` — never `zensu features update`.
 5. **Security classification comes before implementation.** Check or set the
    classification (`zensu security classify`) when work on a feature starts,
-   not at release time.
+   not at release time. The CLI can only keep or raise it; a feature without
+   one counts as `internal`.
 6. **Reference features in commits** as `[KEY-N]`, e.g. `[ZEN-42]`.
 7. **Enrich, don't duplicate.** When applying a ghost scan to a product that
    already has features, use `zensu ghost apply --enrich-existing`.
@@ -229,12 +230,17 @@ zensu security classify <feature-id> --classification confidential \
 zensu security suggest-tests <feature-id> --json    # context for picking tests
 zensu security add-test <feature-id> --file tests/security/login_test.go \
   --type injection [--owasp-id A03:2021] [--last-run-status passed]
-zensu security review <feature-id> --reviewer <who> --status approved \
+zensu security review <feature-id> --reviewer <who> --status rejected|conditional \
   [--type manual|automated|external] [--findings-file <path>]
 zensu security score <feature-id> --json            # score + release-gate state
 zensu security posture <product-id> --json          # product-wide overview
 zensu security threat-model <feature-id> --json     # STRIDE context data
 ```
+
+Lowering the classification, marking a pentest `passed`, marking the threat model
+`completed` and approving a security review are decisions for an admin signed in to
+the Zensu web app. Zensu refuses each of them from the CLI with a `400`: record a
+review only as `rejected` or `conditional`, and hand the other decisions to an admin.
 
 ### Release readiness
 

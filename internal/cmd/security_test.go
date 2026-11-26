@@ -149,20 +149,66 @@ func TestSecurityReview(t *testing.T) {
 
 	f, out := testFactory(srv)
 	cmd := NewSecurityCmd(f)
-	if err := runCmd(t, cmd, "review", "f1", "--reviewer", "alice", "--status", "approved"); err != nil {
+	if err := runCmd(t, cmd, "review", "f1", "--reviewer", "alice", "--status", "conditional"); err != nil {
 		t.Fatalf("security review error: %v", err)
 	}
 	if body["reviewer"] != "alice" {
 		t.Errorf("review body reviewer: got %v want alice", body["reviewer"])
 	}
-	if body["reviewStatus"] != "approved" {
-		t.Errorf("review body reviewStatus: got %v want approved", body["reviewStatus"])
+	if body["reviewStatus"] != "conditional" {
+		t.Errorf("review body reviewStatus: got %v want conditional", body["reviewStatus"])
 	}
 	if body["reviewType"] != "manual" {
 		t.Errorf("review body reviewType should default to manual: got %v", body["reviewType"])
 	}
-	if !strings.Contains(out.String(), "approved") {
+	if !strings.Contains(out.String(), "conditional") {
 		t.Errorf("review output should confirm status: %s", out.String())
+	}
+}
+
+func TestSecurityHelp_OffersOnlyDecisionsTheAPIAccepts(t *testing.T) {
+	f, _ := testFactory(nil)
+	security := NewSecurityCmd(f)
+	const admin = "a decision for an admin signed in to the Zensu web app"
+	for _, tc := range []struct{ sub, flag, offered, note string }{
+		{"classify", "classification", "(public|internal|confidential|restricted); ", "only a level that keeps or raises the current one is accepted, and a feature without one counts as internal; lowering it is " + admin},
+		{"classify", "threat-model-status", "(not-required|pending); ", "marking it completed is " + admin},
+		{"classify", "pentest-status", "(not-required|pending|failed); ", "marking it passed is " + admin},
+		{"review", "status", "(rejected|conditional); ", "approving a review is " + admin},
+	} {
+		sub := findChild(security, tc.sub)
+		if sub == nil {
+			t.Fatalf("security group has no %q subcommand", tc.sub)
+		}
+		flag := sub.Flags().Lookup(tc.flag)
+		if flag == nil {
+			t.Errorf("security %s has no --%s flag", tc.sub, tc.flag)
+			continue
+		}
+		if !strings.Contains(flag.Usage, tc.offered) || !strings.Contains(flag.Usage, tc.note) {
+			t.Errorf("security %s --%s must offer exactly %s and say %q, got %q", tc.sub, tc.flag, strings.TrimSuffix(tc.offered, "; "), tc.note, flag.Usage)
+		}
+	}
+
+	classify := findChild(security, "classify")
+	for _, want := range []string{
+		"can only keep or raise the classification; a feature without one counts as internal, so public is refused for it",
+		"Lowering the classification, marking a pentest passed and marking the threat model completed are decisions for an admin signed in to the Zensu web app",
+	} {
+		if !strings.Contains(classify.Long, want) {
+			t.Errorf("classify help must state %q, got:\n%s", want, classify.Long)
+		}
+	}
+
+	review := findChild(security, "review")
+	if review.Short != "Record a rejected or conditional security review for a feature" {
+		t.Errorf("review summary must name the statuses it records, got %q", review.Short)
+	}
+	if !strings.Contains(review.Long, "Approving a security review is "+admin+": Zensu refuses --status approved") {
+		t.Errorf("review help must leave approval to an admin in the web app, got:\n%s", review.Long)
+	}
+	if !IsRequiredFlag(review.Flags().Lookup("status")) {
+		t.Errorf("review --status must stay marked required, got %q", review.Flags().Lookup("status").Usage)
 	}
 }
 

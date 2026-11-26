@@ -10,7 +10,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -24,10 +23,9 @@ import (
 	"testing"
 )
 
-var (
-	releaseKeysLine        = regexp.MustCompile(`(?m)^release_keys\(\) \{\n\techo "([^"]*)"\n\}$`)
-	windowsReleaseKeysLine = regexp.MustCompile(`(?m)^function Get-ReleaseKeys \{\r?\n    @\(([^)]*)\)\r?\n\}\r?$`)
-)
+var releaseKeysLine = regexp.MustCompile(`(?m)^release_keys\(\) \{\n\techo "([^"]*)"\n\}$`)
+
+const latestReleasePath = "/repos/MKITConsulting/zensu-cli/releases/latest"
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
@@ -41,7 +39,7 @@ func repoRoot(t *testing.T) string {
 func requireUnixRunner(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("install.sh and the coverage action run on Linux and macOS")
+		t.Skip("install.sh and the Linux and macOS branch of the coverage action run on Linux and macOS")
 	}
 	for _, tool := range []string{"sh", "bash", "tar", "curl"} {
 		if _, err := exec.LookPath(tool); err != nil {
@@ -67,111 +65,6 @@ func requireOpenSSL3(t *testing.T) string {
 	}
 	t.Skip("no OpenSSL 3 or later on this machine")
 	return ""
-}
-
-func powerShells(t *testing.T) []string {
-	t.Helper()
-	names := []string{"pwsh"}
-	if runtime.GOOS == "windows" {
-		names = append(names, "powershell")
-	}
-	var shells []string
-	for _, name := range names {
-		if path, err := exec.LookPath(name); err == nil {
-			shells = append(shells, path)
-		}
-	}
-	if len(shells) == 0 {
-		if os.Getenv("CI") != "" {
-			t.Fatal("testing install.ps1 needs PowerShell on the CI runner")
-		}
-		t.Skip("no PowerShell on this machine")
-	}
-	return shells
-}
-
-func eachPowerShell(t *testing.T, test func(t *testing.T, shell string)) {
-	t.Helper()
-	for _, shell := range powerShells(t) {
-		t.Run(strings.TrimSuffix(filepath.Base(shell), ".exe"), func(t *testing.T) {
-			test(t, shell)
-		})
-	}
-}
-
-func inheritedOnWindows(name string) bool {
-	upper := strings.ToUpper(name)
-	for _, prefix := range []string{"ZENSU_", "GITHUB_", "RUNNER_", "ACTIONS_"} {
-		if strings.HasPrefix(upper, prefix) {
-			return false
-		}
-	}
-	return upper != "PSMODULEPATH" && upper != "TEMP" && upper != "TMP" && upper != "CI" && upper != ""
-}
-
-func powerShellEnv(t *testing.T, vars map[string]string) []string {
-	t.Helper()
-	temp := filepath.Join(t.TempDir(), "temp dir")
-	if err := os.MkdirAll(temp, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	var env []string
-	if runtime.GOOS == "windows" {
-		for _, kv := range os.Environ() {
-			if name, _, _ := strings.Cut(kv, "="); inheritedOnWindows(name) {
-				env = append(env, kv)
-			}
-		}
-		env = append(env, "TEMP="+temp, "TMP="+temp)
-	} else {
-		env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "TMPDIR=" + temp, "LANG=C", "LC_ALL=C"}
-	}
-	for k, v := range vars {
-		env = append(env, k+"="+v)
-	}
-	return env
-}
-
-func runInstallPS1(t *testing.T, shell, script string, env map[string]string) installRun {
-	t.Helper()
-	bin := filepath.Join(t.TempDir(), "bin")
-	vars := map[string]string{"ZENSU_INSTALL_DIR": bin, "ZENSU_NO_MODIFY_PATH": "1"}
-	for k, v := range env {
-		vars[k] = v
-	}
-	cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script)
-	cmd.Env = powerShellEnv(t, vars)
-	out, err := cmd.CombinedOutput()
-	code := 0
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		code = exit.ExitCode()
-	} else if err != nil {
-		t.Fatalf("running install.ps1: %v", err)
-	}
-	return installRun{output: strings.ReplaceAll(string(out), "\r\n", "\n"), exitCode: code, bin: filepath.Join(bin, "zensu.exe")}
-}
-
-func patchedInstallPS1(t *testing.T, dir string, keys ...string) string {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(repoRoot(t), "install.ps1"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
-	if !windowsReleaseKeysLine.Match(data) {
-		t.Fatal("install.ps1 has no Get-ReleaseKeys function with one key list")
-	}
-	quoted := make([]string, len(keys))
-	for i, key := range keys {
-		quoted[i] = "'" + key + "'"
-	}
-	patched := windowsReleaseKeysLine.ReplaceAllLiteral(data, []byte("function Get-ReleaseKeys {\n    @("+strings.Join(quoted, ", ")+")\n}"))
-	path := filepath.Join(dir, "install.ps1")
-	if err := os.WriteFile(path, patched, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }
 
 type signingKey struct {
@@ -282,9 +175,32 @@ func (r *fakeRelease) serve() {
 		r.requests++
 		r.paths = append(r.paths, req.URL.Path)
 		r.mu.Unlock()
+		if req.URL.Path == latestReleasePath {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, "{\"tag_name\":%q}\n", r.tag)
+			return
+		}
 		files.ServeHTTP(w, req)
 	}))
 	r.t.Cleanup(r.server.Close)
+}
+
+func pointedAt(t *testing.T, script string, release *fakeRelease, downloads string) string {
+	t.Helper()
+	data, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, swap := range [][2]string{{"https://api.github.com/", release.server.URL + "/"}, {downloads, release.server.URL}} {
+		if n := bytes.Count(data, []byte(swap[0])); n != 1 {
+			t.Fatalf("%s names %s %d times, want once", filepath.Base(script), swap[0], n)
+		}
+		data = bytes.ReplaceAll(data, []byte(swap[0]), []byte(swap[1]))
+	}
+	if err := os.WriteFile(script, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return script
 }
 
 func (r *fakeRelease) downloads() int {

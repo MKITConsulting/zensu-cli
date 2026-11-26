@@ -55,10 +55,11 @@ Installs the latest release binary to `/usr/local/bin`. Override with
 The script checks the Ed25519 signature of the release checksums against the zensu
 release keys it embeds, with OpenSSL 3 or later (on macOS the Homebrew `openssl@3`
 when the system OpenSSL is LibreSSL; `ZENSU_OPENSSL=<path>` names another binary),
-and then the SHA-256 of the archive. A wrong signature always stops the install, and
-so does a missing one for every release after v0.18.0, which are all signed. Without an
-OpenSSL 3 that verifies Ed25519 (checked against a known test vector first), or for an
-older release without a signature, it says so and checks only the checksums;
+and then the SHA-256 of the archive. Once it has a verifier, a wrong signature always
+stops the install. A missing signature stops it for the latest release and for every
+release after v0.18.0, which are all signed. Without an OpenSSL 3 that verifies Ed25519
+(checked against a known test vector first), or for an older release without a
+signature, it says so and checks only the checksums;
 `ZENSU_REQUIRE_SIGNATURE=1` (any value but `0`) makes both cases fail.
 `ZENSU_RELEASE_URL=<url>` downloads from a mirror of the release assets
 (`<url>/<tag>/<asset>`) and needs `ZENSU_VERSION`.
@@ -76,12 +77,13 @@ user `PATH` (restart the terminal afterwards; `$env:ZENSU_NO_MODIFY_PATH=1` leav
 build, which runs under emulation. Like the script for Linux and macOS, it checks the
 Ed25519 signature of the release checksums before it downloads the archive, and then the
 archive's SHA-256, with the same rules and variables: OpenSSL 3 or later verifies the
-signature (`openssl` on the `PATH`, else the OpenSSL that Git for Windows bundles;
-`$env:ZENSU_OPENSSL=<path>` names another binary), a wrong signature always stops the
-install, and so does a missing one for every release after v0.18.0. Without a verifier,
-or for an older release without a signature, it says so and checks only the checksums;
-`$env:ZENSU_REQUIRE_SIGNATURE=1` makes both cases fail. `$env:ZENSU_RELEASE_URL` installs
-from a mirror and needs `$env:ZENSU_VERSION`.
+signature (`openssl` on the `PATH`, else the OpenSSL that Git for Windows bundles, found
+next to the `git` on the `PATH` or under Program Files; `$env:ZENSU_OPENSSL=<path>` names
+another binary). Once it has a verifier, a wrong signature always stops the install. A
+missing signature stops it for the latest release and for every release after v0.18.0.
+Without a verifier, or for an older release without a signature, it says so and checks
+only the checksums; `$env:ZENSU_REQUIRE_SIGNATURE=1` makes both cases fail.
+`$env:ZENSU_RELEASE_URL` installs from a mirror and needs `$env:ZENSU_VERSION`.
 
 ### Prebuilt binaries
 
@@ -170,8 +172,9 @@ go run ./internal/tools/releasesign verify --in zensu_<version>_checksums.txt --
 
 Keep an offline copy of the private key, then delete `~/zensu-release-signing.key`.
 
-To rotate the key, add the new public key to `keys.go` and to `release_keys` in
-`install.sh` (a test keeps both lists equal) and ship a release; then put both private
+To rotate the key, add the new public key to `keys.go`, to `release_keys` in
+`install.sh` and to `Get-ReleaseKeys` in `install.ps1` (tests keep the three lists equal)
+and ship a release; then put both private
 keys into the secret, one per line, so releases carry both signatures until no
 supported CLI depends on the old key alone.
 
@@ -481,7 +484,8 @@ Inputs:
 - `release-url`: mirror of the release downloads (`<url>/<tag>/<asset>`) for runners
   without access to GitHub; defaults to the GitHub releases.
 
-The action runs on Linux, macOS and Windows runners. On Linux and macOS it needs bash,
+The action runs on Linux, macOS and Windows runners; Windows runners need a release of the
+action after v0.23.0. On Linux and macOS it needs bash,
 git, curl or wget, tar, `sha256sum` or `shasum` and OpenSSL 3. On Windows it runs
 `install.ps1` from Git Bash with PowerShell 7 (`pwsh`, else Windows PowerShell 5.1), needs
 git and OpenSSL 3 (on the `PATH`, or the one Git for Windows bundles) and leaves the

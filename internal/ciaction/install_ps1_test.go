@@ -1,15 +1,163 @@
 package ciaction
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
 )
+
+const windowsDownloads = "https://github.com/$Repo/releases/download"
+
+var windowsReleaseKeysLine = regexp.MustCompile(`(?m)^    function Get-ReleaseKeys \{\r?\n        @\(([^)]*)\)\r?\n    \}\r?$`)
+
+func powerShells(t *testing.T) []string {
+	t.Helper()
+	names := []string{"pwsh"}
+	if runtime.GOOS == "windows" {
+		names = append(names, "powershell")
+	}
+	var shells []string
+	for _, name := range names {
+		if path, err := exec.LookPath(name); err == nil {
+			shells = append(shells, path)
+		}
+	}
+	if len(shells) == 0 {
+		if os.Getenv("CI") != "" {
+			t.Fatal("testing install.ps1 needs PowerShell on the CI runner")
+		}
+		t.Skip("no PowerShell on this machine")
+	}
+	return shells
+}
+
+func eachPowerShell(t *testing.T, test func(t *testing.T, shell string)) {
+	t.Helper()
+	for _, shell := range powerShells(t) {
+		t.Run(strings.TrimSuffix(filepath.Base(shell), ".exe"), func(t *testing.T) {
+			test(t, shell)
+		})
+	}
+}
+
+func inheritedOnWindows(name string) bool {
+	upper := strings.ToUpper(name)
+	for _, prefix := range []string{"ZENSU_", "GITHUB_", "RUNNER_", "ACTIONS_"} {
+		if strings.HasPrefix(upper, prefix) {
+			return false
+		}
+	}
+	return upper != "PSMODULEPATH" && upper != "TEMP" && upper != "TMP" && upper != "CI" && upper != ""
+}
+
+func powerShellEnv(t *testing.T, vars map[string]string) []string {
+	t.Helper()
+	temp := filepath.Join(t.TempDir(), "temp dir")
+	if err := os.MkdirAll(temp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var env []string
+	if runtime.GOOS == "windows" {
+		for _, kv := range os.Environ() {
+			if name, _, _ := strings.Cut(kv, "="); inheritedOnWindows(name) {
+				env = append(env, kv)
+			}
+		}
+		env = append(env, "TEMP="+temp, "TMP="+temp)
+	} else {
+		env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "TMPDIR=" + temp, "LANG=C", "LC_ALL=C"}
+	}
+	for k, v := range vars {
+		env = append(env, k+"="+v)
+	}
+	return env
+}
+
+func runPowerShell(t *testing.T, shell string, env map[string]string, args ...string) (string, int) {
+	t.Helper()
+	cmd := exec.Command(shell, append([]string{"-NoProfile", "-NonInteractive"}, args...)...)
+	cmd.Env = powerShellEnv(t, env)
+	out, err := cmd.CombinedOutput()
+	code := 0
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		code = exit.ExitCode()
+	} else if err != nil {
+		t.Fatalf("running %s: %v", shell, err)
+	}
+	return strings.ReplaceAll(string(out), "\r\n", "\n"), code
+}
+
+func runPowerShellCommand(t *testing.T, shell, command string, env map[string]string) (string, int) {
+	t.Helper()
+	return runPowerShell(t, shell, env, "-Command", command)
+}
+
+func runInstallPS1(t *testing.T, shell, script string, env map[string]string) installRun {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "bin")
+	vars := map[string]string{"ZENSU_INSTALL_DIR": bin, "ZENSU_NO_MODIFY_PATH": "1"}
+	for k, v := range env {
+		vars[k] = v
+	}
+	out, code := runPowerShell(t, shell, vars, "-ExecutionPolicy", "Bypass", "-File", script)
+	return installRun{output: out, exitCode: code, bin: filepath.Join(bin, "zensu.exe")}
+}
+
+func patchedInstallPS1(t *testing.T, dir string, keys ...string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(repoRoot(t), "install.ps1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+	if !windowsReleaseKeysLine.Match(data) {
+		t.Fatal("install.ps1 has no Get-ReleaseKeys function with one key list")
+	}
+	quoted := make([]string, len(keys))
+	for i, key := range keys {
+		quoted[i] = "'" + key + "'"
+	}
+	patched := windowsReleaseKeysLine.ReplaceAllLiteral(data, []byte("    function Get-ReleaseKeys {\n        @("+strings.Join(quoted, ", ")+")\n    }"))
+	path := filepath.Join(dir, "install.ps1")
+	if err := os.WriteFile(path, patched, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func userPathOf(t *testing.T, shell string) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return ""
+	}
+	out, code := runPowerShellCommand(t, shell, "[Environment]::GetEnvironmentVariable('Path', 'User')", nil)
+	if code != 0 {
+		t.Fatalf("reading the user PATH: exit %d\n%s", code, out)
+	}
+	return out
+}
+
+func pathWithout(path string, names ...string) string {
+	var dirs []string
+	for _, dir := range filepath.SplitList(path) {
+		if slices.ContainsFunc(names, func(name string) bool {
+			_, err := os.Stat(filepath.Join(dir, name))
+			return err == nil
+		}) {
+			continue
+		}
+		dirs = append(dirs, dir)
+	}
+	return strings.Join(dirs, string(os.PathListSeparator))
+}
 
 func installPS1Fixture(t *testing.T) (signingKey, *fakeRelease, string) {
 	t.Helper()
@@ -44,21 +192,6 @@ func psQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
-func runPowerShellCommand(t *testing.T, shell, command string, env map[string]string) (string, int) {
-	t.Helper()
-	cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", command)
-	cmd.Env = powerShellEnv(t, env)
-	out, err := cmd.CombinedOutput()
-	code := 0
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		code = exit.ExitCode()
-	} else if err != nil {
-		t.Fatalf("running %s: %v", shell, err)
-	}
-	return strings.ReplaceAll(string(out), "\r\n", "\n"), code
-}
-
 func TestInstallPS1_InstallsAReleaseWhoseSignatureMatches(t *testing.T) {
 	eachPowerShell(t, func(t *testing.T, shell string) {
 		_, release, script := installPS1Fixture(t)
@@ -77,6 +210,26 @@ func TestInstallPS1_InstallsAReleaseWhoseSignatureMatches(t *testing.T) {
 		want := []string{"/" + installTag + "/" + release.checksums, "/" + installTag + "/" + release.checksums + ".sig", "/" + installTag + "/" + release.archive}
 		if got := release.requestLog(); !slices.Equal(got, want) {
 			t.Fatalf("requests %v, want the checksums and their signature before the archive %v", got, want)
+		}
+	})
+}
+
+func TestInstallPS1_InstallsTheLatestReleaseWhenNoVersionIsSet(t *testing.T) {
+	eachPowerShell(t, func(t *testing.T, shell string) {
+		_, release, script := installPS1Fixture(t)
+		script = pointedAt(t, script, release, windowsDownloads)
+		for _, version := range []string{"", "latest"} {
+			res := runInstallPS1(t, shell, script, map[string]string{
+				"ZENSU_VERSION":           version,
+				"ZENSU_REQUIRE_SIGNATURE": "1",
+				"PATH":                    pathWithOpenSSL(t),
+			})
+			if res.exitCode != 0 || !res.installed(t) || !strings.Contains(res.output, "Downloading "+release.archive+" ("+installTag+") ...\nVerified the release signature.\n") {
+				t.Fatalf("ZENSU_VERSION=%q: exit %d, output:\n%s", version, res.exitCode, res.output)
+			}
+		}
+		if got := release.requestLog(); len(got) == 0 || got[0] != latestReleasePath {
+			t.Fatalf("requests %v, want the latest release looked up first", got)
 		}
 	})
 }
@@ -177,45 +330,77 @@ func TestInstallPS1_RefusesAnArchiveThatDiffersFromTheSignedChecksums(t *testing
 
 func TestInstallPS1_AMissingSignatureOfASignedReleaseAlwaysFails(t *testing.T) {
 	eachPowerShell(t, func(t *testing.T, shell string) {
-		_, release, script := installPS1Fixture(t)
+		for _, tc := range []struct {
+			tag      string
+			requires []string
+		}{
+			{installTag, []string{"1", "", "0"}},
+			{"v0.18.1", []string{""}},
+			{"v0.18.0-rc.1", []string{""}},
+			{"v0.5.01", []string{""}},
+		} {
+			release := newWindowsRelease(t, tc.tag, fakeBinary, newSigningKey(t))
+			release.remove(release.checksums + ".sig")
+			script := patchedInstallPS1(t, t.TempDir(), newSigningKey(t).public)
+			for _, require := range tc.requires {
+				res := runInstallPS1(t, shell, script, map[string]string{
+					"ZENSU_VERSION":           tc.tag,
+					"ZENSU_RELEASE_URL":       release.server.URL,
+					"ZENSU_REQUIRE_SIGNATURE": require,
+				})
+				want := "error: could not download the signature " + release.checksums + ".sig of release " + tc.tag + "; every zensu release after v0.18.0 is signed, so nothing is installed without it\n"
+				if res.exitCode != 1 || !strings.HasSuffix(res.output, want) || res.installed(t) {
+					t.Fatalf("%s require=%q: exit %d, output:\n%s", tc.tag, require, res.exitCode, res.output)
+				}
+			}
+			if release.requested(release.archive) {
+				t.Fatalf("the archive of %s was downloaded without its signature", tc.tag)
+			}
+		}
+	})
+}
+
+func TestInstallPS1_AnUnsignedLatestReleaseAlwaysFails(t *testing.T) {
+	eachPowerShell(t, func(t *testing.T, shell string) {
+		release := newWindowsRelease(t, "v0.18.0", fakeBinary, newSigningKey(t))
 		release.remove(release.checksums + ".sig")
-		for _, require := range []string{"1", "", "0"} {
-			res := runInstallPS1(t, shell, script, map[string]string{
-				"ZENSU_VERSION":           installTag,
-				"ZENSU_RELEASE_URL":       release.server.URL,
-				"ZENSU_REQUIRE_SIGNATURE": require,
-			})
-			want := "error: could not download the signature zensu_9.8.7_checksums.txt.sig of release " + installTag + "; every zensu release after v0.18.0 is signed, so nothing is installed without it\n"
+		script := pointedAt(t, patchedInstallPS1(t, t.TempDir(), newSigningKey(t).public), release, windowsDownloads)
+		for _, require := range []string{"", "0", "1"} {
+			res := runInstallPS1(t, shell, script, map[string]string{"ZENSU_REQUIRE_SIGNATURE": require})
+			want := "error: could not download the signature zensu_0.18.0_checksums.txt.sig of the latest release v0.18.0; the latest zensu release is always signed, so nothing is installed without it\n"
 			if res.exitCode != 1 || !strings.HasSuffix(res.output, want) || res.installed(t) {
 				t.Fatalf("require=%q: exit %d, output:\n%s", require, res.exitCode, res.output)
 			}
 		}
 		if release.requested(release.archive) {
-			t.Fatal("the archive of a release without its signature was downloaded")
+			t.Fatal("the archive of an unsigned latest release was downloaded")
 		}
 	})
 }
 
 func TestInstallPS1_AMissingSignatureOfAnUnsignedReleaseFailsOnlyWhenRequired(t *testing.T) {
 	eachPowerShell(t, func(t *testing.T, shell string) {
-		release := newWindowsRelease(t, "v0.18.0", fakeBinary, newSigningKey(t))
-		release.remove(release.checksums + ".sig")
-		script := patchedInstallPS1(t, t.TempDir(), newSigningKey(t).public)
-		env := map[string]string{"ZENSU_VERSION": "0.18.0", "ZENSU_RELEASE_URL": release.server.URL}
+		for _, version := range []string{"0.18.0", "v0.14.1"} {
+			tag := "v" + strings.TrimPrefix(version, "v")
+			release := newWindowsRelease(t, tag, fakeBinary, newSigningKey(t))
+			release.remove(release.checksums + ".sig")
+			script := patchedInstallPS1(t, t.TempDir(), newSigningKey(t).public)
+			env := map[string]string{"ZENSU_VERSION": version, "ZENSU_RELEASE_URL": release.server.URL}
 
-		for _, require := range []string{"1", "yes"} {
-			env["ZENSU_REQUIRE_SIGNATURE"] = require
-			required := runInstallPS1(t, shell, script, env)
-			if required.exitCode != 1 || !strings.HasSuffix(required.output, "error: release v0.18.0 carries no signature (zensu_0.18.0_checksums.txt.sig)\n") || required.installed(t) {
-				t.Fatalf("require=%q: exit %d, output:\n%s", require, required.exitCode, required.output)
+			for _, require := range []string{"1", "yes"} {
+				env["ZENSU_REQUIRE_SIGNATURE"] = require
+				required := runInstallPS1(t, shell, script, env)
+				if required.exitCode != 1 || !strings.HasSuffix(required.output, "error: release "+tag+" carries no signature ("+release.checksums+".sig)\n") || required.installed(t) {
+					t.Fatalf("%s require=%q: exit %d, output:\n%s", tag, require, required.exitCode, required.output)
+				}
 			}
-		}
 
-		for _, require := range []string{"", "0"} {
-			env["ZENSU_REQUIRE_SIGNATURE"] = require
-			optional := runInstallPS1(t, shell, script, env)
-			if optional.exitCode != 0 || !optional.installed(t) || !strings.Contains(optional.output, "Note: release v0.18.0 carries no signature, so only its checksums are checked.\n") {
-				t.Fatalf("require=%q: exit %d, output:\n%s", require, optional.exitCode, optional.output)
+			for _, require := range []string{"", "0"} {
+				env["ZENSU_REQUIRE_SIGNATURE"] = require
+				optional := runInstallPS1(t, shell, script, env)
+				if optional.exitCode != 0 || !optional.installed(t) || !strings.Contains(optional.output, "Note: release "+tag+" carries no signature, so only its checksums are checked.\n") {
+					t.Fatalf("%s require=%q: exit %d, output:\n%s", tag, require, optional.exitCode, optional.output)
+				}
 			}
 		}
 	})
@@ -228,6 +413,9 @@ func TestInstallPS1_AMissingVerifierFailsOnlyWhenRequired(t *testing.T) {
 			"openssl3 no ed25519": fakeVerifier(t,
 				"#!/bin/sh\ncase \"$1\" in\nversion) echo 'OpenSSL 3.0.13 30 Jan 2024' ;;\n*) exit 1 ;;\nesac\n",
 				"@echo off\r\nif \"%~1\"==\"version\" (\r\n  echo OpenSSL 3.0.13 30 Jan 2024\r\n  exit /b 0\r\n)\r\nexit /b 1\r\n"),
+			"accepts every signature": fakeVerifier(t,
+				"#!/bin/sh\ncase \"$1\" in\nversion) echo 'OpenSSL 3.0.13 30 Jan 2024' ;;\nesac\nexit 0\n",
+				"@echo off\r\nif \"%~1\"==\"version\" echo OpenSSL 3.0.13 30 Jan 2024\r\nexit /b 0\r\n"),
 			"missing path": filepath.Join(t.TempDir(), "absent", "openssl"),
 		} {
 			_, release, script := installPS1Fixture(t)
@@ -270,7 +458,11 @@ func TestInstallPS1_RefusesUnusableVersionsAndMirrors(t *testing.T) {
 func TestInstallPS1_InvokeExpressionKeepsTheCallersSession(t *testing.T) {
 	eachPowerShell(t, func(t *testing.T, shell string) {
 		_, release, script := installPS1Fixture(t)
-		command := "$ErrorActionPreference = 'Continue'; try { Invoke-Expression ([IO.File]::ReadAllText(" + psQuote(script) + ")) } catch { Write-Output ('caught: ' + $_.Exception.Message) }; Write-Output 'session survived'"
+		command := "$ErrorActionPreference = 'Continue'; $tls = [Net.ServicePointManager]::SecurityProtocol; " +
+			"try { Invoke-Expression ([IO.File]::ReadAllText(" + psQuote(script) + ")) } catch { Write-Output ('caught: ' + $_.Exception.Message) }; " +
+			"Write-Output ('left: ' + $ErrorActionPreference + ' ' + $ProgressPreference + ' ' + @(Get-Command Invoke-Quiet, Install-Zensu -ErrorAction Ignore).Count + ' ' + [bool](Get-Variable Repo -ErrorAction Ignore) + ' ' + ([Net.ServicePointManager]::SecurityProtocol -eq $tls)); " +
+			"Write-Output 'session survived'"
+		state := "left: Continue Continue 0 False True\nsession survived\n"
 
 		bin := filepath.Join(t.TempDir(), "bin")
 		failed, code := runPowerShellCommand(t, shell, command, map[string]string{
@@ -279,7 +471,7 @@ func TestInstallPS1_InvokeExpressionKeepsTheCallersSession(t *testing.T) {
 			"ZENSU_INSTALL_DIR":    bin,
 			"ZENSU_NO_MODIFY_PATH": "1",
 		})
-		if code != 0 || !strings.HasSuffix(failed, "caught: invalid version v1.0;touch pwned\nsession survived\n") || strings.Contains(failed, "error: invalid version") {
+		if code != 0 || !strings.HasSuffix(failed, "caught: invalid version v1.0;touch pwned\n"+state) || strings.Contains(failed, "error: invalid version") {
 			t.Fatalf("exit %d, output:\n%s", code, failed)
 		}
 
@@ -291,7 +483,7 @@ func TestInstallPS1_InvokeExpressionKeepsTheCallersSession(t *testing.T) {
 			"ZENSU_NO_MODIFY_PATH":    "1",
 			"PATH":                    pathWithOpenSSL(t),
 		})
-		if code != 0 || !strings.Contains(installed, "Verified the release signature.\n") || !strings.HasSuffix(installed, "session survived\n") || strings.Contains(installed, "caught:") {
+		if code != 0 || !strings.Contains(installed, "Verified the release signature.\n") || !strings.HasSuffix(installed, state) || strings.Contains(installed, "caught:") {
 			t.Fatalf("exit %d, output:\n%s", code, installed)
 		}
 		if data, err := os.ReadFile(filepath.Join(bin, "zensu.exe")); err != nil || string(data) != string(fakeBinary) {
@@ -305,17 +497,10 @@ func TestInstallPS1_LeavesThePathAloneWhenAsked(t *testing.T) {
 		_, release, script := installPS1Fixture(t)
 		env := map[string]string{"ZENSU_VERSION": installTag, "ZENSU_RELEASE_URL": release.server.URL, "PATH": pathWithOpenSSL(t)}
 		if runtime.GOOS == "windows" {
-			userPath := func() string {
-				out, code := runPowerShellCommand(t, shell, "[Environment]::GetEnvironmentVariable('Path', 'User')", nil)
-				if code != 0 {
-					t.Fatalf("reading the user PATH: exit %d\n%s", code, out)
-				}
-				return out
-			}
-			before := userPath()
+			before := userPathOf(t, shell)
 			env["ZENSU_NO_MODIFY_PATH"] = "1"
 			res := runInstallPS1(t, shell, script, env)
-			if after := userPath(); after != before {
+			if after := userPathOf(t, shell); after != before {
 				t.Errorf("the user PATH changed from %q to %q", before, after)
 			}
 			if res.exitCode != 0 || !res.installed(t) || strings.Contains(res.output, "to your user PATH") {
@@ -352,25 +537,28 @@ func TestInstallPS1_FindsTheOpenSSLOfGitForWindows(t *testing.T) {
 		}
 		t.Skip("no Git for Windows OpenSSL on this machine")
 	}
-	var dirs []string
-	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
-		if _, err := os.Stat(filepath.Join(dir, "openssl.exe")); err == nil {
-			continue
-		}
-		dirs = append(dirs, dir)
+	withGit := pathWithout(os.Getenv("PATH"), "openssl.exe")
+	if pathWithout(withGit, "git.exe") == withGit {
+		t.Fatal("no git.exe stays on the PATH once the directories holding openssl.exe are left out")
 	}
-	eachPowerShell(t, func(t *testing.T, shell string) {
-		_, release, script := installPS1Fixture(t)
-		res := runInstallPS1(t, shell, script, map[string]string{
-			"ZENSU_VERSION":           installTag,
-			"ZENSU_RELEASE_URL":       release.server.URL,
-			"ZENSU_REQUIRE_SIGNATURE": "1",
-			"PATH":                    strings.Join(dirs, string(os.PathListSeparator)),
+	for name, env := range map[string]map[string]string{
+		"under Program Files":         {"PATH": pathWithout(os.Getenv("PATH"), "openssl.exe", "git.exe")},
+		"next to the git on the PATH": {"PATH": withGit, "ProgramFiles": filepath.Join(t.TempDir(), "no program files")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			eachPowerShell(t, func(t *testing.T, shell string) {
+				_, release, script := installPS1Fixture(t)
+				vars := map[string]string{"ZENSU_VERSION": installTag, "ZENSU_RELEASE_URL": release.server.URL, "ZENSU_REQUIRE_SIGNATURE": "1"}
+				for k, v := range env {
+					vars[k] = v
+				}
+				res := runInstallPS1(t, shell, script, vars)
+				if res.exitCode != 0 || !res.installed(t) || !strings.Contains(res.output, "Verified the release signature.\n") {
+					t.Fatalf("with %s bundled and no openssl on PATH: exit %d, output:\n%s", bundled, res.exitCode, res.output)
+				}
+			})
 		})
-		if res.exitCode != 0 || !res.installed(t) || !strings.Contains(res.output, "Verified the release signature.\n") {
-			t.Fatalf("with %s bundled and no openssl on PATH: exit %d, output:\n%s", bundled, res.exitCode, res.output)
-		}
-	})
+	}
 }
 
 func TestInstallPS1_ScriptParses(t *testing.T) {

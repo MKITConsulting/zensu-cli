@@ -12,7 +12,7 @@ import (
 
 var (
 	installScriptKeysLine        = regexp.MustCompile(`(?m)^release_keys\(\) \{\n\techo "([^"]*)"\n\}$`)
-	windowsInstallScriptKeysLine = regexp.MustCompile(`(?m)^function Get-ReleaseKeys \{\r?\n    @\(([^)]*)\)\r?\n\}\r?$`)
+	windowsInstallScriptKeysLine = regexp.MustCompile(`(?m)^    function Get-ReleaseKeys \{\r?\n        @\(([^)]*)\)\r?\n    \}\r?$`)
 	quotedKey                    = regexp.MustCompile(`'([^']*)'`)
 )
 
@@ -57,14 +57,17 @@ func TestWindowsInstallScriptSharesTheVerifierSelfTestOfInstallScript(t *testing
 	}
 	key := value(sh, "install.sh selftest_key", `(?m)^selftest_key\(\) \{\n\techo "([^"]*)"\n\}$`)
 	sig := value(sh, "install.sh selftest_signature", `(?m)^selftest_signature\(\) \{\n\techo "([^"]*)"\n\}$`)
-	if got := value(ps, "install.ps1 Get-SelfTestKey", `(?m)^function Get-SelfTestKey \{\r?\n    '([^']*)'\r?\n\}\r?$`); got != key {
+	if got := value(ps, "install.ps1 Get-SelfTestKey", `(?m)^    function Get-SelfTestKey \{\r?\n        '([^']*)'\r?\n    \}\r?$`); got != key {
 		t.Fatalf("install.ps1 tests its verifier with key %q, install.sh with %q", got, key)
 	}
-	if got := value(ps, "install.ps1 Get-SelfTestSignature", `(?m)^function Get-SelfTestSignature \{\r?\n    '([^']*)'\r?\n\}\r?$`); got != sig {
+	if got := value(ps, "install.ps1 Get-SelfTestSignature", `(?m)^    function Get-SelfTestSignature \{\r?\n        '([^']*)'\r?\n    \}\r?$`); got != sig {
 		t.Fatalf("install.ps1 tests its verifier with signature %q, install.sh with %q", got, sig)
 	}
 	if !bytes.Contains(sh, []byte(`printf 'r' > "${1}/selftest.msg"`)) || !bytes.Contains(ps, []byte(`[IO.File]::WriteAllBytes($message, [byte[]]@(0x72))`)) {
 		t.Fatal("install.sh and install.ps1 must both test their verifier on the one-byte message r")
+	}
+	if !bytes.Contains(sh, []byte(`printf 's' > "${1}/selftest.msg"`)) || !bytes.Contains(ps, []byte(`[IO.File]::WriteAllBytes($message, [byte[]]@(0x73))`)) {
+		t.Fatal("install.sh and install.ps1 must both refuse a verifier that also accepts the self-test signature for the message s")
 	}
 	pub, err := base64.StdEncoding.DecodeString(key)
 	if err != nil || len(pub) != ed25519.PublicKeySize {

@@ -274,13 +274,13 @@ func writeCoverageReport(t *testing.T, workspace string) {
 		}
 	}
 	report := map[string]any{
-		"total":                               entry(140, 210, 15, 20),
-		"/opt/other/outside.ts":               entry(5, 10, 0, 0),
-		workspace + "/scripts/build.js":       entry(0, 30, 0, 0),
-		workspace + "/src/auth/login.ts":      entry(80, 100, 6, 10),
-		workspace + "/src/auth/token.ts":      entry(10, 20, 0, 0),
-		workspace + "/src/billing/invoice.ts": entry(45, 50, 9, 10),
-		workspace + "/src/billing/empty.d.ts": entry(0, 0, 0, 0),
+		"total":                 entry(140, 210, 15, 20),
+		"/opt/other/outside.ts": entry(5, 10, 0, 0),
+		filepath.Join(workspace, "scripts", "build.js"):          entry(0, 30, 0, 0),
+		filepath.Join(workspace, "src", "auth", "login.ts"):      entry(80, 100, 6, 10),
+		filepath.Join(workspace, "src", "auth", "token.ts"):      entry(10, 20, 0, 0),
+		filepath.Join(workspace, "src", "billing", "invoice.ts"): entry(45, 50, 9, 10),
+		filepath.Join(workspace, "src", "billing", "empty.d.ts"): entry(0, 0, 0, 0),
 	}
 	data, err := json.Marshal(report)
 	if err != nil {
@@ -799,59 +799,72 @@ func TestCoverageAction_StopsWhenTheReleaseCannotBeVerified(t *testing.T) {
 	}
 }
 
-func userPathOf(t *testing.T) string {
-	t.Helper()
-	if runtime.GOOS != "windows" {
-		return ""
-	}
-	out, code := runPowerShellCommand(t, powerShells(t)[0], "[Environment]::GetEnvironmentVariable('Path', 'User')", nil)
-	if code != 0 {
-		t.Fatalf("reading the user PATH: exit %d\n%s", code, out)
-	}
-	return out
-}
-
 func TestCoverageAction_InstallsWithInstallPS1OnWindowsRunners(t *testing.T) {
-	for name, forged := range map[string]bool{"signed release": false, "forged signature": true} {
-		t.Run(name, func(t *testing.T) {
-			openssl := requireOpenSSL3(t)
-			key := newSigningKey(t)
-			release := newWindowsRelease(t, loadAction(t).Inputs["version"].Default, builtCLIBinary(t), key)
-			if forged {
-				release.write(release.checksums+".sig", []byte(newSigningKey(t).sign(release.read(release.checksums))+"\n"))
-			}
-			z := newFakeZensu(t)
-			h := newHistory(t)
-			run := newActionRun(t, h.dir, release, key, runSetup{inputs: configuredInputs(z, nil), eventName: "pull_request", event: pullRequestEvent(h), sha: h.bump, windows: true})
-			run.path = filepath.Dir(openssl) + string(os.PathListSeparator) + run.path
-			before := userPathOf(t)
-			run.run()
-			if after := userPathOf(t); after != before {
-				t.Errorf("the install step changed the user PATH from %q to %q", before, after)
-			}
-			if strings.Contains(run.logs["install"], "to your PATH") || strings.Contains(run.logs["install"], "to your user PATH") {
-				t.Errorf("the install step touched the PATH:\n%s", run.logs["install"])
-			}
-			if forged {
-				want := "error: the signature of " + release.checksums + " matches no zensu release key, so the download may have been tampered with\n"
-				if !slices.Equal(run.ran, []string{"config", "install"}) || run.failed != "install" || !strings.HasSuffix(strings.ReplaceAll(run.logs["install"], "\r\n", "\n"), want) {
-					t.Fatalf("ran %v failed %q:\n%s", run.ran, run.failed, run.allLogs())
+	shells := []string{"pwsh"}
+	if runtime.GOOS == "windows" {
+		shells = append(shells, "powershell")
+	}
+	for _, shell := range shells {
+		for name, forged := range map[string]bool{"signed release": false, "forged signature": true} {
+			t.Run(shell+"/"+name, func(t *testing.T) {
+				openssl := requireOpenSSL3(t)
+				key := newSigningKey(t)
+				release := newWindowsRelease(t, loadAction(t).Inputs["version"].Default, builtCLIBinary(t), key)
+				if forged {
+					release.write(release.checksums+".sig", []byte(newSigningKey(t).sign(release.read(release.checksums))+"\n"))
 				}
-				if n := len(z.recorded()); n != 0 || release.requested(release.archive) {
-					t.Fatalf("%d API calls and archive downloaded %v after a forged signature", n, release.requested(release.archive))
+				z := newFakeZensu(t)
+				h := newHistory(t)
+				writeCoverageReport(t, h.dir)
+				run := newActionRun(t, h.dir, release, key, runSetup{
+					inputs:    configuredInputs(z, map[string]string{"coverage-file": "coverage/coverage-summary.json"}),
+					eventName: "pull_request",
+					event:     pullRequestEvent(h),
+					sha:       h.bump,
+					windows:   true,
+				})
+				run.path = filepath.Dir(openssl) + string(os.PathListSeparator) + run.path
+				if shell == "powershell" {
+					run.path = pathWithout(run.path, "pwsh.exe")
 				}
-				return
-			}
-			run.requireSteps("config", "install", "commits", "pull-request")
-			if bin := run.outputs["install"]["bin"]; !strings.HasSuffix(bin, "/zensu.exe") || !strings.Contains(run.logs["install"], "Verified the release signature.") {
-				t.Fatalf("bin %q, install output:\n%s", bin, run.logs["install"])
-			}
-			calls := z.recorded()
-			if len(calls) != 2 || calls[0].Path != "/api/ci/commits" || calls[1].Path != "/api/ci/pull-requests" || calls[0].Key != actionKey {
-				t.Fatalf("calls = %+v", calls)
-			}
-			run.requireKeyNowhere()
-		})
+				reader := powerShells(t)[0]
+				before := userPathOf(t, reader)
+				run.run()
+				if after := userPathOf(t, reader); after != before {
+					t.Errorf("the install step changed the user PATH from %q to %q", before, after)
+				}
+				if strings.Contains(run.logs["install"], "to your PATH") || strings.Contains(run.logs["install"], "to your user PATH") {
+					t.Errorf("the install step touched the PATH:\n%s", run.logs["install"])
+				}
+				if forged {
+					want := "error: the signature of " + release.checksums + " matches no zensu release key, so the download may have been tampered with\n"
+					if !slices.Equal(run.ran, []string{"config", "install"}) || run.failed != "install" || !strings.HasSuffix(strings.ReplaceAll(run.logs["install"], "\r\n", "\n"), want) {
+						t.Fatalf("ran %v failed %q:\n%s", run.ran, run.failed, run.allLogs())
+					}
+					if n := len(z.recorded()); n != 0 || release.requested(release.archive) {
+						t.Fatalf("%d API calls and archive downloaded %v after a forged signature", n, release.requested(release.archive))
+					}
+					return
+				}
+				run.requireSteps("config", "install", "commits", "pull-request", "coverage")
+				if bin := run.outputs["install"]["bin"]; !strings.HasSuffix(bin, "/zensu.exe") || !strings.Contains(run.logs["install"], "Verified the release signature.") {
+					t.Fatalf("bin %q, install output:\n%s", bin, run.logs["install"])
+				}
+				calls := z.recorded()
+				if len(calls) != 3 || calls[0].Path != "/api/ci/commits" || calls[1].Path != "/api/ci/pull-requests" || calls[2].Path != "/api/ci/coverage" || calls[0].Key != actionKey {
+					t.Fatalf("calls = %+v", calls)
+				}
+				jsonEqual(t, calls[2].Body, fmt.Sprintf(`{"productId":%q,"source":"ci","ciRunUrl":%q,"files":[
+					{"path":"/opt/other/outside.ts","linesCovered":5,"linesTotal":10},
+					{"path":"scripts/build.js","linesCovered":0,"linesTotal":30},
+					{"path":"src/auth/login.ts","linesCovered":80,"linesTotal":100,"branchesCovered":6,"branchesTotal":10},
+					{"path":"src/auth/token.ts","linesCovered":10,"linesTotal":20},
+					{"path":"src/billing/empty.d.ts","linesCovered":0,"linesTotal":0},
+					{"path":"src/billing/invoice.ts","linesCovered":45,"linesTotal":50,"branchesCovered":9,"branchesTotal":10}]}`,
+					actionProduct, actionRunURL))
+				run.requireKeyNowhere()
+			})
+		}
 	}
 }
 

@@ -17,7 +17,7 @@ The macOS binary is Developer-ID signed and notarized. Pin a version with
 `ZENSU_VERSION`, change the target dir with `ZENSU_INSTALL_DIR`. Both install
 scripts check the release signature with an OpenSSL 3 that verifies Ed25519 when
 they find one (on Windows also the OpenSSL that Git for Windows bundles), and
-refuse a release after v0.18.0 whose signature is missing;
+refuse the latest release or any release after v0.18.0 whose signature is missing;
 `ZENSU_REQUIRE_SIGNATURE=1` makes the check mandatory. Update an existing
 install with `zensu update` (see [update](#update)).
 
@@ -656,8 +656,9 @@ pull request range, the `pull_request` event, `GITHUB_WORKSPACE`, the run URL an
   files uploads nothing; more than 10,000 files fail.
 
 On GitHub Actions use the action `MKITConsulting/zensu-cli/actions/coverage`,
-pinned by commit SHA, on Linux, macOS or Windows runners; it installs the
-matching CLI release, requires its signature and runs all three.
+pinned by commit SHA, on Linux, macOS or Windows runners (Windows needs a
+release of the action after v0.23.0); it installs the matching CLI release,
+requires its signature and runs all three.
 
 ## Enum vocabularies
 

@@ -37,7 +37,12 @@ func newSecurityClassifyCmd(f *Factory) *cobra.Command {
 		Short: "Set the security classification and attributes of a feature",
 		Long: "Set the security classification and security attributes of a feature. " +
 			"Automatically recalculates the security score. Higher classifications " +
-			"(confidential, restricted) enforce stricter requirements for release gates.",
+			"(confidential, restricted) enforce stricter requirements for release gates. " +
+			"This command can only keep or raise the classification; a feature without one " +
+			"counts as internal, so public is refused for it. Lowering the classification, " +
+			"marking a pentest passed and marking the threat model completed are decisions " +
+			"for an admin signed in to the Zensu web app: Zensu refuses each of them from " +
+			"this command with a 400.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -93,7 +98,7 @@ func newSecurityClassifyCmd(f *Factory) *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&classification, "classification", "", "security classification (public|internal|confidential|restricted)")
+	cmd.Flags().StringVar(&classification, "classification", "", "security classification (public|internal|confidential|restricted); only a level that keeps or raises the current one is accepted, and a feature without one counts as internal; lowering it is a decision for an admin signed in to the Zensu web app")
 	cmd.Flags().StringVar(&dataSensitivity, "data-sensitivity", "", "data sensitivity (none|pii|financial|health|credentials)")
 	cmd.Flags().BoolVar(&authRequired, "auth-required", false, "whether authentication is required")
 	cmd.Flags().StringVar(&authType, "auth-type", "", "auth type (jwt|api-key|oauth2|none)")
@@ -102,8 +107,8 @@ func newSecurityClassifyCmd(f *Factory) *cobra.Command {
 	cmd.Flags().BoolVar(&encryptionAtRest, "encryption-at-rest", false, "whether data is encrypted at rest")
 	cmd.Flags().BoolVar(&encryptionInTransit, "encryption-in-transit", false, "whether data is encrypted in transit")
 	cmd.Flags().BoolVar(&auditLogged, "audit-logged", false, "whether actions are audit logged")
-	cmd.Flags().StringVar(&threatModelStatus, "threat-model-status", "", "threat model status (not-required|pending|completed)")
-	cmd.Flags().StringVar(&pentestStatus, "pentest-status", "", "pentest status (not-required|pending|passed|failed)")
+	cmd.Flags().StringVar(&threatModelStatus, "threat-model-status", "", "threat model status (not-required|pending); marking it completed is a decision for an admin signed in to the Zensu web app")
+	cmd.Flags().StringVar(&pentestStatus, "pentest-status", "", "pentest status (not-required|pending|failed); marking it passed is a decision for an admin signed in to the Zensu web app")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return cmd
 }
@@ -195,10 +200,12 @@ func newSecurityReviewCmd(f *Factory) *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "review <feature-id>",
-		Short: "Complete a security review for a feature",
-		Long: "Complete a security review for a feature. When status is 'approved', the " +
-			"feature is marked as security-reviewed. Required for features with " +
-			"classification 'confidential' or 'restricted' before a release.",
+		Short: "Record a rejected or conditional security review for a feature",
+		Long: "Record a security review that rejects a feature (rejected) or asks for changes " +
+			"(conditional). Approving a security review is a decision for an admin signed in " +
+			"to the Zensu web app: Zensu refuses --status approved from this command with a 400. " +
+			"An approved review marks the feature security-reviewed, which the default release " +
+			"gate requires for features classified confidential or restricted.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -232,10 +239,10 @@ func newSecurityReviewCmd(f *Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reviewer, "reviewer", "", "reviewer identifier (required)")
-	cmd.Flags().StringVar(&reviewStatus, "status", "", "review status (approved|rejected|conditional) (required)")
+	cmd.Flags().StringVar(&reviewStatus, "status", "", "review status (rejected|conditional); approving a review is a decision for an admin signed in to the Zensu web app (required)")
 	cmd.Flags().StringVar(&reviewType, "type", "manual", "review type (manual|automated|external)")
 	cmd.Flags().StringVar(&findings, "findings", "", "review findings (Markdown)")
-	cmd.Flags().StringVar(&conditions, "conditions", "", "conditions for conditional approval (Markdown)")
+	cmd.Flags().StringVar(&conditions, "conditions", "", "changes a conditional review asks for (Markdown)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output raw JSON")
 	return withValueFiles(cmd, textFile("findings"), textFile("conditions"))
 }

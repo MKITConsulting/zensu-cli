@@ -354,7 +354,7 @@ func TestValueFiles_ReachTheRequestBody(t *testing.T) {
 		{"journeys create", NewJourneysCmd, []string{"create", "--product", "p1", "--title", "Journey"}, "description", shellHostileText, "POST /api/products/p1/journeys", "", "description"},
 		{"roadmap create", NewRoadmapCmd, []string{"create", "--product", "p1", "--title", "MVP"}, "description", shellHostileText, "POST /api/products/p1/roadmaps", "", "description"},
 		{"roadmap update", NewRoadmapCmd, []string{"update", "r1", "--title", "MVP"}, "description", shellHostileText, "PUT /api/roadmaps/r1", "", "description"},
-		{"security review findings", NewSecurityCmd, []string{"review", "f1", "--reviewer", "me", "--status", "approved"}, "findings", shellHostileText, "POST /api/features/f1/security/review", "", "findings"},
+		{"security review findings", NewSecurityCmd, []string{"review", "f1", "--reviewer", "me", "--status", "rejected"}, "findings", shellHostileText, "POST /api/features/f1/security/review", "", "findings"},
 		{"security review conditions", NewSecurityCmd, []string{"review", "f1", "--reviewer", "me", "--status", "conditional"}, "conditions", shellHostileText, "POST /api/features/f1/security/review", "", "conditions"},
 		{"wiki create", NewWikiCmd, []string{"create", "--product", "p1", "--title", "Guide"}, "content", shellHostileText, "POST /api/wiki/pages", "", "content"},
 		{"wiki update", NewWikiCmd, []string{"update", "w1"}, "content", shellHostileText, "PUT /api/wiki/pages/w1", "", "content"},

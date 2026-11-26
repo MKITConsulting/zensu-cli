@@ -25,7 +25,7 @@ func TestIsRequiredFlag_ReadsTheUsageMarkerAndCobrasAnnotation(t *testing.T) {
 		{"the option the session continues with (required unless --blocking)", false},
 		{"block reason, prose only (required with --blocked)", false},
 		{"whether authentication is required", false},
-		{"threat model status (not-required|pending|completed)", false},
+		{"threat model status (not-required|pending); marking it completed is a decision for an admin signed in to the Zensu web app", false},
 		{"", false},
 	} {
 		if got := IsRequiredFlag(&pflag.Flag{Name: "x", Usage: tc.usage}); got != tc.want {

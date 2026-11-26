@@ -94,6 +94,9 @@ fetch_quiet() {
 verify_signature() {
 	dir="$1"; url="$2"
 	if ! fetch_quiet "$url" "${dir}/checksums.txt.sig" 2>/dev/null; then
+		if [ "${ZENSU_VERSION:-latest}" = "latest" ]; then
+			err "could not download the signature ${url##*/} of the latest release ${version}; the latest zensu release is always signed, so nothing is installed without it"
+		fi
 		if signed_release; then
 			err "could not download the signature ${url##*/} of release ${version}; every zensu release after v0.18.0 is signed, so nothing is installed without it"
 		fi
@@ -130,12 +133,11 @@ require_signature() {
 }
 
 signed_release() {
-	major="${ver%%.*}"
-	minor="${ver#*.}"
-	minor="${minor%%.*}"
-	case "${major}" in ''|*[!0-9]*) return 0 ;; esac
-	case "${minor}" in ''|*[!0-9]*) return 0 ;; esac
-	[ "$major" -gt 0 ] || [ "$minor" -gt 18 ]
+	case "$ver" in
+		*[!0-9.]*|*.*.*.*|*.0[0-9]*) return 0 ;;
+		0.18.0|0.[0-9].[0-9]*|0.1[0-7].[0-9]*) return 1 ;;
+	esac
+	return 0
 }
 
 find_openssl() {
@@ -158,7 +160,9 @@ verifies_ed25519() {
 	printf '%s\n' "-----BEGIN PUBLIC KEY-----" "MCowBQYDK2VwAyEA$(selftest_key)" "-----END PUBLIC KEY-----" > "${1}/selftest.pem"
 	printf 'r' > "${1}/selftest.msg"
 	printf '%s' "$(selftest_signature)" | "$2" base64 -d -A > "${1}/selftest.sig" 2>/dev/null || return 1
-	"$2" pkeyutl -verify -pubin -inkey "${1}/selftest.pem" -rawin -in "${1}/selftest.msg" -sigfile "${1}/selftest.sig" >/dev/null 2>&1
+	"$2" pkeyutl -verify -pubin -inkey "${1}/selftest.pem" -rawin -in "${1}/selftest.msg" -sigfile "${1}/selftest.sig" >/dev/null 2>&1 || return 1
+	printf 's' > "${1}/selftest.msg"
+	! "$2" pkeyutl -verify -pubin -inkey "${1}/selftest.pem" -rawin -in "${1}/selftest.msg" -sigfile "${1}/selftest.sig" >/dev/null 2>&1
 }
 
 is_openssl3() {

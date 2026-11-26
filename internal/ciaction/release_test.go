@@ -2,6 +2,7 @@ package ciaction
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"crypto/ed25519"
@@ -24,6 +25,8 @@ import (
 
 var releaseKeysLine = regexp.MustCompile(`(?m)^release_keys\(\) \{\n\techo "([^"]*)"\n\}$`)
 
+const latestReleasePath = "/repos/MKITConsulting/zensu-cli/releases/latest"
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	root, err := filepath.Abs(filepath.Join("..", ".."))
@@ -36,7 +39,7 @@ func repoRoot(t *testing.T) string {
 func requireUnixRunner(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("install.sh and the coverage action run on Linux and macOS")
+		t.Skip("install.sh and the Linux and macOS branch of the coverage action run on Linux and macOS")
 	}
 	for _, tool := range []string{"sh", "bash", "tar", "curl"} {
 		if _, err := exec.LookPath(tool); err != nil {
@@ -45,18 +48,23 @@ func requireUnixRunner(t *testing.T) {
 	}
 }
 
-func requireOpenSSL3(t *testing.T) {
+func requireOpenSSL3(t *testing.T) string {
 	t.Helper()
 	for _, candidate := range []string{"openssl", "/opt/homebrew/opt/openssl@3/bin/openssl", "/usr/local/opt/openssl@3/bin/openssl"} {
-		out, err := exec.Command(candidate, "version").Output()
+		path, err := exec.LookPath(candidate)
+		if err != nil {
+			continue
+		}
+		out, err := exec.Command(path, "version").Output()
 		if err == nil && regexp.MustCompile(`^OpenSSL ([3-9]\.|[1-9][0-9])`).Match(out) {
-			return
+			return path
 		}
 	}
 	if os.Getenv("CI") != "" {
 		t.Fatal("verifying release signatures needs OpenSSL 3 or later on the CI runner")
 	}
 	t.Skip("no OpenSSL 3 or later on this machine")
+	return ""
 }
 
 type signingKey struct {
@@ -83,6 +91,7 @@ func patchedInstallScript(t *testing.T, dir string, keys ...string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
 	if !releaseKeysLine.Match(data) {
 		t.Fatal("install.sh has no release_keys function with one echo line")
 	}
@@ -98,6 +107,7 @@ type fakeRelease struct {
 	t         *testing.T
 	mu        sync.Mutex
 	requests  int
+	paths     []string
 	tag       string
 	root      string
 	server    *httptest.Server
@@ -109,15 +119,29 @@ func archiveName(ver string) string {
 	return fmt.Sprintf("zensu_%s_%s_%s.tar.gz", ver, runtime.GOOS, runtime.GOARCH)
 }
 
+func windowsArchiveName(ver string) string {
+	return "zensu_" + ver + "_windows_amd64.zip"
+}
+
 func newFakeRelease(t *testing.T, tag string, binary []byte, key signingKey) *fakeRelease {
 	t.Helper()
 	return newFakeReleaseOf(t, tag, tarball(t, binary), key)
 }
 
+func newWindowsRelease(t *testing.T, tag string, binary []byte, key signingKey) *fakeRelease {
+	t.Helper()
+	return newFakeReleaseNamed(t, tag, windowsArchiveName(strings.TrimPrefix(tag, "v")), zipball(t, binary), key)
+}
+
 func newFakeReleaseOf(t *testing.T, tag string, archive []byte, key signingKey) *fakeRelease {
 	t.Helper()
+	return newFakeReleaseNamed(t, tag, archiveName(strings.TrimPrefix(tag, "v")), archive, key)
+}
+
+func newFakeReleaseNamed(t *testing.T, tag, name string, archive []byte, key signingKey) *fakeRelease {
+	t.Helper()
 	ver := strings.TrimPrefix(tag, "v")
-	r := &fakeRelease{t: t, tag: tag, root: t.TempDir(), archive: archiveName(ver), checksums: "zensu_" + ver + "_checksums.txt"}
+	r := &fakeRelease{t: t, tag: tag, root: t.TempDir(), archive: name, checksums: "zensu_" + ver + "_checksums.txt"}
 	if err := os.MkdirAll(r.dir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -126,21 +150,80 @@ func newFakeReleaseOf(t *testing.T, tag string, archive []byte, key signingKey) 
 	checksums := fmt.Sprintf("%s  %s.sbom.json\n%s  %s\n", strings.Repeat("0", 64), r.archive, hex.EncodeToString(sum[:]), r.archive)
 	r.write(r.checksums, []byte(checksums))
 	r.write(r.checksums+".sig", []byte(key.sign([]byte(checksums))+"\n"))
+	r.serve()
+	return r
+}
+
+func newMirror(t *testing.T, tag, archive string, files map[string][]byte) *fakeRelease {
+	t.Helper()
+	ver := strings.TrimPrefix(tag, "v")
+	r := &fakeRelease{t: t, tag: tag, root: t.TempDir(), archive: archive, checksums: "zensu_" + ver + "_checksums.txt"}
+	if err := os.MkdirAll(r.dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range files {
+		r.write(name, data)
+	}
+	r.serve()
+	return r
+}
+
+func (r *fakeRelease) serve() {
 	files := http.FileServer(http.Dir(r.root))
 	r.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.mu.Lock()
 		r.requests++
+		r.paths = append(r.paths, req.URL.Path)
 		r.mu.Unlock()
+		if req.URL.Path == latestReleasePath {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, "{\"tag_name\":%q}\n", r.tag)
+			return
+		}
 		files.ServeHTTP(w, req)
 	}))
-	t.Cleanup(r.server.Close)
-	return r
+	r.t.Cleanup(r.server.Close)
+}
+
+func pointedAt(t *testing.T, script string, release *fakeRelease, downloads string) string {
+	t.Helper()
+	data, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, swap := range [][2]string{{"https://api.github.com/", release.server.URL + "/"}, {downloads, release.server.URL}} {
+		if n := bytes.Count(data, []byte(swap[0])); n != 1 {
+			t.Fatalf("%s names %s %d times, want once", filepath.Base(script), swap[0], n)
+		}
+		data = bytes.ReplaceAll(data, []byte(swap[0]), []byte(swap[1]))
+	}
+	if err := os.WriteFile(script, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return script
 }
 
 func (r *fakeRelease) downloads() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.requests
+}
+
+func (r *fakeRelease) requested(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, path := range r.paths {
+		if path == "/"+r.tag+"/"+name {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *fakeRelease) requestLog() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.paths...)
 }
 
 func (r *fakeRelease) dir() string { return filepath.Join(r.root, r.tag) }
@@ -192,6 +275,34 @@ func tarball(t *testing.T, binary []byte) []byte {
 		t.Fatal(err)
 	}
 	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func zipball(t *testing.T, binary []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, f := range []struct {
+		name string
+		mode os.FileMode
+		data []byte
+	}{
+		{"zensu.exe", 0o755, binary},
+		{"README.md", 0o644, []byte("# Zensu CLI\n")},
+	} {
+		header := &zip.FileHeader{Name: f.name, Method: zip.Deflate}
+		header.SetMode(f.mode)
+		w, err := zw.CreateHeader(header)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(f.data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
 	return buf.Bytes()

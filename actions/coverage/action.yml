@@ -61,15 +61,22 @@ runs:
         ZENSU_VERSION: ${{ inputs.version }}
         ZENSU_RELEASE_URL: ${{ inputs.release-url }}
         ZENSU_REQUIRE_SIGNATURE: '1'
+        ZENSU_NO_MODIFY_PATH: '1'
       run: |
-        if [ "${RUNNER_OS:-}" = "Windows" ]; then
-          echo "::error::The Zensu coverage action runs on Linux and macOS runners. On Windows, install the CLI yourself and run zensu ci commits, pull-request and coverage with --api-key-stdin; install.ps1 checks the archive checksum but not the release signature."
-          exit 1
-        fi
         ZENSU_INSTALL_DIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/zensu-cli.XXXXXX")
         export ZENSU_INSTALL_DIR
-        sh "${GITHUB_ACTION_PATH}/../../install.sh"
-        echo "bin=${ZENSU_INSTALL_DIR}/zensu" >> "${GITHUB_OUTPUT}"
+        if [ "${RUNNER_OS:-}" = "Windows" ]; then
+          ZENSU_INSTALL_DIR=$(cygpath -m "${ZENSU_INSTALL_DIR}")
+          powershell=pwsh
+          if ! command -v pwsh >/dev/null 2>&1; then
+            powershell=powershell
+          fi
+          "${powershell}" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$(cygpath -m "${GITHUB_ACTION_PATH}/../../install.ps1")"
+          echo "bin=${ZENSU_INSTALL_DIR}/zensu.exe" >> "${GITHUB_OUTPUT}"
+        else
+          sh "${GITHUB_ACTION_PATH}/../../install.sh"
+          echo "bin=${ZENSU_INSTALL_DIR}/zensu" >> "${GITHUB_OUTPUT}"
+        fi
 
     - name: Link commits to Zensu features
       id: commits
